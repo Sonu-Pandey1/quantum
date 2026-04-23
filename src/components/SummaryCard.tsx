@@ -14,7 +14,7 @@ export function SummaryCard() {
         <p className="text-sm text-textMuted leading-relaxed">
           Highly disciplined and execution-oriented Senior Fullstack Engineer. Proven ability to architect complex enterprise operating systems under strict performance constraints. Deep expertise in SAP ABAP and Modern Web Technologies.
         </p>
-        
+
         <div className="flex flex-col gap-2 pt-2">
           <div className="flex items-center text-xs text-textMain bg-surfaceHighlight p-2 rounded-lg border border-border">
             <Code size={14} className="text-blue-400 mr-2" /> React & TypeScript Architecture

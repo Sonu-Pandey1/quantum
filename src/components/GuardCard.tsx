@@ -70,7 +70,7 @@ export function GuardCard() {
 
   return (
     <>
-      <div className="glass-panel col-span-1 md:col-span-2 lg:col-span-2 lg:row-span-2 p-6 flex flex-col justify-between hover:border-primary/50 transition-colors relative overflow-hidden">
+      <div className="h-full p-6 flex flex-col justify-between transition-colors relative overflow-hidden">
         
         <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 rounded-full blur-[50px] pointer-events-none" />
 

@@ -29,7 +29,7 @@ export function ForgeCard() {
   };
 
   return (
-    <div className="glass-panel col-span-1 md:col-span-2 lg:col-span-2 row-span-2 p-6 flex flex-col hover:border-purple-500/50 transition-colors relative overflow-hidden group">
+    <div className="h-full p-6 flex flex-col transition-colors relative overflow-hidden group">
       {/* Background Glow */}
       <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-purple-500/20 rounded-full blur-[60px] pointer-events-none group-hover:bg-purple-500/30 transition-colors" />
 

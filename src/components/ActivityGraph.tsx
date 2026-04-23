@@ -19,6 +19,9 @@ interface ActivityLog {
 }
 
 export function ActivityGraph() {
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [accountCreatedAt, setAccountCreatedAt] = useState<Date | null>(null);
+  const [availableYears, setAvailableYears] = useState<number[]>([]);
   const [activityData, setActivityData] = useState<Record<string, DayActivity>>({});
   const [stats, setStats] = useState({ total: 0, longestStreak: 0 });
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
@@ -30,7 +33,7 @@ export function ActivityGraph() {
   // ── Fetch heatmap data from daily_activity ──────────────────────────────
   useEffect(() => {
     fetchHeatmap();
-  }, []);
+  }, [selectedYear]);
 
   async function fetchHeatmap() {
     if (!supabase) return;
@@ -39,20 +42,35 @@ export function ActivityGraph() {
     const user = session?.user;
     if (!user) return;
 
-    const oneYearAgo = format(subDays(new Date(), 364), 'yyyy-MM-dd');
+    const startOfYear = `${selectedYear}-01-01`;
+    const endOfYear = `${selectedYear}-12-31`;
 
     const [{ data: dailyRows }, { data: profile }] = await Promise.all([
       supabase
         .from('daily_activity')
         .select('date, activity_count')
         .eq('user_id', user.id)
-        .gte('date', oneYearAgo),
+        .gte('date', startOfYear)
+        .lte('date', endOfYear),
       supabase
         .from('profiles')
-        .select('streak_count')
+        .select('streak_count, created_at')
         .eq('id', user.id)
         .single(),
     ]);
+
+    if (profile?.created_at) {
+      const creationDate = parseISO(profile.created_at);
+      setAccountCreatedAt(creationDate);
+      
+      const creationYear = creationDate.getFullYear();
+      const currentYear = new Date().getFullYear();
+      const years = [];
+      for (let y = currentYear; y >= creationYear; y--) {
+        years.push(y);
+      }
+      setAvailableYears(years);
+    }
 
     if (dailyRows) {
       const map: Record<string, DayActivity> = {};
@@ -127,20 +145,25 @@ export function ActivityGraph() {
     setLoadingLogs(false);
   };
 
-  // ── Build 52-week calendar grid ──────────────────────────────────────────
-  const endDate = new Date();
-  const startDate = subDays(endDate, 364);
+  // ── Build Full Calendar Year Grid ───────────────────────────────────────
+  const isCreationYear = accountCreatedAt && accountCreatedAt.getFullYear() === selectedYear;
+  const isCurrentYear = new Date().getFullYear() === selectedYear;
+
+  // Always generate a full year (53 weeks) for visual consistency and alignment
+  const startDate = new Date(selectedYear, 0, 1);
   const calendarStart = startOfWeek(startDate, { weekStartsOn: 0 });
 
   const weeks: Date[][] = [];
   let cur = calendarStart;
-  while (cur <= endDate) {
+  
+  // 53 columns ensures a standard GitHub-style layout
+  for (let w = 0; w < 53; w++) {
     const week: Date[] = [];
     for (let d = 0; d < 7; d++) {
-      if (cur <= endDate) week.push(cur);
+      week.push(new Date(cur));
       cur = addDays(cur, 1);
     }
-    if (week.length) weeks.push(week);
+    weeks.push(week);
   }
 
   const getLevelColor = (level: number) => {
@@ -169,57 +192,131 @@ export function ActivityGraph() {
             <span className="text-xl font-black text-orange-400">{currentStreakCount}</span>
           </div>
         </div>
-        <div className="glass-panel p-3 border border-primary/20 rounded-xl flex flex-col items-center justify-center bg-primary/5">
-          <span className="text-[10px] text-primary uppercase tracking-widest mb-1">Best Streak</span>
-          <span className="text-xl font-black text-primary">{stats.longestStreak}</span>
+        <div className="glass-panel p-3 border border-primary/20 rounded-xl flex flex-col items-center justify-center bg-gradient-to-br from-primary/10 to-transparent">
+          <span className="text-[10px] text-primary uppercase tracking-widest mb-1 font-bold">Best Record</span>
+          <span className="text-xl font-black text-primary drop-shadow-[0_0_10px_rgba(59,130,246,0.3)]">{stats.longestStreak}</span>
         </div>
       </div>
 
-      {/* Heatmap */}
-      <div className="glass-panel p-3 md:p-5 border border-white/10 rounded-2xl">
-        <div className="flex justify-between items-center mb-4 px-1">
-          <h3 className="text-xs font-bold text-textMain uppercase tracking-widest flex items-center">
-            <Activity size={14} className="mr-2 text-primary" /> Contribution Graph
-          </h3>
-          <div className="flex items-center space-x-1.5">
-            <span className="text-[9px] text-textMuted">Less</span>
-            {[0, 1, 2, 3, 4].map(l => (
-              <div key={l} className={`w-2.5 h-2.5 rounded-sm border ${getLevelColor(l).split(' hover:')[0]}`} />
-            ))}
-            <span className="text-[9px] text-textMuted">More</span>
+      {/* Heatmap Section */}
+      <div className="flex flex-col lg:flex-row gap-4">
+        {/* Main Grid */}
+        <div className="glass-panel p-3 md:p-5 border border-white/10 rounded-2xl flex-1">
+          <div className="flex justify-between items-center mb-4 px-1">
+            <h3 className="text-xs font-bold text-textMain uppercase tracking-widest flex items-center">
+              <Activity size={14} className="mr-2 text-primary" /> Contribution Graph
+            </h3>
+            <div className="flex items-center space-x-1.5">
+              <span className="text-[9px] text-textMuted">Less</span>
+              {[0, 1, 2, 3, 4].map(l => (
+                <div key={l} className={`w-2.5 h-2.5 rounded-sm border ${getLevelColor(l).split(' hover:')[0]}`} />
+              ))}
+              <span className="text-[9px] text-textMuted">More</span>
+            </div>
           </div>
-        </div>
 
-        <div ref={scrollRef} className="overflow-x-auto scrollbar-none pb-2">
-          <div className="flex gap-[3px] min-w-max p-1">
-            {weeks.map((week, wi) => (
-              <div key={wi} className="flex flex-col gap-[3px]">
-                {week.map(day => {
-                  const dateStr = format(day, 'yyyy-MM-dd');
-                  const act = activityData[dateStr] ?? { count: 0, level: 0 };
-                  const isToday = isSameDay(day, new Date());
+          {/* Grid Layout */}
+          <div ref={scrollRef} className="overflow-x-auto scrollbar-none pb-2">
+            <div className="flex flex-col min-w-max p-1">
+              
+              {/* Month Labels aligned to columns */}
+              <div className="flex gap-[3px] mb-2 h-4 relative">
+                {weeks.map((week, wi) => {
+                  const firstDay = week[0];
+                  const monthName = format(firstDay, 'MMM');
+                  const prevMonthName = wi > 0 ? format(weeks[wi-1][0], 'MMM') : null;
+                  const isNewMonth = monthName !== prevMonthName;
+                  
+                  // Only show month if the year is correct
+                  const isYearMatch = firstDay.getFullYear() === selectedYear;
+                  
                   return (
-                    <motion.div
-                      key={dateStr}
-                      whileHover={{ scale: 1.4, zIndex: 50 }}
-                      onClick={() => fetchDayLogs(dateStr)}
-                      title={`${act.count} action${act.count !== 1 ? 's' : ''} on ${format(day, 'MMM d, yyyy')}`}
-                      className={`
-                        w-[11px] h-[11px] md:w-[13px] md:h-[13px] rounded-[2px] border cursor-pointer transition-colors
-                        ${getLevelColor(act.level)}
-                        ${isToday ? 'ring-1 ring-primary ring-offset-1 ring-offset-[#050505]' : ''}
-                      `}
-                    />
+                    <div key={wi} className="w-[12px] md:w-[14px] relative">
+                      {isNewMonth && isYearMatch && (
+                        <span className="text-[9px] text-textMuted uppercase font-black absolute left-0 whitespace-nowrap opacity-60 tracking-tighter">
+                          {monthName}
+                        </span>
+                      )}
+                    </div>
                   );
                 })}
               </div>
-            ))}
+
+              {/* Main Cells */}
+              <div className="flex gap-[3px]">
+                {weeks.map((week, wi) => (
+                  <div key={wi} className="flex flex-col gap-[3px] shrink-0">
+                    {week.map(day => {
+                      const dateStr = format(day, 'yyyy-MM-dd');
+                      const act = activityData[dateStr] ?? { count: 0, level: 0 };
+                      const isToday = isSameDay(day, new Date());
+                      
+                      // Visibility filters
+                      const isBeforeCreation = accountCreatedAt && day < startOfWeek(accountCreatedAt, { weekStartsOn: 0 });
+                      const isAfterYear = day.getFullYear() > selectedYear;
+                      const isFuture = day > new Date();
+                      const isOtherYear = day.getFullYear() !== selectedYear;
+                      const isVisible = !isBeforeCreation && !isAfterYear && !isOtherYear;
+                      
+                      return (
+                        <motion.div
+                          key={dateStr}
+                          whileHover={isVisible ? { 
+                            scale: 1.4, 
+                            zIndex: 50, 
+                            boxShadow: "0 0 15px rgba(52,211,153,0.5)",
+                            backgroundColor: act.level === 0 ? "rgba(255,255,255,0.15)" : undefined
+                          } : {}}
+                          onClick={() => isVisible && fetchDayLogs(dateStr)}
+                          title={isVisible ? `${act.count} action${act.count !== 1 ? 's' : ''} on ${format(day, 'MMM d, yyyy')}` : undefined}
+                          className={`
+                            w-[12px] h-[12px] md:w-[14px] md:h-[14px] rounded-[2px] border transition-all duration-300
+                            ${!isVisible ? 'opacity-0 pointer-events-none' : getLevelColor(act.level)}
+                            ${isToday ? 'ring-2 ring-primary ring-offset-2 ring-offset-[#050505] z-10' : 'border-white/5'}
+                            ${isFuture && isVisible ? 'opacity-30 cursor-default' : ''}
+                            ${isVisible && act.level > 0 ? 'hover:brightness-125' : ''}
+                          `}
+                        />
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 flex items-center justify-between px-1">
+            <p className="text-[10px] text-textMuted font-medium opacity-50 italic">
+              Contribution protocol calibrated for {selectedYear}
+            </p>
+            <div className="flex items-center space-x-2">
+              <span className="text-[9px] text-textMuted uppercase tracking-widest font-bold">Legend</span>
+              <div className="flex gap-1.5 bg-white/5 p-1.5 rounded-lg border border-white/5">
+                {[0, 1, 2, 3, 4].map(l => (
+                  <div key={l} className={`w-2.5 h-2.5 rounded-sm border ${getLevelColor(l).split(' hover:')[0]}`} title={`Level ${l}`} />
+                ))}
+              </div>
+            </div>
           </div>
         </div>
 
-        <div className="mt-2 flex justify-between text-[9px] text-textMuted uppercase tracking-tighter px-1">
-          <span>{format(startDate, 'MMM yyyy')}</span>
-          <span>{format(endDate, 'MMM yyyy')}</span>
+        {/* Year Selector Sidebar */}
+        <div className="flex lg:flex-col gap-2 overflow-x-auto lg:overflow-visible pb-2 lg:pb-0">
+          {availableYears.map(year => (
+            <button
+              key={year}
+              onClick={() => setSelectedYear(year)}
+              className={`
+                px-4 py-2 rounded-xl text-xs font-bold transition-all border
+                ${selectedYear === year 
+                  ? 'bg-primary text-white border-primary shadow-[0_0_15px_rgba(59,130,246,0.5)]' 
+                  : 'bg-white/5 text-textMuted border-white/10 hover:bg-white/10 hover:text-textMain'
+                }
+              `}
+            >
+              {year}
+            </button>
+          ))}
         </div>
       </div>
 

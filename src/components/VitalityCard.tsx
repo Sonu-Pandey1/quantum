@@ -15,7 +15,7 @@ export function VitalityCard({ onClick }: { onClick?: () => void }) {
     let score = 100;
     if (!runningDone) score -= 20;
     if (!pushupsDone) score -= 20;
-    score -= (painLevel - 1) * 5; 
+    score -= (painLevel - 1) * 5;
     return Math.max(0, score);
   };
 
@@ -41,9 +41,9 @@ export function VitalityCard({ onClick }: { onClick?: () => void }) {
   }).join(' ');
 
   return (
-    <div 
+    <div
       onClick={onClick}
-      className={`glass-panel col-span-1 md:col-span-2 lg:col-span-2 row-span-2 p-6 flex flex-col relative overflow-hidden group ${onClick ? 'cursor-pointer' : ''}`}
+      className={`h-full p-6 flex flex-col relative overflow-hidden group ${onClick ? 'cursor-pointer' : ''}`}
     >
       {/* Background Neon Green Glow */}
       <div className="absolute top-0 left-0 w-64 h-64 bg-emerald-500/10 rounded-full blur-[80px] pointer-events-none" />
@@ -74,7 +74,7 @@ export function VitalityCard({ onClick }: { onClick?: () => void }) {
       </div>
 
       <div className="flex-1 space-y-5 relative z-10 overflow-y-auto overflow-x-hidden scrollbar-none pr-1">
-        
+
         {/* Weight Tracker & Mini Chart */}
         <div className="bg-surfaceHighlight/50 border border-border rounded-xl p-4">
           <div className="flex justify-between items-end mb-3">
@@ -86,9 +86,9 @@ export function VitalityCard({ onClick }: { onClick?: () => void }) {
               <span className="text-xl font-bold text-textMain">{currentWeight} <span className="text-xs text-textMuted">kg</span></span>
             </div>
           </div>
-          
+
           <div className="w-full bg-background rounded-full h-2.5 mb-4 overflow-hidden shadow-inner">
-            <motion.div 
+            <motion.div
               className="bg-emerald-500 h-2.5 rounded-full shadow-[0_0_10px_rgba(16,185,129,0.5)]"
               initial={{ width: 0 }}
               animate={{ width: `${weightProgress}%` }}
@@ -133,8 +133,8 @@ export function VitalityCard({ onClick }: { onClick?: () => void }) {
         <div>
           <h4 className="text-sm font-semibold text-textMain mb-3 uppercase tracking-wider">Daily Output</h4>
           <div className="grid grid-cols-2 gap-3">
-            
-            <button 
+
+            <button
               onClick={() => {
                 audio.playClick();
                 if (!runningDone) {
@@ -143,11 +143,10 @@ export function VitalityCard({ onClick }: { onClick?: () => void }) {
                 }
                 setRunningDone(!runningDone);
               }}
-              className={`relative overflow-hidden flex flex-col items-center justify-center p-4 rounded-xl border transition-all duration-300 ${
-                runningDone 
-                  ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.2)]' 
+              className={`relative overflow-hidden flex flex-col items-center justify-center p-4 rounded-xl border transition-all duration-300 ${runningDone
+                  ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.2)]'
                   : 'bg-surface border-border text-textMuted hover:border-textMuted hover:bg-surfaceHighlight'
-              }`}
+                }`}
             >
               <motion.div whileTap={{ scale: 0.9 }} className="z-10 flex flex-col items-center">
                 {runningDone ? <Check size={24} className="mb-2" /> : <Footprints size={24} className="mb-2 opacity-50" />}
@@ -156,7 +155,7 @@ export function VitalityCard({ onClick }: { onClick?: () => void }) {
               {runningDone && <motion.div layoutId="glow1" className="absolute inset-0 bg-emerald-500/5" />}
             </button>
 
-            <button 
+            <button
               onClick={() => {
                 audio.playClick();
                 if (!pushupsDone) {
@@ -165,11 +164,10 @@ export function VitalityCard({ onClick }: { onClick?: () => void }) {
                 }
                 setPushupsDone(!pushupsDone);
               }}
-              className={`relative overflow-hidden flex flex-col items-center justify-center p-4 rounded-xl border transition-all duration-300 ${
-                pushupsDone 
-                  ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.2)]' 
+              className={`relative overflow-hidden flex flex-col items-center justify-center p-4 rounded-xl border transition-all duration-300 ${pushupsDone
+                  ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.2)]'
                   : 'bg-surface border-border text-textMuted hover:border-textMuted hover:bg-surfaceHighlight'
-              }`}
+                }`}
             >
               <motion.div whileTap={{ scale: 0.9 }} className="z-10 flex flex-col items-center">
                 {pushupsDone ? <Check size={24} className="mb-2" /> : <Dumbbell size={24} className="mb-2 opacity-50" />}
@@ -191,11 +189,11 @@ export function VitalityCard({ onClick }: { onClick?: () => void }) {
               Level {painLevel}
             </span>
           </div>
-          
-          <input 
-            type="range" 
-            min="1" 
-            max="10" 
+
+          <input
+            type="range"
+            min="1"
+            max="10"
             value={painLevel}
             onChange={(e) => setPainLevel(parseInt(e.target.value))}
             className="w-full h-2 bg-surfaceHighlight rounded-lg appearance-none cursor-pointer accent-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"

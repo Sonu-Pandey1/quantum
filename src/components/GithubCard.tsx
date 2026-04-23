@@ -41,8 +41,8 @@ export function GithubCard() {
           {grid.map((col, i) => (
             <div key={i} className="flex flex-col gap-1.5">
               {col.map((cell, j) => (
-                <div 
-                  key={j} 
+                <div
+                  key={j}
                   className={`w-3 h-3 rounded-sm ${getIntensityClass(cell)} transition-colors duration-500 hover:scale-125`}
                   title={`Execution Intensity: ${Math.floor(cell * 100)}%`}
                 />
@@ -51,7 +51,7 @@ export function GithubCard() {
           ))}
         </div>
       </div>
-      
+
       <div className="mt-4 flex justify-between items-center text-[10px] text-textMuted font-medium uppercase tracking-widest">
         <span>6 Months Trace</span>
         <div className="flex items-center gap-1">

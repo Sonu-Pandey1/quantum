@@ -47,10 +47,10 @@ export function EngineCard() {
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [progress, setProgress] = useState(0);
   const [timeRemaining, setTimeRemaining] = useState('');
-  
+
   const [showCheckmark, setShowCheckmark] = useState(false);
   const [systemState, setSystemState] = useState<'optimal' | 'behind' | 'idle'>('idle');
-  
+
   // Skip Modal State
   const [skipModalOpen, setSkipModalOpen] = useState(false);
   const [skipReason, setSkipReason] = useState('');
@@ -63,7 +63,7 @@ export function EngineCard() {
   // Load state on mount
   useEffect(() => {
     const todayStr = getTodayString();
-    
+
     // Load skips
     const skipsStr = localStorage.getItem('quantum_skips');
     if (skipsStr) {
@@ -81,7 +81,7 @@ export function EngineCard() {
             .from('executions')
             .select('task_id')
             .eq('date_string', todayStr);
-            
+
           if (data && data.length > 0) {
             setExecutedTaskIds(data.map(d => d.task_id));
             return;
@@ -96,7 +96,7 @@ export function EngineCard() {
         setExecutedTaskIds(JSON.parse(execStr));
       }
     };
-    
+
     loadExecutions();
   }, []);
 
@@ -140,7 +140,7 @@ export function EngineCard() {
         setActiveTask(null);
         setProgress(0);
         setTimeRemaining('Awaiting next sequence...');
-        
+
         const previousTasks = SCHEDULE.filter(t => parseTime(t.end) < now);
         const missedPrevious = previousTasks.some(t => !executedTaskIds.includes(t.id));
         setSystemState(missedPrevious ? 'behind' : 'idle');
@@ -167,13 +167,13 @@ export function EngineCard() {
   const handleComplete = async () => {
     audio.playSuccess();
     if (!activeTask) return;
-    
+
     addXp('Mind', `Routine Task: ${activeTask.title}`, 5);
-    
+
     const todayStr = getTodayString();
     const updated = [...executedTaskIds, activeTask.id];
     setExecutedTaskIds(updated);
-    
+
     // Local fallback
     localStorage.setItem(`quantum_exec_${todayStr}`, JSON.stringify(updated));
 
@@ -203,7 +203,7 @@ export function EngineCard() {
     const todayStr = getTodayString();
     const skipsStr = localStorage.getItem('quantum_skips');
     const skips: SkipRecord[] = skipsStr ? JSON.parse(skipsStr) : [];
-    
+
     // Validation rules
     const today = new Date();
     const yesterday = new Date(today);
@@ -220,7 +220,7 @@ export function EngineCard() {
     const sevenDaysAgo = new Date(today);
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
     const recentSkips = skips.filter(s => new Date(s.date) >= sevenDaysAgo);
-    
+
     if (recentSkips.length >= 2) {
       setSkipError('CRITICAL: Maximum overrides (2) per week reached.');
       return;
@@ -229,7 +229,7 @@ export function EngineCard() {
     // Commit skip
     const newSkip: SkipRecord = { date: todayStr, reason: skipReason };
     localStorage.setItem('quantum_skips', JSON.stringify([...skips, newSkip]));
-    
+
     setIsSkippedToday(true);
     setSkipModalOpen(false);
   };
@@ -267,17 +267,17 @@ export function EngineCard() {
   const isCompleted = activeTask ? executedTaskIds.includes(activeTask.id) : false;
 
   return (
-    <div className={`glass-panel col-span-1 md:col-span-2 lg:col-span-3 row-span-2 p-6 flex flex-col relative overflow-hidden transition-all duration-500 ${activeTask && !isCompleted ? 'ring-4 ring-primary ring-opacity-80 shadow-[0_0_30px_rgba(59,130,246,0.6)] animate-[pulse_3s_cubic-bezier(0.4,0,0.6,1)_infinite]' : ''}`}>
-      
+    <div className={`h-full p-6 flex flex-col relative overflow-hidden transition-all duration-500 ${activeTask && !isCompleted ? 'animate-[pulse_3s_cubic-bezier(0.4,0,0.6,1)_infinite]' : ''}`}>
+
       {/* Decorative Icon */}
       <div className="absolute top-0 right-0 p-8 opacity-5 pointer-events-none">
         <Target size={150} />
       </div>
-      
+
       {/* Checkmark Animation Overlay */}
       <AnimatePresence>
         {showCheckmark && (
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, scale: 0.8 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 1.2 }}
@@ -310,7 +310,7 @@ export function EngineCard() {
 
         {/* System Tags */}
         <div className="flex gap-2">
-          <button 
+          <button
             onClick={() => {
               audio.playClick();
               notifier.requestPermission();
@@ -332,10 +332,10 @@ export function EngineCard() {
           )}
         </div>
       </div>
-      
+
       <div className="flex-1 flex flex-col justify-end z-10 relative">
         <div className="space-y-4">
-          
+
           <div className="flex flex-col mb-4">
             <div className="flex justify-between items-start mb-2">
               <span className="text-sm font-medium text-textMuted mb-1">
@@ -352,8 +352,8 @@ export function EngineCard() {
           </div>
 
           <div className="w-full bg-surfaceHighlight rounded-full h-4 mb-2 overflow-hidden relative shadow-inner">
-            <motion.div 
-              className="bg-primary h-4 rounded-full relative shadow-[0_0_20px_rgba(59,130,246,0.8)]" 
+            <motion.div
+              className="bg-primary h-4 rounded-full relative shadow-[0_0_20px_rgba(59,130,246,0.8)]"
               initial={{ width: 0 }}
               animate={{ width: `${progress}%` }}
               transition={{ duration: 1, ease: "linear" }}
@@ -363,28 +363,27 @@ export function EngineCard() {
               )}
             </motion.div>
           </div>
-          
+
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4 pt-2">
             <div>
               <p className="text-3xl font-bold text-textMain">{Math.floor(progress)}%</p>
               <p className="text-sm text-textMuted mt-1">Current Protocol Progress</p>
             </div>
-            
+
             <div className="flex items-center space-x-3 w-full sm:w-auto">
-              <button 
+              <button
                 onClick={handleComplete}
                 onMouseEnter={() => audio.playClick()}
                 disabled={!activeTask || isCompleted}
-                className={`flex-1 py-3 px-4 sm:px-6 text-sm sm:text-base rounded-xl font-bold uppercase tracking-widest transition-all duration-300 flex items-center justify-center ${
-                  isCompleted 
-                    ? 'bg-surfaceHighlight text-textMuted cursor-not-allowed border border-border' 
+                className={`flex-1 py-3 px-4 sm:px-6 text-sm sm:text-base rounded-xl font-bold uppercase tracking-widest transition-all duration-300 flex items-center justify-center ${isCompleted
+                    ? 'bg-surfaceHighlight text-textMuted cursor-not-allowed border border-border'
                     : 'bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/30 hover:border-blue-500/60 shadow-[0_0_10px_rgba(59,130,246,0.1)] hover:shadow-[0_0_20px_rgba(59,130,246,0.4)]'
-                }`}
+                  }`}
               >
                 <Play size={18} className="mr-2" /> {isCompleted ? 'Executed' : 'Execute'}
               </button>
-              
-              <button 
+
+              <button
                 onClick={() => setSkipModalOpen(true)}
                 onMouseEnter={() => audio.playClick()}
                 className="px-6 py-3 bg-surfaceHighlight hover:bg-surfaceHighlight/80 text-textMuted hover:text-textMain border border-border hover:border-textMuted rounded-xl font-bold uppercase tracking-widest transition-all duration-300 flex items-center justify-center shadow-sm hover:shadow-[0_0_15px_rgba(255,255,255,0.1)]"
@@ -400,25 +399,25 @@ export function EngineCard() {
       <AnimatePresence>
         {skipModalOpen && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-md px-4">
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 20 }}
               className="bg-surface border border-border rounded-2xl w-full max-w-md p-6 shadow-2xl relative"
             >
-              <button 
+              <button
                 onClick={() => setSkipModalOpen(false)}
                 className="absolute top-4 right-4 text-textMuted hover:text-textMain"
               >
                 <X size={20} />
               </button>
-              
+
               <h3 className="text-xl font-bold text-red-500 mb-2 flex items-center">
                 <AlertTriangle className="mr-2" /> Override Protocol
               </h3>
               <p className="text-sm text-textMuted mb-6">
-                Skipping breaks momentum. Justification is required. 
-                <br/><span className="text-xs opacity-70">(Max 2 per week. No consecutive days.)</span>
+                Skipping breaks momentum. Justification is required.
+                <br /><span className="text-xs opacity-70">(Max 2 per week. No consecutive days.)</span>
               </p>
 
               {skipError && (
@@ -430,14 +429,14 @@ export function EngineCard() {
               <div className="space-y-4">
                 <div>
                   <label className="block text-xs font-medium text-textMuted mb-1">Reason for Skipping</label>
-                  <textarea 
+                  <textarea
                     value={skipReason}
                     onChange={(e) => setSkipReason(e.target.value)}
                     className="w-full bg-background border border-border rounded-lg p-3 text-sm text-textMain focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all resize-none h-24"
                     placeholder="Provide detailed justification..."
                   />
                 </div>
-                
+
                 <div>
                   <label className="block text-xs font-medium text-textMuted mb-1">Upload Evidence (Optional)</label>
                   <div className="w-full bg-background border border-border border-dashed rounded-lg p-4 flex flex-col items-center justify-center cursor-pointer hover:bg-surfaceHighlight transition-colors group">
@@ -446,7 +445,7 @@ export function EngineCard() {
                   </div>
                 </div>
 
-                <button 
+                <button
                   onClick={attemptSkip}
                   className="w-full py-3 bg-red-500/20 text-red-500 hover:bg-red-500 hover:text-white border border-red-500/50 rounded-lg font-bold transition-colors mt-4"
                 >

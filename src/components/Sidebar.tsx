@@ -267,83 +267,101 @@ export function Sidebar({ currentView, onViewChange, isPortfolioMode, onTogglePo
     <>
       <motion.aside
         className={cn(
-          'fixed z-[100] glass-panel shadow-2xl flex backdrop-blur-xl',
-          'bottom-0 left-0 right-0 h-16 flex-row items-center px-2 md:px-0 border-t border-border/50 md:border md:rounded-2xl md:bottom-4 md:left-4 md:right-auto md:w-20 md:h-auto md:flex-col md:py-6 md:justify-between'
+          'fixed z-[100] transition-all duration-500 ease-in-out',
+          'bottom-0 left-0 right-0 h-[72px] md:h-auto md:bottom-6 md:left-6 md:w-24',
+          'flex flex-row md:flex-col items-center justify-between',
+          'bg-[#0a0a0c]/60 backdrop-blur-2xl border-t md:border border-white/5 md:rounded-[32px] shadow-[0_20px_50px_rgba(0,0,0,0.5)] px-4 md:px-0 md:py-8'
         )}
       >
         {/* Brand Icon (Desktop only) */}
-        <div className="hidden md:flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-tr from-primary to-purple-600 shadow-[0_0_20px_rgba(59,130,246,0.3)] shrink-0 mb-8 mx-auto">
-          <Target size={24} className="text-white" />
+        <div className="hidden md:flex items-center justify-center w-12 h-12 rounded-2xl bg-gradient-to-br from-primary/20 to-purple-600/20 border border-primary/30 shadow-[0_0_30px_rgba(59,130,246,0.1)] shrink-0 mb-10 mx-auto relative group overflow-hidden">
+          <div className="absolute inset-0 bg-primary/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+          <Target size={26} className="text-primary relative z-10 animate-pulse-slow" />
         </div>
 
         {/* Nav Links */}
-        <nav className="flex md:flex-col flex-row items-center flex-1 md:flex-initial overflow-x-auto md:overflow-visible scrollbar-none md:space-y-6 px-2 md:px-0">
-          <div className="flex flex-row md:flex-col items-center space-x-1 md:space-x-0 md:space-y-6 min-w-max md:min-w-0">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = currentView === item.id;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => {
-                    audio.playClick();
-                    onViewChange(item.id);
-                  }}
-                  onMouseEnter={() => audio.playClick()}
-                  title={item.label}
-                  className={cn(
-                    'relative group flex flex-col items-center justify-center p-2 md:p-3 rounded-xl transition-all duration-300 min-w-[44px] min-h-[44px]',
-                    isActive
-                      ? 'text-primary bg-primary/10 shadow-[0_0_15px_rgba(59,130,246,0.3)]'
-                      : 'text-textMuted hover:text-textMain hover:bg-surfaceHighlight'
-                  )}
-                >
-                  {isActive && (
-                    <motion.div layoutId="nav-glow" className="absolute inset-0 bg-primary/20 rounded-xl blur-md" />
-                  )}
-                  <Icon className="relative z-10 w-5 h-5 md:w-6 md:h-6" />
-                </button>
-              );
-            })}
-          </div>
+        <nav className="flex-1 flex md:flex-col items-center justify-around md:justify-center w-full md:space-y-2">
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = currentView === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => {
+                  audio.playClick();
+                  onViewChange(item.id);
+                }}
+                onMouseEnter={() => audio.playClick()}
+                className={cn(
+                  'relative flex-1 md:flex-none flex flex-col items-center justify-center transition-all duration-300 rounded-2xl md:w-16 md:h-16 group',
+                  isActive ? 'text-primary' : 'text-textMuted hover:text-textMain'
+                )}
+              >
+                {/* Active Highlight */}
+                {isActive && (
+                  <motion.div 
+                    layoutId="sidebar-active"
+                    className="absolute inset-0 bg-primary/10 rounded-2xl md:rounded-[20px] border border-primary/20 shadow-[0_0_20px_rgba(59,130,246,0.15)]" 
+                  />
+                )}
+                
+                {/* Icon Wrapper */}
+                <div className={cn(
+                  'relative z-10 flex items-center justify-center w-10 h-10 rounded-xl transition-all duration-300',
+                  isActive ? 'scale-110' : 'group-hover:bg-white/5'
+                )}>
+                  <Icon size={isActive ? 24 : 22} className={cn('transition-all duration-300', isActive && 'drop-shadow-[0_0_8px_rgba(59,130,246,0.5)]')} />
+                </div>
+
+                {/* Mobile Label (optional, hidden here for clean look) */}
+                <span className={cn(
+                  'text-[8px] uppercase tracking-tighter font-black mt-1 md:hidden transition-all',
+                  isActive ? 'opacity-100' : 'opacity-40'
+                )}>
+                  {item.label}
+                </span>
+
+                {/* Desktop Tooltip/Label */}
+                <div className="hidden md:block absolute left-full ml-4 px-3 py-1.5 bg-[#0f111a] border border-white/10 rounded-lg text-[10px] font-bold uppercase tracking-widest text-white opacity-0 group-hover:opacity-100 pointer-events-none translate-x-[-10px] group-hover:translate-x-0 transition-all duration-300 shadow-2xl whitespace-nowrap z-[110]">
+                  {item.label}
+                </div>
+              </button>
+            );
+          })}
         </nav>
 
-        {/* Actions & Profile */}
-        <div className="flex flex-row md:flex-col items-center justify-end ml-1 md:ml-0 md:mt-auto md:space-y-4">
-          {/* Backup Button (Desktop only) */}
+        {/* Profile & Settings Area */}
+        <div className="flex md:flex-col items-center gap-4 md:gap-6 md:mt-10">
+          {/* Backup Icon (Desktop only) */}
           <button
             onClick={() => {
               audio.playClick();
               handleBackup();
             }}
-            onMouseEnter={() => audio.playClick()}
             className={cn(
-              'hidden md:flex p-3 rounded-xl transition-all duration-300 relative group items-center justify-center',
-              backupStatus === 'done'
-                ? 'text-emerald-500 bg-emerald-500/10 shadow-[0_0_15px_rgba(16,185,129,0.3)]'
-                : 'text-textMuted hover:text-primary hover:bg-primary/10'
+              'hidden md:flex items-center justify-center w-12 h-12 rounded-2xl transition-all border border-white/5 hover:border-primary/30 group',
+              backupStatus === 'syncing' ? 'animate-pulse' : ''
             )}
-            title="System Backup - Export Data"
+            title="Export Protocol Data"
           >
-            {backupStatus === 'syncing' && <span className="absolute inset-0 bg-primary/20 animate-pulse rounded-xl" />}
             {backupStatus === 'done' ? (
-              <Check size={24} />
+              <Check className="text-emerald-400" size={20} />
             ) : (
-              <DatabaseBackup size={24} className={cn(backupStatus === 'syncing' && 'animate-bounce')} />
+              <DatabaseBackup className="text-textMuted group-hover:text-primary transition-colors" size={20} />
             )}
           </button>
 
-          {/* Profile / Avatar button */}
+          {/* User Avatar */}
           <div className="relative">
             <button
               ref={profileBtnRef}
               onClick={() => setShowProfileMenu((prev) => !prev)}
-              className="w-11 h-11 md:w-10 md:h-10 rounded-full bg-gradient-to-tr from-primary to-purple-600 p-[2px] shrink-0 hover:scale-105 hover:shadow-[0_0_15px_rgba(59,130,246,0.4)] transition-all cursor-pointer focus:outline-none flex items-center justify-center"
-              title="Profile & Settings"
+              className="relative p-[2px] rounded-full bg-gradient-to-tr from-primary/50 to-purple-500/50 hover:from-primary hover:to-purple-500 transition-all duration-500 hover:scale-105 active:scale-95 group shadow-lg"
             >
-              <div className="w-full h-full rounded-full bg-surface flex items-center justify-center">
-                <span className="text-[10px] md:text-xs font-bold text-textMain">{userData.initials}</span>
+              <div className="w-10 h-10 md:w-11 md:h-11 rounded-full bg-surfaceHighlight/80 flex items-center justify-center overflow-hidden border border-white/10">
+                <span className="text-[10px] md:text-xs font-black text-textMain group-hover:scale-110 transition-transform">{userData.initials}</span>
               </div>
+              <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-500 border-2 border-[#0a0a0c] rounded-full shadow-[0_0_10px_rgba(16,185,129,0.5)]" />
             </button>
           </div>
         </div>

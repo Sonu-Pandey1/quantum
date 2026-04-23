@@ -55,7 +55,7 @@ export function PathCard({ onNavigateToLogic }: { onNavigateToLogic?: () => void
   }, []);
 
   return (
-    <div className="glass-panel col-span-1 md:col-span-2 lg:col-span-2 row-span-2 p-6 flex flex-col relative overflow-hidden group">
+    <div className="h-full p-6 flex flex-col relative overflow-hidden group">
       {/* Background Glow */}
       <div className="absolute top-0 right-0 w-64 h-64 bg-purple-500/10 rounded-full blur-[80px] pointer-events-none" />
 

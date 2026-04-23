@@ -27,7 +27,7 @@ export function LedgerCard({ onClick }: { onClick?: () => void }) {
             .from('investments')
             .select('*')
             .order('created_at', { ascending: false });
-            
+
           if (data && data.length > 0) {
             setInvestments(data.map(d => ({
               id: d.id,
@@ -47,14 +47,14 @@ export function LedgerCard({ onClick }: { onClick?: () => void }) {
         setInvestments(JSON.parse(saved));
       }
     };
-    
+
     loadInvestments();
   }, []);
 
   const handleAddInvestment = async () => {
     if (!newTitle || !newAmount) return;
     audio.playSuccess();
-    
+
     const investment: Investment = {
       id: Date.now().toString(),
       title: newTitle,
@@ -63,7 +63,7 @@ export function LedgerCard({ onClick }: { onClick?: () => void }) {
 
     const updated = [investment, ...investments];
     setInvestments(updated);
-    
+
     // Local fallback
     localStorage.setItem('quantum_investments', JSON.stringify(updated));
 
@@ -88,11 +88,11 @@ export function LedgerCard({ onClick }: { onClick?: () => void }) {
   };
 
   return (
-    <div 
+    <div
       onClick={onClick}
-      className={`glass-panel col-span-1 md:col-span-2 lg:col-span-3 p-6 flex flex-col hover:border-primary/50 transition-colors group relative overflow-hidden ${onClick ? 'cursor-pointer' : ''}`}
+      className={`h-full p-6 flex flex-col transition-colors group relative overflow-hidden ${onClick ? 'cursor-pointer' : ''}`}
     >
-      
+
       {/* Background glow */}
       <div className="absolute -bottom-20 -right-20 w-64 h-64 bg-emerald-500/10 rounded-full blur-[80px] pointer-events-none" />
 
@@ -106,7 +106,7 @@ export function LedgerCard({ onClick }: { onClick?: () => void }) {
             <p className="text-xs text-textMuted mt-1">Financial Growth System</p>
           </div>
         </div>
-        
+
         <div className="text-right">
           <p className="text-sm text-textMuted mb-1">Target Income</p>
           <p className="text-lg font-bold text-textMain">{formatCurrency(targetIncome)} <span className="text-xs text-textMuted font-normal">/mo</span></p>
@@ -114,17 +114,17 @@ export function LedgerCard({ onClick }: { onClick?: () => void }) {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8 flex-1">
-        
+
         {/* Income Progress & Forecast */}
         <div className="flex flex-col justify-center">
           <h3 className="text-4xl font-bold text-textMain mb-2">{formatCurrency(currentIncome)}</h3>
           <p className="text-sm text-emerald-500 mb-4 flex items-center">
             <TrendingUp size={14} className="mr-1" /> Core Engine Active
           </p>
-          
+
           <div className="w-full bg-surfaceHighlight rounded-full h-3 mb-2 overflow-hidden shadow-inner">
-            <motion.div 
-              className="bg-emerald-500 h-3 rounded-full relative shadow-[0_0_10px_rgba(16,185,129,0.6)]" 
+            <motion.div
+              className="bg-emerald-500 h-3 rounded-full relative shadow-[0_0_10px_rgba(16,185,129,0.6)]"
               initial={{ width: 0 }}
               animate={{ width: `${progress}%` }}
               transition={{ duration: 1, ease: "easeOut" }}
@@ -173,23 +173,23 @@ export function LedgerCard({ onClick }: { onClick?: () => void }) {
         {/* Skill Investment Log */}
         <div className="flex flex-col border-l border-border pl-8">
           <h4 className="text-sm font-semibold text-textMain mb-3">Skill Investment Log</h4>
-          
+
           <div className="flex space-x-2 mb-4">
-            <input 
-              type="text" 
-              placeholder="Course / Tool" 
+            <input
+              type="text"
+              placeholder="Course / Tool"
               value={newTitle}
               onChange={(e) => setNewTitle(e.target.value)}
               className="flex-1 bg-surface border border-border rounded-lg px-3 py-1.5 text-sm text-textMain focus:border-emerald-500 outline-none transition-colors"
             />
-            <input 
-              type="number" 
-              placeholder="₹ Amount" 
+            <input
+              type="number"
+              placeholder="₹ Amount"
               value={newAmount}
               onChange={(e) => setNewAmount(e.target.value)}
               className="w-24 bg-surface border border-border rounded-lg px-3 py-1.5 text-sm text-textMain focus:border-emerald-500 outline-none transition-colors"
             />
-            <button 
+            <button
               onClick={handleAddInvestment}
               onMouseEnter={() => audio.playClick()}
               className="p-2 bg-emerald-500/20 text-emerald-500 hover:bg-emerald-500 hover:text-white rounded-lg transition-all shadow-[0_0_10px_rgba(16,185,129,0.1)] hover:shadow-[0_0_15px_rgba(16,185,129,0.4)]"

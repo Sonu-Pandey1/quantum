@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import {
   Flame, Trophy, Calendar, Zap, Clock, Activity, Target,
-  ShieldCheck, ChevronRight, RefreshCw,
+  ShieldCheck, ChevronRight, RefreshCw, Loader2
 } from 'lucide-react';
 import { useEngagement } from '../hooks/useEngagement';
 import { ActivityGraph } from '../components/ActivityGraph';
@@ -11,9 +11,27 @@ import { useProgression } from '../hooks/useProgression';
 import { format, parseISO } from 'date-fns';
 
 export function EngagementHub() {
-  const { stats, refresh } = useEngagement();
+  const { stats, refresh, loadMore } = useEngagement();
   const { state: { totalXp, totalLevel, rank } } = useProgression();
   const [refreshing, setRefreshing] = useState(false);
+  const observerTarget = useRef(null);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      entries => {
+        if (entries[0].isIntersecting && stats.hasMore && !stats.loadingMore) {
+          loadMore();
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    if (observerTarget.current) {
+      observer.observe(observerTarget.current);
+    }
+
+    return () => observer.disconnect();
+  }, [stats.hasMore, stats.loadingMore, loadMore]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -32,9 +50,9 @@ export function EngagementHub() {
       animate={{ opacity: 1 }}
       className="flex flex-col h-full w-full relative z-10 overflow-hidden"
     >
-      <Header />
+      <Header hideVow={true} />
 
-      <div className="flex-1 overflow-y-auto p-4 md:p-8 pb-32 md:pb-8 space-y-6 scrollbar-none">
+      <div className="flex-1 overflow-y-auto p-4 md:p-8 pb-32 md:pb-8 space-y-6 scrollbar-thin scrollbar-thumb-surfaceHighlight scrollbar-track-transparent">
 
         {/* Page Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -109,9 +127,11 @@ export function EngagementHub() {
             <p className="text-2xl font-black text-textMain">Lvl {totalLevel}</p>
           </div>
           <div className="h-10 w-px bg-border hidden sm:block" />
-          <div>
-            <p className="text-[10px] text-textMuted uppercase tracking-widest">Rank</p>
-            <p className="text-base font-bold text-amber-400">{rank}</p>
+          <div className="flex flex-col items-center justify-center p-4 bg-amber-500/5 border border-amber-500/20 rounded-2xl min-w-[120px] relative overflow-hidden group">
+            <div className="absolute inset-0 bg-gradient-to-br from-amber-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+            <Trophy className="text-amber-500 mb-2 drop-shadow-[0_0_10px_rgba(245,158,11,0.4)]" size={20} />
+            <p className="text-[10px] text-amber-500/60 uppercase tracking-[0.2em] font-black mb-1">Current Rank</p>
+            <p className="text-lg font-black text-amber-400 tracking-tight">{rank}</p>
           </div>
           <div className="h-10 w-px bg-border hidden sm:block" />
           <div>
@@ -131,52 +151,69 @@ export function EngagementHub() {
         {/* ─── Recent Activity Feed ───────────────────────────────── */}
         <div className="space-y-3">
           <h3 className="text-sm font-bold text-textMain uppercase tracking-widest flex items-center px-1">
-            <Clock size={15} className="mr-2 text-purple-400" /> Recent Activity Feed
+            <Clock size={15} className="mr-2 text-purple-400" /> Recent Activity Feed (15d)
           </h3>
 
           {stats.loading ? (
             <div className="h-40 glass-panel flex items-center justify-center rounded-2xl border border-white/5">
-              <div className="w-7 h-7 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+              <Loader2 className="w-7 h-7 text-primary animate-spin" />
             </div>
           ) : stats.recentActivity.length > 0 ? (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-              {stats.recentActivity.map((act, idx) => (
-                <motion.div
-                  key={act.id}
-                  initial={{ opacity: 0, x: -8 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: idx * 0.04 }}
-                  className="glass-panel p-4 flex items-center justify-between group hover:bg-surfaceHighlight/30 transition-all border border-white/5 rounded-xl"
-                >
-                  <div className="flex items-center space-x-3">
-                    <div className={`p-2.5 rounded-xl ${
-                      act.pillar === 'Study' ? 'bg-blue-500/10 text-blue-400' :
-                      act.pillar === 'Health' ? 'bg-emerald-500/10 text-emerald-400' :
-                      act.pillar === 'Finance' ? 'bg-amber-500/10 text-amber-400' :
-                      'bg-purple-500/10 text-purple-400'
-                    }`}>
-                      <Target size={16} />
+            <>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                {stats.recentActivity.map((act, idx) => (
+                  <motion.div
+                    key={`${act.id}-${idx}`}
+                    initial={{ opacity: 0, x: -8 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    className="glass-panel p-4 flex items-center justify-between group hover:bg-surfaceHighlight/30 transition-all border border-white/5 rounded-xl"
+                  >
+                    <div className="flex items-center space-x-3">
+                      <div className={`p-2.5 rounded-xl ${
+                        act.pillar === 'Study' ? 'bg-blue-500/10 text-blue-400' :
+                        act.pillar === 'Health' ? 'bg-emerald-500/10 text-emerald-400' :
+                        act.pillar === 'Finance' ? 'bg-amber-500/10 text-amber-400' :
+                        'bg-purple-500/10 text-purple-400'
+                      }`}>
+                        <Target size={16} />
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-textMain group-hover:text-primary transition-colors">
+                          {act.type}
+                        </p>
+                        <p className="text-[10px] text-textMuted uppercase tracking-widest mt-0.5">
+                          {act.pillar} · {act.relativeTime}
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-sm font-semibold text-textMain group-hover:text-primary transition-colors">
-                        {act.type}
-                      </p>
-                      <p className="text-[10px] text-textMuted uppercase tracking-widest mt-0.5">
-                        {act.pillar} · {act.relativeTime}
-                      </p>
+                    <div className="flex items-center space-x-2 shrink-0">
+                      <span className="text-xs font-bold text-primary">+{act.xp} XP</span>
+                      <ChevronRight size={13} className="text-textMuted" />
                     </div>
+                  </motion.div>
+                ))}
+              </div>
+
+              {/* Infinite Scroll Indicator / Sentinel */}
+              <div ref={observerTarget} className="py-8 flex flex-col items-center justify-center space-y-2">
+                {stats.hasMore ? (
+                  <>
+                    <Loader2 className="w-6 h-6 text-primary animate-spin" />
+                    <p className="text-[10px] text-textMuted uppercase tracking-widest animate-pulse">Syncing more records...</p>
+                  </>
+                ) : (
+                  <div className="flex flex-col items-center space-y-1 opacity-50">
+                    <div className="h-px w-12 bg-border mb-2" />
+                    <p className="text-[10px] text-textMuted uppercase tracking-widest font-bold">End of Protocol Logs</p>
+                    <p className="text-[9px] text-textMuted uppercase tracking-widest">Showing only last 15 days of activity</p>
                   </div>
-                  <div className="flex items-center space-x-2 shrink-0">
-                    <span className="text-xs font-bold text-primary">+{act.xp} XP</span>
-                    <ChevronRight size={13} className="text-textMuted" />
-                  </div>
-                </motion.div>
-              ))}
-            </div>
+                )}
+              </div>
+            </>
           ) : (
             <div className="py-14 glass-panel flex flex-col items-center justify-center text-center rounded-2xl border border-white/5">
               <Activity size={36} className="text-textMuted opacity-30 mb-3" />
-              <p className="text-sm text-textMuted opacity-60">No activity logged yet.</p>
+              <p className="text-sm text-textMuted opacity-60">No activity logged in the last 15 days.</p>
               <p className="text-xs text-textMuted opacity-40 mt-1">
                 Complete actions in any section to see them here.
               </p>

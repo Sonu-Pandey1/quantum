@@ -8,7 +8,6 @@ import { GuardCard } from './GuardCard';
 import { ForgeCard } from './ForgeCard';
 import { SummaryCard } from './SummaryCard';
 import { GithubCard } from './GithubCard';
-import { ActivityGraph } from './ActivityGraph';
 
 const containerVars: Variants = {
   hidden: { opacity: 0 },
@@ -47,37 +46,47 @@ export function BentoGrid({ onNavigateToLogic, onNavigate, isPortfolioMode }: Be
           className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-5 gap-4 md:gap-6 auto-rows-auto md:auto-rows-[180px]"
         >
           {/* Main Module - The Engine */}
-          <EngineCard />
+          <div className="md:col-span-2 lg:col-span-3 row-span-2 glass-panel glass-panel-hover overflow-hidden">
+            <EngineCard />
+          </div>
 
           {/* The Path - SAP Mastery */}
-          <PathCard onNavigateToLogic={onNavigateToLogic} />
+          <div className="md:col-span-2 lg:col-span-2 glass-panel glass-panel-hover">
+            <PathCard onNavigateToLogic={onNavigateToLogic} />
+          </div>
 
           {isPortfolioMode ? (
             <>
               {/* Portfolio Mode Replacements */}
-              <SummaryCard />
-              <GithubCard />
+              <div className="glass-panel glass-panel-hover">
+                <SummaryCard />
+              </div>
+              <div className="glass-panel glass-panel-hover">
+                <GithubCard />
+              </div>
             </>
           ) : (
             <>
               {/* Private Mode Cards */}
-              <VitalityCard onClick={() => onNavigate && onNavigate('analytics')} />
-              <LedgerCard onClick={() => onNavigate && onNavigate('analytics')} />
-              <div onClick={() => onNavigate && onNavigate('dojo')} className="contents cursor-pointer">
+              <div onClick={() => onNavigate && onNavigate('analytics')} className="glass-panel glass-panel-hover cursor-pointer">
+                <VitalityCard />
+              </div>
+              <div onClick={() => onNavigate && onNavigate('analytics')} className="glass-panel glass-panel-hover cursor-pointer">
+                <LedgerCard />
+              </div>
+              <div onClick={() => onNavigate && onNavigate('dojo')} className="glass-panel glass-panel-hover cursor-pointer">
                 <ForgeCard />
               </div>
             </>
           )}
 
           {/* The Guard */}
-          <GuardCard />
+          <div className="md:col-span-2 lg:col-span-2 glass-panel glass-panel-hover">
+            <GuardCard />
+          </div>
 
         </motion.div>
 
-        {/* Global Activity Section (Bottom Position) */}
-        <div className="pt-8 border-t border-border/30">
-          <ActivityGraph />
-        </div>
       </div>
     </div>
   );
