@@ -3,11 +3,10 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { BentoGrid } from './components/BentoGrid';
-import { LogicHub } from './pages/LogicHub';
+import { PracticeHub } from './pages/PracticeHub';
 import { ParticleBackground } from './components/ParticleBackground';
 import { AnalyticsMatrix } from './pages/AnalyticsMatrix';
 import { ControlRoom } from './pages/ControlRoom';
-import { PatternDojo } from './pages/PatternDojo';
 import { AdminDashboard } from './pages/AdminDashboard';
 import { Vault } from './pages/Vault';
 import { TheLab } from './pages/TheLab';
@@ -34,9 +33,9 @@ function App() {
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.replace('#', '');
-      const validViews = ['dashboard', 'logic', 'control_room', 'dojo', 'analytics', 'engagement', 'admin', 'vault', 'lab'];
-      if (hash && validViews.includes(hash)) {
-        setCurrentView(hash);
+      const validViews = ['dashboard', 'practice', 'control_room', 'dojo', 'analytics', 'engagement', 'admin', 'vault', 'lab'];
+      if (hash && (validViews.includes(hash) || hash === 'logic')) {
+        setCurrentView(hash === 'logic' || hash === 'dojo' ? 'practice' : hash);
       }
     };
     window.addEventListener('hashchange', handleHashChange);
@@ -134,7 +133,8 @@ function App() {
       />
 
       {/* Main Content Area */}
-      <main className="flex-1 flex flex-col h-full relative z-0 md:ml-24 pb-20 md:pb-0">
+      <main className="flex-1 flex flex-col h-full relative z-0 md:ml-28 pb-0">
+        <Header hideVow={currentView !== 'dashboard'} />
         <AnimatePresence mode="wait">
           {currentView === 'dashboard' ? (
             <motion.div 
@@ -145,23 +145,22 @@ function App() {
               transition={{ duration: 0.3 }}
               className="flex-1 flex flex-col h-full overflow-hidden"
             >
-              <Header />
               <BentoGrid 
-                onNavigateToLogic={() => setCurrentView('logic')} 
-                onNavigate={(view) => setCurrentView(view)}
+                onNavigateToLogic={() => setCurrentView('practice')} 
+                onNavigate={(view) => setCurrentView(view === 'logic' || view === 'dojo' ? 'practice' : view)}
                 isPortfolioMode={isPortfolioMode}
               />
             </motion.div>
-          ) : currentView === 'logic' ? (
+          ) : currentView === 'practice' ? (
             <motion.div 
-              key="logic"
+              key="practice"
               initial={{ opacity: 0, scale: 0.98 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.98 }}
               transition={{ duration: 0.3 }}
               className="flex-1 h-full overflow-hidden"
             >
-              <LogicHub onBack={() => setCurrentView('dashboard')} />
+              <PracticeHub onBack={() => setCurrentView('dashboard')} />
             </motion.div>
           ) : currentView === 'control_room' ? (
             <motion.div 
@@ -174,17 +173,7 @@ function App() {
             >
               <ControlRoom />
             </motion.div>
-          ) : currentView === 'dojo' ? (
-            <motion.div 
-              key="dojo"
-              initial={{ opacity: 0, scale: 0.98 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.98 }}
-              transition={{ duration: 0.3 }}
-              className="flex-1 h-full overflow-hidden bg-background"
-            >
-              <PatternDojo />
-            </motion.div>
+
           ) : currentView === 'analytics' ? (
             <motion.div 
               key="analytics"

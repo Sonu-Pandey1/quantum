@@ -27,7 +27,7 @@ export function Header({ hideVow = false }: { hideVow?: boolean }) {
   };
 
   return (
-    <header className="h-16 md:h-20 border-b border-white/5 bg-background/40 backdrop-blur-xl flex items-center justify-between px-4 md:px-8 z-[90] sticky top-0">
+    <header className="h-16 md:h-20 bg-transparent flex items-center justify-between px-4 md:px-8 z-[90] sticky top-0">
       {/* Left: Branding */}
       <div className="flex items-center space-x-3">
         <div className="p-2 bg-primary/20 rounded-lg hidden sm:block">

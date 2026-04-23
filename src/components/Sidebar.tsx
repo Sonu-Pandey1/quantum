@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Cpu, DatabaseBackup, Check, Target, LogOut, Settings, User, Eye, EyeOff, Terminal, Briefcase, Activity, ShieldAlert, Zap } from 'lucide-react';
+import { Cpu, DatabaseBackup, Check, Target, LogOut, Settings, User, Eye, EyeOff, Briefcase, Activity, ShieldAlert, Zap, BrainCircuit } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { audio } from '../lib/audio';
@@ -75,7 +75,7 @@ function ProfileDropdown({
   // On desktop: bottom of menu = top of avatar button, opens to the right.
   // On mobile: bottom of menu sits just above the bottom nav bar.
   const getStyle = (): React.CSSProperties => {
-    if (!rect) return { position: 'fixed', bottom: isMobile ? 72 : 16, left: 80, zIndex: 99999 };
+    if (!rect) return { position: 'fixed', bottom: isMobile ? 72 : 16, left: 96, zIndex: 99999 };
     if (isMobile) {
       return {
         position: 'fixed',
@@ -253,7 +253,7 @@ export function Sidebar({ currentView, onViewChange, isPortfolioMode, onTogglePo
 
   const navItems = [
     { id: 'dashboard', icon: Cpu, label: 'Command' },
-    { id: 'dojo', icon: Terminal, label: 'Dojo' },
+    { id: 'practice', icon: BrainCircuit, label: 'Practice' },
     { id: 'vault', icon: Briefcase, label: 'Vault' },
     { id: 'lab', icon: Activity, label: 'The Lab' },
     { id: 'engagement', icon: Zap, label: 'Hub' },
@@ -269,19 +269,15 @@ export function Sidebar({ currentView, onViewChange, isPortfolioMode, onTogglePo
       <motion.aside
         className={cn(
           'fixed z-[100] transition-all duration-500 ease-in-out',
-          'bottom-0 left-0 right-0 h-[72px] md:h-auto md:bottom-6 md:left-6 md:w-24',
+          'bottom-0 left-0 right-0 h-[72px] md:h-auto md:top-4 md:bottom-4 md:left-4 md:w-20',
           'flex flex-row md:flex-col items-center justify-between',
-          'bg-[#0a0a0c]/60 backdrop-blur-2xl border-t md:border border-white/5 md:rounded-[32px] shadow-[0_20px_50px_rgba(0,0,0,0.5)] px-4 md:px-0 md:py-8'
+          'bg-[#0a0a0c]/60 backdrop-blur-2xl border-t md:border border-white/5 md:rounded-[24px] shadow-[0_20px_50px_rgba(0,0,0,0.5)] px-4 md:px-0 md:py-6 overflow-hidden'
         )}
       >
-        {/* Brand Icon (Desktop only) */}
-        <div className="hidden md:flex items-center justify-center w-12 h-12 rounded-2xl bg-gradient-to-br from-primary/20 to-purple-600/20 border border-primary/30 shadow-[0_0_30px_rgba(59,130,246,0.1)] shrink-0 mb-10 mx-auto relative group overflow-hidden">
-          <div className="absolute inset-0 bg-primary/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-          <Target size={26} className="text-primary relative z-10 animate-pulse-slow" />
-        </div>
+
 
         {/* Nav Links */}
-        <nav className="flex-1 flex md:flex-col items-center justify-around md:justify-center w-full md:space-y-2">
+        <nav className="flex-1 flex md:flex-col items-center justify-around md:justify-start w-full md:space-y-2 md:overflow-y-auto md:scrollbar-none md:py-2">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = currentView === item.id;
@@ -294,7 +290,7 @@ export function Sidebar({ currentView, onViewChange, isPortfolioMode, onTogglePo
                 }}
                 onMouseEnter={() => audio.playClick()}
                 className={cn(
-                  'relative flex-1 md:flex-none flex flex-col items-center justify-center transition-all duration-300 rounded-2xl md:w-16 md:h-16 group',
+                  'relative flex-1 md:flex-none flex flex-col items-center justify-center transition-all duration-300 rounded-xl md:w-14 md:h-14 group',
                   isActive ? 'text-primary' : 'text-textMuted hover:text-textMain'
                 )}
               >

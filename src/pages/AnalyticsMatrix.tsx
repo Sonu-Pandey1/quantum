@@ -31,7 +31,7 @@ export function AnalyticsMatrix() {
       exit={{ opacity: 0, y: -20 }}
       className="flex flex-col h-full w-full relative z-10 overflow-hidden"
     >
-      <Header hideVow={true} />
+
       
       <div className="flex-1 overflow-y-auto p-4 md:p-8 pb-32 md:pb-8 space-y-6 scrollbar-none">
         <div className="flex items-center space-x-3 mb-6">

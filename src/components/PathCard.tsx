@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { CheckCircle2, Lock, Loader2, BrainCircuit, Flag, Code2 } from 'lucide-react';
 import { audio } from '../lib/audio';
+import { supabase } from '../lib/supabaseClient';
 
 const ROADMAP = [
   {
@@ -39,20 +40,32 @@ const ROADMAP = [
 ];
 
 export function PathCard({ onNavigateToLogic }: { onNavigateToLogic?: () => void }) {
-  const [logicXp, setLogicXp] = useState(0);
+  const [solvedCount, setSolvedCount] = useState(0);
 
-  // Poll localStorage occasionally to update XP if changed on Logic Hub
   useEffect(() => {
-    const updateXp = () => {
-      const saved = localStorage.getItem('quantum_logic_xp');
-      if (saved) setLogicXp(parseInt(saved, 10));
+    const fetchSolvedCount = async () => {
+      if (!supabase) return;
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      
+      try {
+        const { count, error } = await supabase
+          .from('practice_submissions')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', session.user.id);
+        
+        if (!error && count !== null) setSolvedCount(count);
+      } catch (e) {
+        // Fallback or ignore
+      }
     };
-    updateXp();
+    fetchSolvedCount();
     
-    // Listen for storage events (if changed in another tab) or just poll
-    const interval = setInterval(updateXp, 1000);
+    const interval = setInterval(fetchSolvedCount, 5000);
     return () => clearInterval(interval);
   }, []);
+
+  const masteryPercent = Math.min(100, solvedCount); // Out of 100 questions
 
   return (
     <div className="h-full p-6 flex flex-col relative overflow-hidden group">
@@ -114,18 +127,18 @@ export function PathCard({ onNavigateToLogic }: { onNavigateToLogic?: () => void
         <div className="flex justify-between items-end mb-3">
           <div>
             <h4 className="text-sm font-semibold text-textMain flex items-center">
-              <Code2 size={16} className="mr-2 text-primary" /> Logic Laboratory
+              <Code2 size={16} className="mr-2 text-primary" /> Practice Protocol
             </h4>
-            <p className="text-xs text-textMuted mt-1">Algorithmic Problem Solving</p>
+            <p className="text-xs text-textMuted mt-1">Mastery of Logic & Patterns</p>
           </div>
-          <span className="text-lg font-bold text-primary drop-shadow-[0_0_5px_rgba(59,130,246,0.5)]">{logicXp}%</span>
+          <span className="text-lg font-bold text-primary drop-shadow-[0_0_5px_rgba(59,130,246,0.5)]">{masteryPercent}%</span>
         </div>
         
         <div className="w-full bg-surfaceHighlight rounded-full h-3 mb-4 overflow-hidden shadow-inner">
           <motion.div 
             className="bg-gradient-to-r from-blue-500 to-purple-500 h-3 rounded-full relative" 
             initial={{ width: 0 }}
-            animate={{ width: `${logicXp}%` }}
+            animate={{ width: `${masteryPercent}%` }}
             transition={{ duration: 0.5, type: "spring" }}
           >
             <div className="absolute top-0 right-0 bottom-0 w-10 bg-gradient-to-r from-transparent to-white/40 animate-pulse" />
@@ -140,7 +153,7 @@ export function PathCard({ onNavigateToLogic }: { onNavigateToLogic?: () => void
           onMouseEnter={() => audio.playClick()}
           className="w-full py-2 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/30 hover:border-blue-500/60 rounded-lg text-sm font-medium transition-all duration-300 shadow-[0_0_10px_rgba(59,130,246,0.1)] hover:shadow-[0_0_20px_rgba(59,130,246,0.3)] flex items-center justify-center"
         >
-          <Code2 size={16} className="mr-2" /> Enter Logic Repository
+          <Code2 size={16} className="mr-2" /> Enter Practice Hub
         </button>
       </div>
 

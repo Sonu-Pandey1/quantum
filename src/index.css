@@ -5,6 +5,13 @@
 @tailwind utilities;
 
 @layer base {
+  html {
+    font-size: 14px;
+    @screen md {
+      font-size: 16px;
+    }
+  }
+
   body {
     @apply bg-background text-textMain font-sans antialiased selection:bg-primary/30;
     background-image: 
@@ -45,5 +52,12 @@
   @keyframes pulse {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.7; }
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+  .scrollbar-none {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
   }
 }
