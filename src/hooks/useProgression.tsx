@@ -157,6 +157,23 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
 
     const today = format(new Date(), 'yyyy-MM-dd');
 
+    // Store previous values for rollback
+    const prevPillarXp = { ...pillarXpRef.current };
+    const prevTotalXp = totalXpRef.current;
+    const prevStreak = streakCountRef.current;
+    const prevLastActivity = lastActivityRef.current;
+
+    const rollback = () => {
+      setPillarXp(prevPillarXp);
+      setTotalXp(prevTotalXp);
+      setStreakCount(prevStreak);
+      setLastActivityDate(prevLastActivity);
+      pillarXpRef.current = prevPillarXp;
+      totalXpRef.current = prevTotalXp;
+      streakCountRef.current = prevStreak;
+      lastActivityRef.current = prevLastActivity;
+    };
+
     const currentPillarXp = { ...pillarXpRef.current };
     const currentTotalXp  = totalXpRef.current;
     let currentStreak     = streakCountRef.current;
@@ -212,7 +229,9 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
 
     // 1. Profile update (total_xp + pillar_xp + streak)
     void (async () => {
-      const { error } = await supabase!
+      if (!supabase) return;
+      
+      const { error } = await supabase
         .from('profiles')
         .update({
           total_xp: newTotalXp,
@@ -221,10 +240,14 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
           last_activity_date: newLastActivity,
         })
         .eq('id', uid);
+        
       if (error) {
-        // Retry with minimal payload if full update fails
         console.warn('[addXp] profile update failed:', error.message);
-        const { error: e2 } = await supabase!
+        // Rollback on failure
+        rollback();
+        
+        // Attempt a minimal recovery if it was a schema mismatch or similar
+        const { error: e2 } = await supabase
           .from('profiles')
           .update({ total_xp: newTotalXp })
           .eq('id', uid);
@@ -233,29 +256,31 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
     })();
 
     // 2. Activity log entry
-    supabase
-      .from('activity_logs')
-      .insert({
-        user_id: uid,
-        action_type: actionType,
-        pillar,
-        xp_earned: finalAmount,
-        created_at: new Date().toISOString(),
-      })
-      .then(({ error }) => {
-        if (error) console.warn('[addXp] activity_logs insert failed:', error.message);
-      });
+    if (supabase) {
+      supabase
+        .from('activity_logs')
+        .insert({
+          user_id: uid,
+          action_type: actionType,
+          pillar,
+          xp_earned: finalAmount,
+          created_at: new Date().toISOString(),
+        })
+        .then(({ error }) => {
+          if (error) console.warn('[addXp] activity_logs insert failed:', error.message);
+        });
 
-    // 3. Daily heatmap upsert via RPC
-    supabase
-      .rpc('increment_daily_activity', {
-        p_user_id: uid,
-        p_date: today,
-        p_amount: finalAmount,
-      })
-      .then(({ error }) => {
-        if (error) console.warn('[addXp] increment_daily_activity failed:', error.message);
-      });
+      // 3. Daily heatmap upsert via RPC
+      supabase
+        .rpc('increment_daily_activity', {
+          p_user_id: uid,
+          p_date: today,
+          p_amount: finalAmount,
+        })
+        .then(({ error }) => {
+          if (error) console.warn('[addXp] increment_daily_activity failed:', error.message);
+        });
+    }
 
   }, []);
 

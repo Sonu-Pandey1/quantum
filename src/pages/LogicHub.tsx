@@ -45,22 +45,36 @@ export function LogicHub({ onBack }: { onBack: () => void }) {
   const [logicXp, setLogicXp] = useState(0);
 
   useEffect(() => {
-    setProblems(generateProblems());
+    // Persistence: Load problems from localStorage to maintain completed status
+    const savedProblems = localStorage.getItem('quantum_logic_problems');
+    if (savedProblems) {
+      try {
+        setProblems(JSON.parse(savedProblems));
+      } catch (e) {
+        setProblems(generateProblems());
+      }
+    } else {
+      const initialProblems = generateProblems();
+      setProblems(initialProblems);
+      localStorage.setItem('quantum_logic_problems', JSON.stringify(initialProblems));
+    }
     
     const loadXp = async () => {
       if (supabase) {
         try {
-          const { data } = await supabase
+          const { data, error } = await supabase
             .from('logic_xp')
             .select('xp_gained');
-          if (data) {
+          if (!error && data) {
             const totalXp = data.reduce((acc, curr) => acc + curr.xp_gained, 0);
             if (totalXp > 0) {
               setLogicXp(totalXp);
               return;
             }
           }
-        } catch(e) {}
+        } catch(e) {
+          console.error("Error loading logic XP:", e);
+        }
       }
       // fallback
       const savedXp = localStorage.getItem('quantum_logic_xp');
@@ -75,7 +89,10 @@ export function LogicHub({ onBack }: { onBack: () => void }) {
     const problem = problems.find(p => p.id === id);
     if (!problem) return;
 
-    setProblems(prev => prev.map(p => p.id === id ? { ...p, completed: true } : p));
+    const updatedProblems = problems.map(p => p.id === id ? { ...p, completed: true } : p);
+    setProblems(updatedProblems);
+    localStorage.setItem('quantum_logic_problems', JSON.stringify(updatedProblems));
+    
     const newXp = logicXp + 5;
     setLogicXp(newXp);
     
@@ -91,7 +108,7 @@ export function LogicHub({ onBack }: { onBack: () => void }) {
           xp_gained: 5
         }]);
       } catch (e) {
-        console.error("Failed to sync logic XP");
+        console.error("Failed to sync logic XP", e);
       }
     }
   };
@@ -216,7 +233,7 @@ export function LogicHub({ onBack }: { onBack: () => void }) {
           <div className="flex items-center space-x-2 text-primary font-bold text-lg mb-2">
             <Trophy size={20} /> <h2>Global Leaderboard</h2>
           </div>
-          <p className="text-xs text-textMuted">Real-time planetary logic rankings.</p>
+          <p className="text-xs text-textMuted italic">Simulated protocol rankings for demonstration.</p>
         </div>
 
         <div className="flex-1 p-6 space-y-4 overflow-y-auto">

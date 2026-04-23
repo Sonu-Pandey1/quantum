@@ -216,12 +216,13 @@ export function Sidebar({ currentView, onViewChange, isPortfolioMode, onTogglePo
     
     // Create actual backup logic: export data to JSON
     const exportData = async () => {
+      if (!supabase) return;
       try {
-        const { data: { session } } = await supabase!.auth.getSession();
+        const { data: { session } } = await supabase.auth.getSession();
         if (!session) return;
 
         // Fetch user data for backup
-        const { data: profile } = await supabase!.from('profiles').select('*').eq('id', session.user.id).single();
+        const { data: profile } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
         
         const backup = {
           timestamp: new Date().toISOString(),

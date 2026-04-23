@@ -56,34 +56,35 @@ export function useEngagement() {
     try {
       const fifteenDaysAgo = subDays(new Date(), 15).toISOString();
 
-      // 1. Profile: login streaks
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('current_login_streak, longest_login_streak, last_login_date')
-        .eq('id', user.id)
-        .single();
-
-      // 2. Total unique login days
-      const { count: totalLoginDays } = await supabase
-        .from('login_logs')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', user.id);
-
-      // 3. Total days with real activity
-      const { count: totalActiveDays } = await supabase
-        .from('daily_activity')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', user.id)
-        .gt('activity_count', 0);
-
-      // 4. Recent activity feed (last 15 days, first page)
-      const { data: activityRows } = await supabase
-        .from('activity_logs')
-        .select('id, action_type, pillar, xp_earned, created_at')
-        .eq('user_id', user.id)
-        .gte('created_at', fifteenDaysAgo)
-        .order('created_at', { ascending: false })
-        .range(0, ITEMS_PER_PAGE - 1);
+      // Optimize: Use Promise.all to fetch all data in parallel
+      const [
+        { data: profile },
+        { count: totalLoginDays },
+        { count: totalActiveDays },
+        { data: activityRows }
+      ] = await Promise.all([
+        supabase
+          .from('profiles')
+          .select('current_login_streak, longest_login_streak, last_login_date')
+          .eq('id', user.id)
+          .single(),
+        supabase
+          .from('login_logs')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', user.id),
+        supabase
+          .from('daily_activity')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', user.id)
+          .gt('activity_count', 0),
+        supabase
+          .from('activity_logs')
+          .select('id, action_type, pillar, xp_earned, created_at')
+          .eq('user_id', user.id)
+          .gte('created_at', fifteenDaysAgo)
+          .order('created_at', { ascending: false })
+          .range(0, ITEMS_PER_PAGE - 1)
+      ]);
 
       const recentActivity: RecentActivityItem[] = (activityRows || []).map(item => ({
         id: item.id,
@@ -164,6 +165,20 @@ export function useEngagement() {
   useEffect(() => {
     fetchEngagementData();
   }, [fetchEngagementData]);
+
+  // Periodic update for relative timestamps
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setStats(s => ({
+        ...s,
+        recentActivity: s.recentActivity.map(item => ({
+          ...item,
+          relativeTime: formatDistanceToNow(parseISO(item.timestamp), { addSuffix: true }),
+        })),
+      }));
+    }, 60000);
+    return () => clearInterval(timer);
+  }, []);
 
   return { stats, refresh: fetchEngagementData, loadMore };
 }

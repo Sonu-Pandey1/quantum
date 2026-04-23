@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Save, Settings, Clock, Activity, Target } from 'lucide-react';
 import { audio } from '../lib/audio';
@@ -10,35 +10,33 @@ const defaultTimetable = JSON.stringify([
 ], null, 2);
 
 export function ControlRoom() {
-  const [timetable, setTimetable] = useState(defaultTimetable);
-  const [weightGoal, setWeightGoal] = useState('70');
-  const [sapTarget, setSapTarget] = useState('Master ABAP Objects');
+  const [timetable, setTimetable] = useState(() => localStorage.getItem('quantum_timetable') || defaultTimetable);
+  const [weightGoal, setWeightGoal] = useState(() => localStorage.getItem('quantum_weight_goal') || '70');
+  const [sapTarget, setSapTarget] = useState(() => localStorage.getItem('quantum_sap_target') || 'Master ABAP Objects');
   const [savedMessage, setSavedMessage] = useState('');
 
-  useEffect(() => {
-    const savedTimetable = localStorage.getItem('quantum_timetable');
-    if (savedTimetable) setTimetable(savedTimetable);
-    
-    const savedWeight = localStorage.getItem('quantum_weight_goal');
-    if (savedWeight) setWeightGoal(savedWeight);
-    
-    const savedSap = localStorage.getItem('quantum_sap_target');
-    if (savedSap) setSapTarget(savedSap);
-  }, []);
-
   const handleSave = () => {
-    audio.playSuccess();
     try {
-      // Validate JSON
-      JSON.parse(timetable);
+      // Validate JSON Schema
+      const parsed = JSON.parse(timetable);
+      if (!Array.isArray(parsed)) throw new Error('Invalid Format: Root must be an array');
+      
+      // Basic structure check
+      parsed.forEach((item, index) => {
+        if (!item.title || !item.timeStart || !item.timeEnd) {
+          throw new Error(`Invalid Item at index ${index}: Missing title, timeStart, or timeEnd`);
+        }
+      });
+
+      audio.playSuccess();
       localStorage.setItem('quantum_timetable', timetable);
       localStorage.setItem('quantum_weight_goal', weightGoal);
       localStorage.setItem('quantum_sap_target', sapTarget);
       
       setSavedMessage('Configuration Saved Successfully');
       setTimeout(() => setSavedMessage(''), 3000);
-    } catch (e) {
-      setSavedMessage('Error: Invalid Timetable JSON');
+    } catch (e: any) {
+      setSavedMessage(`Error: ${e.message || 'Invalid Timetable JSON'}`);
       setTimeout(() => setSavedMessage(''), 3000);
     }
   };

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabaseClient';
-import { subDays, format, startOfWeek, addDays, isSameDay, parseISO } from 'date-fns';
+import { format, startOfWeek, addDays, isSameDay, parseISO } from 'date-fns';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Flame, Info, Calendar, Clock, Activity, X, Zap } from 'lucide-react';
 
@@ -76,7 +76,7 @@ export function ActivityGraph() {
       const map: Record<string, DayActivity> = {};
       let total = 0;
 
-      dailyRows.forEach((row: any) => {
+      (dailyRows as any[]).forEach((row) => {
         const count = row.activity_count ?? 0;
         total += count;
         let level = 0;
@@ -88,9 +88,9 @@ export function ActivityGraph() {
       });
 
       // Longest activity streak
-      const sorted = dailyRows
-        .filter((d: any) => (d.activity_count ?? 0) > 0)
-        .map((d: any) => d.date)
+      const sorted = (dailyRows as any[])
+        .filter((d) => (d.activity_count ?? 0) > 0)
+        .map((d) => d.date)
         .sort();
 
       let longest = 0, cur = 0;
@@ -144,10 +144,6 @@ export function ActivityGraph() {
     setDayLogs(data ?? []);
     setLoadingLogs(false);
   };
-
-  // ── Build Full Calendar Year Grid ───────────────────────────────────────
-  const isCreationYear = accountCreatedAt && accountCreatedAt.getFullYear() === selectedYear;
-  const isCurrentYear = new Date().getFullYear() === selectedYear;
 
   // Always generate a full year (53 weeks) for visual consistency and alignment
   const startDate = new Date(selectedYear, 0, 1);

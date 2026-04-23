@@ -30,15 +30,37 @@ function App() {
 
   const loginRecordedRef = useRef(false);
 
+  // Simple hash-based routing support
   useEffect(() => {
-    if (!supabase) {
+    const handleHashChange = () => {
+      const hash = window.location.hash.replace('#', '');
+      const validViews = ['dashboard', 'logic', 'control_room', 'dojo', 'analytics', 'engagement', 'admin', 'vault', 'lab'];
+      if (hash && validViews.includes(hash)) {
+        setCurrentView(hash);
+      }
+    };
+    window.addEventListener('hashchange', handleHashChange);
+    if (window.location.hash) handleHashChange();
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+
+  // Update hash when view changes
+  useEffect(() => {
+    if (window.location.hash !== `#${currentView}`) {
+      window.location.hash = currentView;
+    }
+  }, [currentView]);
+
+  useEffect(() => {
+    const client = supabase;
+    if (!client) {
       setLoadingAuth(false);
       return;
     }
 
     const fetchRole = async (userId: string) => {
       try {
-        const { data } = await supabase.from('profiles').select('role').eq('id', userId).single();
+        const { data } = await client.from('profiles').select('role').eq('id', userId).single();
         setIsAdmin(data?.role === 'admin');
       } catch (e) {
         setIsAdmin(false);
@@ -46,7 +68,7 @@ function App() {
     };
 
     // Initial session check
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    client.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       if (session) {
         fetchRole(session.user.id);
@@ -60,7 +82,7 @@ function App() {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = client.auth.onAuthStateChange((_event, session) => {
       setSession(session);
       if (session) {
         fetchRole(session.user.id);

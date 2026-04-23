@@ -2,13 +2,21 @@ import { useState, useEffect } from 'react';
 import { ShieldAlert, Users, ListPlus, Terminal } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 
+interface UserProfile {
+  id: string;
+  username: string | null;
+  role: 'user' | 'admin';
+  total_xp: number;
+  streak_count: number;
+}
+
 export function AdminDashboard() {
-  const [users, setUsers] = useState<any[]>([]);
+  const [users, setUsers] = useState<UserProfile[]>([]);
 
   useEffect(() => {
     if (supabase) {
       supabase.from('profiles').select('*').then(({ data }) => {
-        if (data) setUsers(data);
+        if (data) setUsers(data as UserProfile[]);
       });
     }
   }, []);
