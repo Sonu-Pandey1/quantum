@@ -8,6 +8,8 @@ export interface Question {
   hint: string;
   xpFirstSolve: number;
   xpRepeatSolve: number;
+  pseudoCode?: string;
+  correctAnswer?: string;
 }
 
 export const QUESTIONS: Question[] = [

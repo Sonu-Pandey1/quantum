@@ -3,12 +3,13 @@ import { supabase } from '../lib/supabaseClient';
 import { format, startOfWeek, addDays, isSameDay, parseISO } from 'date-fns';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Flame, Info, Calendar, Clock, Activity, X, Zap } from 'lucide-react';
-import { Skeleton, GraphSkeleton } from './Skeleton';
+import { GraphSkeleton } from './Skeleton';
 
 interface DayActivity {
   date: string;
   count: number;
   level: number; // 0-4
+  accuracy?: number;
 }
 
 interface ActivityLog {

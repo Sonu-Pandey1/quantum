@@ -118,7 +118,7 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
       setFeedback({ type: 'error', message: validation.message });
       audio.playClick();
       // Log failed attempt for analytics (0 XP)
-      addXp(selectedQuestion.category === 'HR' ? 'General' : 'Study', `FAILED: ${selectedQuestion.title}`, 0);
+      await addXp(selectedQuestion.category === 'HR' ? 'Mind' : 'Study', `FAILED: ${selectedQuestion.title}`, 0);
       return;
     }
 
@@ -180,7 +180,7 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
     const finalXpWithMultiplier = Math.floor(xpGained * multiplier);
 
     // --- Velocity Tracking ---
-    const durationMs = Date.now() - startTime;
+    const durationMs = Date.now() - (startTime ?? Date.now());
     const durationSec = Math.floor(durationMs / 1000);
     const durationStr = durationSec < 60 ? `${durationSec}s` : `${Math.floor(durationSec / 60)}m ${durationSec % 60}s`;
 

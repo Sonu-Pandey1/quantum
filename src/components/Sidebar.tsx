@@ -148,6 +148,40 @@ function ProfileDropdown({
             {isPortfolioMode ? 'Exit Portfolio Mode' : 'Enter Portfolio Mode'}
           </button>
 
+          {/* Strategic Control */}
+          <button
+            onClick={() => {
+              audio.playClick();
+              onNavigate('strategic_control');
+              onClose();
+            }}
+            className="w-full text-left px-3 py-2 text-xs font-medium text-white/60 hover:text-white hover:bg-white/8 rounded-xl flex items-center gap-2.5 transition-all duration-150"
+          >
+            <Target size={14} className="text-primary shrink-0" />
+            Strategic Control
+          </button>
+
+          {/* Super Admin Access */}
+          {supabase && (
+            <button
+              onClick={async () => {
+                if (!supabase) return;
+                const { data } = await supabase.from('profiles').select('role').single();
+                if (data?.role === 'admin') {
+                  audio.playClick();
+                  onNavigate('super_admin');
+                  onClose();
+                } else {
+                  alert('Administrator privileges required.');
+                }
+              }}
+              className="w-full text-left px-3 py-2 text-xs font-medium text-white/60 hover:text-white hover:bg-white/8 rounded-xl flex items-center gap-2.5 transition-all duration-150"
+            >
+              <ShieldAlert size={14} className="text-red-500 shrink-0" />
+              Super Admin
+            </button>
+          )}
+
           {/* System Settings */}
           <button
             onClick={() => {
@@ -158,7 +192,7 @@ function ProfileDropdown({
             className="w-full text-left px-3 py-2 text-xs font-medium text-white/60 hover:text-white hover:bg-white/8 rounded-xl flex items-center gap-2.5 transition-all duration-150"
           >
             <Settings size={14} className="text-amber-400 shrink-0" />
-            System Settings
+            System Override (JSON)
           </button>
 
           {/* Divider */}
@@ -253,11 +287,12 @@ export function Sidebar({ currentView, onViewChange, isPortfolioMode, onTogglePo
 
   const navItems = [
     { id: 'dashboard', icon: Cpu, label: 'Command' },
+    { id: 'strategic_control', icon: Target, label: 'Strategy' },
     { id: 'practice', icon: BrainCircuit, label: 'Practice' },
     { id: 'vault', icon: Briefcase, label: 'Vault' },
     { id: 'lab', icon: Activity, label: 'The Lab' },
     { id: 'engagement', icon: Zap, label: 'Hub' },
-    { id: 'control_room', icon: Settings, label: 'Control Room' },
+    { id: 'control_room', icon: Settings, label: 'System' },
   ];
 
   if (isAdmin) {

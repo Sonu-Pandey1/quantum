@@ -3,7 +3,7 @@
  * Implements logical equivalence, similarity checks, and structural code analysis.
  */
 
-import { Question } from './questions';
+import type { Question } from './questions';
 
 export interface ValidationResult {
   isValid: boolean;

@@ -6,6 +6,25 @@ import confetti from 'canvas-confetti';
 
 export type Pillar = 'Study' | 'Health' | 'Finance' | 'Mind';
 
+// Logarithmic scaling: Level = (XP / 100)^(1/1.5) + 1
+// Level 1: 0 XP
+// Level 2: 282 XP
+// Level 10: 3,162 XP
+function calculateLevel(xp: number): number {
+  if (xp <= 0) return 1;
+  return Math.floor(Math.pow(xp / 100, 1 / 1.5)) + 1;
+}
+
+export interface Buff {
+  id: string;
+  name: string;
+  multiplier: number;
+  expiresAt: number;
+  type: Pillar | 'Global';
+}
+
+export type Archetype = 'Technical Elite' | 'Wealth Architect' | 'Vitality Vanguard' | 'None';
+
 interface ProgressionState {
   xp: Record<Pillar, number>;
   totalXp: number;
@@ -15,11 +34,15 @@ interface ProgressionState {
   streakCount: number;
   lastActivityDate: string | null;
   role: 'user' | 'admin';
+  archetype: Archetype;
+  buffs: Buff[];
 }
 
 interface ProgressionContextType {
   state: ProgressionState;
   addXp: (pillar: Pillar, actionType: string, baseAmount: number) => Promise<void>;
+  addBuff: (buff: Buff) => void;
+  setArchetype: (a: Archetype) => void;
   showLevelUp: boolean;
   levelUpData: { pillar: Pillar | 'Global'; newLevel: number; newRank?: string } | null;
   closeLevelUp: () => void;
@@ -34,11 +57,6 @@ function getRank(totalLevel: number): string {
   if (totalLevel < 30) return 'Commander';
   if (totalLevel < 50) return 'Elite Vanguard';
   return 'Grandmaster';
-}
-
-// level = floor(total_xp / 100) + 1
-function calculateLevel(xp: number): number {
-  return Math.floor(Math.max(0, xp) / 100) + 1;
 }
 
 const EMPTY_PILLAR_XP: Record<Pillar, number> = { Study: 0, Health: 0, Finance: 0, Mind: 0 };
@@ -77,6 +95,8 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
   const [streakCount, setStreakCount] = useState(0);
   const [lastActivityDate, setLastActivityDate] = useState<string | null>(null);
   const [role, setRole] = useState<'user' | 'admin'>('user');
+  const [archetype, setArchetype] = useState<Archetype>('None');
+  const [buffs, setBuffs] = useState<Buff[]>([]);
   const [showLevelUp, setShowLevelUp] = useState(false);
   const [levelUpData, setLevelUpData] = useState<{
     pillar: Pillar | 'Global';
@@ -121,12 +141,18 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
         const dbStreak     = Number(profile.streak_count) || 0;
         const dbLastAct    = profile.last_activity_date ?? null;
         const dbRole       = (profile.role as 'user' | 'admin') ?? 'user';
+        
+        // Load archetype and buffs from localStorage as fallback if DB schema doesn't support them yet
+        const localArchetype = localStorage.getItem(`quantum_archetype_${user.id}`) as Archetype || 'None';
+        const localBuffs = JSON.parse(localStorage.getItem(`quantum_buffs_${user.id}`) || '[]');
 
         setTotalXp(dbTotalXp);
         setPillarXp(dbPillarXp);
         setStreakCount(dbStreak);
         setLastActivityDate(dbLastAct);
         setRole(dbRole);
+        setArchetype(localArchetype);
+        setBuffs(localBuffs.filter((b: Buff) => b.expiresAt > Date.now()));
 
         // Prime refs so addXp works immediately without waiting for re-render
         totalXpRef.current    = dbTotalXp;
@@ -193,7 +219,37 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
     }
 
     const multiplier  = currentStreak >= 3 ? 1.5 : 1.0;
-    const finalAmount = Math.floor(baseAmount * multiplier);
+    
+    // --- Advanced Multipliers ---
+    let finalMultiplier = multiplier;
+    
+    // 1. Archetype Boost
+    if (archetype === 'Technical Elite' && pillar === 'Study') finalMultiplier *= 1.2;
+    if (archetype === 'Wealth Architect' && pillar === 'Finance') finalMultiplier *= 1.2;
+    if (archetype === 'Vitality Vanguard' && pillar === 'Health') finalMultiplier *= 1.2;
+    
+    // 2. Active Buffs
+    const activeBuffs = buffs.filter(b => b.expiresAt > Date.now() && (b.type === pillar || b.type === 'Global'));
+    activeBuffs.forEach(b => { finalMultiplier *= b.multiplier; });
+    
+    // 3. Imbalance Tax (System Balance Control)
+    const currentLevels = {
+      Study: calculateLevel(currentPillarXp.Study),
+      Health: calculateLevel(currentPillarXp.Health),
+      Finance: calculateLevel(currentPillarXp.Finance),
+      Mind: calculateLevel(currentPillarXp.Mind),
+    };
+    const maxLevel = Math.max(...Object.values(currentLevels));
+    const thisLevel = currentLevels[pillar];
+    if (maxLevel - thisLevel > 5) {
+      // If this pillar is lagging significantly, it gets a "Catch-up" bonus!
+      finalMultiplier *= 1.5;
+    } else if (thisLevel === maxLevel && Object.values(currentLevels).some(l => maxLevel - l > 5)) {
+      // If this pillar is too far ahead, it gets a "Focus Tax"
+      finalMultiplier *= 0.7;
+    }
+
+    const finalAmount = Math.floor(baseAmount * finalMultiplier);
 
     const newPillarXp    = currentPillarXp[pillar] + finalAmount;
     const newTotalXp     = currentTotalXp + finalAmount;
@@ -310,8 +366,19 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
           streakCount,
           lastActivityDate,
           role,
+          archetype,
+          buffs,
         },
         addXp,
+        addBuff: (buff: Buff) => {
+          const newBuffs = [...buffs, buff];
+          setBuffs(newBuffs);
+          if (userIdRef.current) localStorage.setItem(`quantum_buffs_${userIdRef.current}`, JSON.stringify(newBuffs));
+        },
+        setArchetype: (a: Archetype) => {
+          setArchetype(a);
+          if (userIdRef.current) localStorage.setItem(`quantum_archetype_${userIdRef.current}`, a);
+        },
         showLevelUp,
         levelUpData,
         closeLevelUp,

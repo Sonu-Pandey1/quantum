@@ -1,7 +1,6 @@
 import { motion } from 'framer-motion';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart, Area, CartesianGrid } from 'recharts';
 import { Target, Activity, Flame, ShieldAlert, Zap } from 'lucide-react';
-import { Header } from '../components/Header';
 
 const WEIGHT_DATA = [
   { day: 'Day 1', weight: 98.5 },

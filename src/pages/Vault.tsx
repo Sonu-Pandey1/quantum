@@ -10,7 +10,7 @@ import { useProgression } from '../hooks/useProgression';
 
 export function Vault() {
   const { state: { xp, level } } = useProgression();
-  const [activeBlueprint, setActiveBlueprint] = useState<string | null>(null);
+  const [, setActiveBlueprint] = useState<string | null>(null);
 
   const blueprints = [
     { id: 'tax', title: 'Tax Optimization Protocol', level: 5, icon: <ShieldCheck size={18} /> },

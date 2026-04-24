@@ -1,10 +1,9 @@
-
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { 
   Activity, HeartPulse, Dna, Zap, 
   Brain, Moon, Flame, Timer, 
-  CheckCircle2, AlertCircle, Info, 
+  CheckCircle2, AlertCircle, 
   ChevronRight, Thermometer
 } from 'lucide-react';
 import { useProgression } from '../hooks/useProgression';
