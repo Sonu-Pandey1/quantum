@@ -17,6 +17,7 @@ export interface EngagementStats {
 export interface RecentActivityItem {
   id: string;
   type: string;
+  breakdown: string | null;
   pillar: string;
   xp: number;
   timestamp: string;
@@ -38,7 +39,10 @@ const EMPTY_STATS: EngagementStats = {
 const ITEMS_PER_PAGE = 20;
 
 export function useEngagement() {
-  const [stats, setStats] = useState<EngagementStats>(EMPTY_STATS);
+  const [stats, setStats] = useState<EngagementStats>({
+    ...EMPTY_STATS,
+    loading: true
+  });
 
   const fetchEngagementData = useCallback(async () => {
     if (!supabase) {
@@ -54,7 +58,10 @@ export function useEngagement() {
     }
 
     try {
-      const fifteenDaysAgo = subDays(new Date(), 15).toISOString();
+      // Initial load: Only show today's activity for speed
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+      const todayIso = todayStart.toISOString();
 
       // Optimize: Use Promise.all to fetch all data in parallel
       const [
@@ -81,19 +88,23 @@ export function useEngagement() {
           .from('activity_logs')
           .select('id, action_type, pillar, xp_earned, created_at')
           .eq('user_id', user.id)
-          .gte('created_at', fifteenDaysAgo)
+          .gte('created_at', todayIso)
           .order('created_at', { ascending: false })
           .range(0, ITEMS_PER_PAGE - 1)
       ]);
 
-      const recentActivity: RecentActivityItem[] = (activityRows || []).map(item => ({
-        id: item.id,
-        type: item.action_type,
-        pillar: item.pillar ?? 'General',
-        xp: item.xp_earned ?? 0,
-        timestamp: item.created_at,
-        relativeTime: formatDistanceToNow(parseISO(item.created_at), { addSuffix: true }),
-      }));
+      const recentActivity: RecentActivityItem[] = (activityRows || []).map(item => {
+        const [type, breakdown] = (item.action_type || '').split('|');
+        return {
+          id: item.id,
+          type: type || 'Activity',
+          breakdown: breakdown || null,
+          pillar: item.pillar ?? 'General',
+          xp: item.xp_earned ?? 0,
+          timestamp: item.created_at,
+          relativeTime: formatDistanceToNow(parseISO(item.created_at), { addSuffix: true }),
+        };
+      });
 
       setStats({
         currentLoginStreak: profile?.current_login_streak ?? 0,
@@ -125,27 +136,30 @@ export function useEngagement() {
     }
 
     try {
-      const fifteenDaysAgo = subDays(new Date(), 15).toISOString();
       const start = stats.recentActivity.length;
       const end = start + ITEMS_PER_PAGE - 1;
 
+      // When loading more, we don't restrict to today
       const { data: activityRows } = await supabase
         .from('activity_logs')
         .select('id, action_type, pillar, xp_earned, created_at')
         .eq('user_id', user.id)
-        .gte('created_at', fifteenDaysAgo)
         .order('created_at', { ascending: false })
         .range(start, end);
 
       if (activityRows && activityRows.length > 0) {
-        const newItems: RecentActivityItem[] = activityRows.map(item => ({
-          id: item.id,
-          type: item.action_type,
-          pillar: item.pillar ?? 'General',
-          xp: item.xp_earned ?? 0,
-          timestamp: item.created_at,
-          relativeTime: formatDistanceToNow(parseISO(item.created_at), { addSuffix: true }),
-        }));
+        const newItems: RecentActivityItem[] = activityRows.map(item => {
+          const [type, breakdown] = (item.action_type || '').split('|');
+          return {
+            id: item.id,
+            type: type || 'Activity',
+            breakdown: breakdown || null,
+            pillar: item.pillar ?? 'General',
+            xp: item.xp_earned ?? 0,
+            timestamp: item.created_at,
+            relativeTime: formatDistanceToNow(parseISO(item.created_at), { addSuffix: true }),
+          };
+        });
 
         setStats(s => ({
           ...s,
@@ -160,7 +174,7 @@ export function useEngagement() {
       console.error('[useEngagement] loadMore error:', err);
       setStats(s => ({ ...s, loadingMore: false }));
     }
-  }, [stats.loadingMore, stats.hasMore, stats.recentActivity.length]);
+  }, [stats.loadingMore, stats.hasMore]); // Removed length dependency to prevent recreating on every scroll finish
 
   useEffect(() => {
     fetchEngagementData();

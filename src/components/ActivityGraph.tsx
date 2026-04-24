@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabaseClient';
 import { format, startOfWeek, addDays, isSameDay, parseISO } from 'date-fns';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Flame, Info, Calendar, Clock, Activity, X, Zap } from 'lucide-react';
+import { Skeleton, GraphSkeleton } from './Skeleton';
 
 interface DayActivity {
   date: string;
@@ -23,6 +24,7 @@ export function ActivityGraph() {
   const [accountCreatedAt, setAccountCreatedAt] = useState<Date | null>(null);
   const [availableYears, setAvailableYears] = useState<number[]>([]);
   const [activityData, setActivityData] = useState<Record<string, DayActivity>>({});
+  const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({ total: 0, longestStreak: 0 });
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [dayLogs, setDayLogs] = useState<ActivityLog[]>([]);
@@ -45,13 +47,19 @@ export function ActivityGraph() {
     const startOfYear = `${selectedYear}-01-01`;
     const endOfYear = `${selectedYear}-12-31`;
 
-    const [{ data: dailyRows }, { data: profile }] = await Promise.all([
+    const [{ data: dailyRows }, { data: logs }, { data: profile }] = await Promise.all([
       supabase
         .from('daily_activity')
         .select('date, activity_count')
         .eq('user_id', user.id)
         .gte('date', startOfYear)
         .lte('date', endOfYear),
+      supabase
+        .from('activity_logs')
+        .select('created_at, action_type')
+        .eq('user_id', user.id)
+        .gte('created_at', startOfYear)
+        .lte('created_at', endOfYear),
       supabase
         .from('profiles')
         .select('streak_count, created_at')
@@ -76,6 +84,17 @@ export function ActivityGraph() {
       const map: Record<string, DayActivity> = {};
       let total = 0;
 
+      // Group logs by day for accuracy
+      const dailyAccuracy: Record<string, { solved: number; total: number }> = {};
+      logs?.forEach(log => {
+        const d = log.created_at.split('T')[0];
+        if (!dailyAccuracy[d]) dailyAccuracy[d] = { solved: 0, total: 0 };
+        dailyAccuracy[d].total++;
+        if (!log.action_type?.startsWith('FAILED:')) {
+          dailyAccuracy[d].solved++;
+        }
+      });
+
       (dailyRows as any[]).forEach((row) => {
         const count = row.activity_count ?? 0;
         total += count;
@@ -84,7 +103,11 @@ export function ActivityGraph() {
         else if (count >= 5) level = 3;
         else if (count >= 2) level = 2;
         else if (count >= 1) level = 1;
-        map[row.date] = { date: row.date, count, level };
+
+        const accInfo = dailyAccuracy[row.date];
+        const accuracy = accInfo ? (accInfo.solved / accInfo.total) * 100 : undefined;
+        
+        map[row.date] = { date: row.date, count, level, accuracy };
       });
 
       // Longest activity streak
@@ -111,6 +134,7 @@ export function ActivityGraph() {
     }
 
     setCurrentStreakCount(profile?.streak_count ?? 0);
+    setLoading(false);
   }
 
   // Scroll to end (most recent)
@@ -198,6 +222,10 @@ export function ActivityGraph() {
       <div className="flex flex-col lg:flex-row gap-4">
         {/* Main Grid */}
         <div className="glass-panel p-3 md:p-5 border border-white/10 rounded-2xl flex-1">
+          {loading ? (
+            <GraphSkeleton />
+          ) : (
+            <>
           <div className="flex justify-between items-center mb-4 px-1">
             <h3 className="text-xs font-bold text-textMain uppercase tracking-widest flex items-center">
               <Activity size={14} className="mr-2 text-primary" /> Contribution Graph
@@ -255,22 +283,16 @@ export function ActivityGraph() {
                       const isVisible = !isBeforeCreation && !isAfterYear && !isOtherYear;
                       
                       return (
-                        <motion.div
+                        <div
                           key={dateStr}
-                          whileHover={isVisible ? { 
-                            scale: 1.4, 
-                            zIndex: 50, 
-                            boxShadow: "0 0 15px rgba(52,211,153,0.5)",
-                            backgroundColor: act.level === 0 ? "rgba(255,255,255,0.15)" : undefined
-                          } : {}}
                           onClick={() => isVisible && fetchDayLogs(dateStr)}
-                          title={isVisible ? `${act.count} action${act.count !== 1 ? 's' : ''} on ${format(day, 'MMM d, yyyy')}` : undefined}
+                          title={isVisible ? `${act.count} action${act.count !== 1 ? 's' : ''}${act.accuracy !== undefined ? ` (${Math.round(act.accuracy)}% accuracy)` : ''} on ${format(day, 'MMM d, yyyy')}` : undefined}
                           className={`
-                            w-[12px] h-[12px] md:w-[14px] md:h-[14px] rounded-[2px] border transition-all duration-300
+                            w-[12px] h-[12px] md:w-[14px] md:h-[14px] rounded-[2px] border transition-all duration-200
                             ${!isVisible ? 'opacity-0 pointer-events-none' : getLevelColor(act.level)}
                             ${isToday ? 'ring-2 ring-primary ring-offset-2 ring-offset-[#050505] z-10' : 'border-white/5'}
                             ${isFuture && isVisible ? 'opacity-30 cursor-default' : ''}
-                            ${isVisible && act.level > 0 ? 'hover:brightness-125' : ''}
+                            ${isVisible && act.level > 0 ? 'hover:scale-125 hover:z-50 hover:brightness-125 cursor-pointer' : isVisible ? 'hover:bg-white/20' : ''}
                           `}
                         />
                       );
@@ -293,7 +315,9 @@ export function ActivityGraph() {
                 ))}
               </div>
             </div>
-          </div>
+            </div>
+          </>
+          )}
         </div>
 
         {/* Year Selector Sidebar */}

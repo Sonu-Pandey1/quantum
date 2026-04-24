@@ -100,8 +100,25 @@ function App() {
 
   if (loadingAuth) {
     return (
-      <div className="h-screen w-full bg-background flex items-center justify-center">
-        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+      <div className="h-screen w-full bg-background flex flex-col items-center justify-center p-8 space-y-8">
+        <div className="flex items-center space-x-4 animate-pulse">
+          <div className="w-12 h-12 bg-primary/20 rounded-2xl border border-primary/20" />
+          <div className="space-y-2">
+            <div className="h-4 w-48 bg-white/10 rounded-full" />
+            <div className="h-2 w-32 bg-white/5 rounded-full" />
+          </div>
+        </div>
+        <div className="max-w-md w-full space-y-4">
+          <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
+            <motion.div 
+              initial={{ x: '-100%' }}
+              animate={{ x: '100%' }}
+              transition={{ repeat: Infinity, duration: 1.5, ease: 'linear' }}
+              className="h-full w-1/3 bg-primary"
+            />
+          </div>
+          <p className="text-[10px] text-textMuted uppercase tracking-[0.3em] font-black text-center">Initializing Neural Link</p>
+        </div>
       </div>
     );
   }

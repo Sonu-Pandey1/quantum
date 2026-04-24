@@ -10,6 +10,46 @@ import { useProgression } from '../hooks/useProgression';
 import { QUESTIONS } from '../lib/questions';
 import type { Question } from '../lib/questions';
 import { formatDistanceToNow, parseISO, isAfter, addDays } from 'date-fns';
+import { ListSkeleton } from '../components/Skeleton';
+
+// Inlined validator logic to ensure stability
+function validateAnswer(question: Question, input: string): { isValid: boolean; message: string } {
+  const cleanInput = input.trim().toLowerCase();
+  if (!cleanInput || cleanInput.length < 5) {
+    return { isValid: false, message: 'Your solution is too brief. Please provide more detail.' };
+  }
+
+  // Logic & ABAP Technical
+  if (question.category === 'Logic' || question.category === 'ABAP') {
+    if (!question.correctAnswer) return { isValid: true, message: 'Accepted.' };
+    const target = question.correctAnswer.toLowerCase().trim();
+    if (cleanInput === target) return { isValid: true, message: 'Perfect! Logic is sound.' };
+    const normalizedInput = cleanInput.replace(/[^a-z0-9]/g, '');
+    const normalizedTarget = target.replace(/[^a-z0-9]/g, '');
+    if (normalizedInput === normalizedTarget) return { isValid: true, message: 'Correct formatting.' };
+    if (cleanInput.includes(target) || target.includes(cleanInput)) return { isValid: true, message: 'Core logic identified.' };
+    return { isValid: false, message: 'Logic does not match expected protocol.' };
+  }
+
+  // HR questions
+  if (question.category === 'HR') {
+    if (!question.correctAnswer) return { isValid: true, message: 'Accepted.' };
+    // Simple similarity check
+    const isRelated = cleanInput.length > 20 && (cleanInput.includes('talk') || cleanInput.includes('private') || cleanInput.includes('manager') || cleanInput.includes('learn'));
+    if (isRelated) return { isValid: true, message: 'Professional standard met.' };
+    return { isValid: false, message: 'Response does not align with core principles.' };
+  }
+
+  // Pattern questions
+  if (question.category === 'Pattern') {
+    const hasLoop = /for|while|loop|do|repeat/i.test(input);
+    const hasPrint = /print|console|write|output|\*/i.test(input);
+    if (hasLoop && hasPrint) return { isValid: true, message: 'Pattern logic verified.' };
+    return { isValid: false, message: 'Pattern requires iteration and output.' };
+  }
+
+  return { isValid: true, message: 'Accepted.' };
+}
 
 interface Submission {
   question_id: string;
@@ -18,14 +58,28 @@ interface Submission {
 }
 
 export function PracticeHub({ onBack }: { onBack: () => void }) {
-  const [activeTab, setActiveTab] = useState<'All' | 'Pattern' | 'Logic' | 'HR' | 'ABAP'>('All');
+  const [activeTab, setActiveTab] = useState<'All' | 'Pattern' | 'Logic' | 'HR' | 'ABAP' | 'Training'>('All');
+  const [difficultyFilter, setDifficultyFilter] = useState<'All' | 'Easy' | 'Medium' | 'Hard'>('All');
   const [search, setSearch] = useState('');
   const [submissions, setSubmissions] = useState<Record<string, Submission>>({});
   const [selectedQuestion, setSelectedQuestion] = useState<Question | null>(null);
   const [userAnswer, setUserAnswer] = useState('');
-  const [feedback, setFeedback] = useState<{ type: 'success' | 'error', message: string } | null>(null);
+  const [feedback, setFeedback] = useState<{ type: 'success' | 'error', message: string, bonus?: number } | null>(null);
   const [loading, setLoading] = useState(true);
-  const { addXp } = useProgression();
+  const [startTime, setStartTime] = useState<number | null>(null);
+  const [hardStreak, setHardStreak] = useState(0);
+  const { addXp, state } = useProgression();
+
+  // Load hard streak from localStorage
+  useEffect(() => {
+    const saved = localStorage.getItem('quantum_hard_streak');
+    if (saved) setHardStreak(parseInt(saved));
+  }, []);
+
+  const saveHardStreak = (newStreak: number) => {
+    setHardStreak(newStreak);
+    localStorage.setItem('quantum_hard_streak', newStreak.toString());
+  };
 
   const fetchSubmissions = useCallback(async () => {
     if (!supabase) return;
@@ -59,12 +113,12 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
   const handleSolve = async () => {
     if (!selectedQuestion) return;
 
-    // Effort-based validation: System accepts any answer longer than 10 characters
-    const isCorrect = userAnswer.trim().length >= 10; 
-
-    if (!isCorrect) {
-      setFeedback({ type: 'error', message: 'Incorrect logic. System rejected submission.' });
-      audio.playClick(); // Error sound?
+    const validation = validateAnswer(selectedQuestion, userAnswer);
+    if (!validation.isValid) {
+      setFeedback({ type: 'error', message: validation.message });
+      audio.playClick();
+      // Log failed attempt for analytics (0 XP)
+      addXp(selectedQuestion.category === 'HR' ? 'General' : 'Study', `FAILED: ${selectedQuestion.title}`, 0);
       return;
     }
 
@@ -82,10 +136,23 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
 
     audio.playSuccess();
     const isRepeat = !!sub;
-    const xpGained = isRepeat ? selectedQuestion.xpRepeatSolve : selectedQuestion.xpFirstSolve;
+    let xpGained = isRepeat ? selectedQuestion.xpRepeatSolve : selectedQuestion.xpFirstSolve;
+    
+    // Time Bonus Logic
+    let timeBonus = 0;
+    if (startTime) {
+      const elapsedSeconds = (Date.now() - startTime) / 1000;
+      const targetSeconds = selectedQuestion.difficulty === 'Easy' ? 45 : selectedQuestion.difficulty === 'Medium' ? 120 : 300;
+      if (elapsedSeconds < targetSeconds) {
+        timeBonus = Math.floor((targetSeconds - elapsedSeconds) / 10);
+        xpGained += timeBonus;
+      }
+    }
 
-    // Award XP via existing progression system
-    await addXp('Study', `Solved: ${selectedQuestion.title}`, xpGained);
+    // Hard Streak Logic
+    if (selectedQuestion.difficulty === 'Hard') {
+      saveHardStreak(hardStreak + 1);
+    }
 
     // Sync to DB
     if (supabase) {
@@ -97,7 +164,7 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
             question_id: selectedQuestion.id,
             last_solved_at: now.toISOString(),
             solve_count: (sub?.solve_count || 0) + 1,
-            total_xp_earned: (sub?.solve_count || 0) * selectedQuestion.xpRepeatSolve + selectedQuestion.xpFirstSolve // rough calc
+            total_xp_earned: (sub?.solve_count || 0) * selectedQuestion.xpRepeatSolve + selectedQuestion.xpFirstSolve + timeBonus
           });
         } catch (e) {
           console.error('DB Sync failed:', e);
@@ -105,20 +172,47 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
       }
     }
 
-    setFeedback({ type: 'success', message: `Protocol Mastered! +${xpGained} XP Awarded.` });
+    // Account for global streak multiplier (from useProgression.tsx)
+    const today = new Date().toISOString().split('T')[0];
+    const isFirstActionToday = state?.lastActivityDate !== today;
+    const projectedStreak = isFirstActionToday ? ((state?.streakCount || 0) + 1) : (state?.streakCount || 0);
+    const multiplier = projectedStreak >= 3 ? 1.5 : 1.0;
+    const finalXpWithMultiplier = Math.floor(xpGained * multiplier);
+
+    // --- Velocity Tracking ---
+    const durationMs = Date.now() - startTime;
+    const durationSec = Math.floor(durationMs / 1000);
+    const durationStr = durationSec < 60 ? `${durationSec}s` : `${Math.floor(durationSec / 60)}m ${durationSec % 60}s`;
+
+    // Construct detailed breakdown for activity log using | delimiter for UI separation
+    const baseAmount = isRepeat ? selectedQuestion.xpRepeatSolve : selectedQuestion.xpFirstSolve;
+    const streakBonus = finalXpWithMultiplier - xpGained;
+    const breakdownStr = `${selectedQuestion.title}|Solved in ${durationStr} (+${baseAmount} Base${timeBonus > 0 ? ` + ${timeBonus} Speed` : ''}${streakBonus > 0 ? ` + ${streakBonus} Consistency` : ''})`;
+
+    setFeedback({ 
+      type: 'success', 
+      message: `Protocol Mastered! +${finalXpWithMultiplier} XP Awarded.`,
+      bonus: timeBonus > 0 ? timeBonus : undefined
+    });
+    
+    // Award XP via existing progression system
+    await addXp('Study', `Solved: ${breakdownStr}`, xpGained);
+    
     fetchSubmissions();
     setTimeout(() => {
       setSelectedQuestion(null);
       setUserAnswer('');
       setFeedback(null);
-    }, 2000);
+      setStartTime(null);
+    }, 6000); // Extended duration (6 seconds) as requested
   };
 
-  const filtered = QUESTIONS.filter(q => {
-    if (activeTab !== 'All' && q.category !== activeTab) return false;
-    if (search && !q.title.toLowerCase().includes(search.toLowerCase())) return false;
-    return true;
-  });
+  const getMediumSolveCount = (category: string) => {
+    return Object.keys(submissions).filter(qId => {
+      const q = QUESTIONS.find(q => q.id === qId);
+      return q && q.category === category && q.difficulty === 'Medium';
+    }).length;
+  };
 
   const getLockInfo = (qId: string) => {
     const sub = submissions[qId];
@@ -127,6 +221,34 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
     const now = new Date();
     return isAfter(lockUntil, now) ? lockUntil : null;
   };
+
+  const isHardLocked = (q: Question) => {
+    if (q.difficulty !== 'Hard') return false;
+    return getMediumSolveCount(q.category) < 5;
+  };
+
+  const getDailyTraining = () => {
+    // Pick 1 Easy, 1 Medium, 1 Hard that aren't locked recently
+    const daily: Question[] = [];
+    ['Easy', 'Medium', 'Hard'].forEach(diff => {
+      const available = QUESTIONS.filter(q => q.difficulty === diff && !getLockInfo(q.id) && !isHardLocked(q));
+      if (available.length > 0) {
+        // Deterministic daily pick based on date
+        const index = new Date().getDate() % available.length;
+        daily.push(available[index]);
+      }
+    });
+    return daily;
+  };
+
+  const filtered = activeTab === 'Training' ? getDailyTraining() : QUESTIONS.filter(q => {
+    if (activeTab !== 'All' && q.category !== activeTab) return false;
+    if (difficultyFilter !== 'All' && q.difficulty !== difficultyFilter) return false;
+    if (search && !q.title.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
+
+
 
   return (
     <motion.div 
@@ -138,13 +260,21 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
       {/* Left List */}
       <div className={`w-full md:w-96 border-r border-border bg-surface/30 backdrop-blur-xl flex flex-col ${selectedQuestion ? 'hidden md:flex' : 'flex'}`}>
         <div className="p-6 border-b border-border">
-          <div className="flex items-center space-x-3 mb-6">
-            <button onClick={onBack} className="p-2 hover:bg-white/5 rounded-lg text-textMuted hover:text-primary transition-colors">
-              <ChevronLeft size={20} />
-            </button>
-            <h1 className="text-xl font-bold text-textMain flex items-center">
-              <BrainCircuit className="mr-2 text-primary" size={20} /> Practice Hub
-            </h1>
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center space-x-2">
+              <button onClick={onBack} className="p-2 hover:bg-white/5 rounded-lg text-textMuted hover:text-primary transition-colors">
+                <ChevronLeft size={20} />
+              </button>
+              <h1 className="text-xl font-bold text-textMain flex items-center">
+                <BrainCircuit className="mr-2 text-primary" size={20} /> Practice Hub
+              </h1>
+            </div>
+            {hardStreak > 0 && (
+              <div className="flex items-center bg-red-500/10 text-red-500 px-2 py-1 rounded-lg border border-red-500/20">
+                <Star size={12} className="mr-1 fill-current" />
+                <span className="text-[10px] font-black">{hardStreak} Hard Streak</span>
+              </div>
+            )}
           </div>
 
           <div className="relative group">
@@ -160,26 +290,40 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
         </div>
 
         <div className="flex border-b border-border px-2 overflow-x-auto no-scrollbar">
-          {['All', 'Pattern', 'Logic', 'HR', 'ABAP'].map((tab) => (
+          {['All', 'Training', 'Pattern', 'Logic', 'HR', 'ABAP'].map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab as any)}
-              className={`px-4 py-3 text-xs font-bold uppercase tracking-widest whitespace-nowrap transition-all relative ${
+              className={`px-4 py-3 text-[10px] font-bold uppercase tracking-widest whitespace-nowrap transition-all relative ${
                 activeTab === tab ? 'text-primary' : 'text-textMuted hover:text-textMain'
               }`}
             >
-              {tab}
+              {tab === 'Training' ? '🎯 Training' : tab}
               {activeTab === tab && <motion.div layoutId="tab-underline" className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex border-b border-border/50 px-2 bg-black/20">
+          {['All', 'Easy', 'Medium', 'Hard'].map((diff) => (
+            <button
+              key={diff}
+              onClick={() => setDifficultyFilter(diff as any)}
+              className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest transition-all relative ${
+                difficultyFilter === diff 
+                  ? 'text-primary' 
+                  : 'text-textMuted hover:text-textMain'
+              }`}
+            >
+              {diff}
+              {difficultyFilter === diff && <motion.div layoutId="diff-underline" className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary/50" />}
             </button>
           ))}
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-2 scrollbar-thin">
           {loading ? (
-            <div className="flex flex-col items-center justify-center h-40 opacity-20">
-              <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mb-2" />
-              <p className="text-xs">Fetching Protocol Data...</p>
-            </div>
+            <ListSkeleton count={8} />
           ) : filtered.map(q => {
             const lockUntil = getLockInfo(q.id);
             const isSolved = !!submissions[q.id];
@@ -187,18 +331,35 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
               <button
                 key={q.id}
                 onClick={() => {
+                  if (isHardLocked(q)) return;
                   setSelectedQuestion(q);
                   setUserAnswer('');
                   setFeedback(null);
+                  setStartTime(Date.now());
                 }}
-                className={`w-full text-left p-4 rounded-xl transition-all border group ${
+                disabled={isHardLocked(q)}
+                className={`w-full text-left p-4 rounded-xl transition-all border group relative ${
+                  isHardLocked(q) ? 'opacity-50 cursor-not-allowed bg-black/10' :
                   selectedQuestion?.id === q.id 
                     ? 'bg-primary/20 border-primary shadow-[0_0_20px_rgba(59,130,246,0.1)]' 
                     : 'bg-surfaceHighlight/30 border-transparent hover:border-white/10 hover:bg-white/5'
                 }`}
               >
+                {isHardLocked(q) && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-[2px] rounded-xl z-20">
+                    <div className="text-center">
+                      <Lock size={16} className="mx-auto mb-1 text-white/40" />
+                      <div className="text-[8px] font-black text-white/60 uppercase">Solve {5 - getMediumSolveCount(q.category)} more Mediums</div>
+                    </div>
+                  </div>
+                )}
                 <div className="flex items-center justify-between mb-1">
-                  <span className={`font-bold text-sm ${selectedQuestion?.id === q.id ? 'text-primary' : 'text-textMain'}`}>{q.title}</span>
+                  <div className="flex items-center space-x-2">
+                    <span className={`font-bold text-sm ${selectedQuestion?.id === q.id ? 'text-primary' : 'text-textMain'}`}>{q.title}</span>
+                    {submissions[q.id]?.solve_count >= 3 && (
+                      <span className="text-[8px] bg-primary/10 text-primary border border-primary/20 px-1 rounded uppercase font-black">Mastered</span>
+                    )}
+                  </div>
                   {isSolved && !lockUntil && <CheckCircle2 size={14} className="text-emerald-500" />}
                   {lockUntil && <Clock size={14} className="text-amber-500" />}
                 </div>
@@ -242,6 +403,14 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
                     {selectedQuestion.category === 'HR' && <MessageSquare size={16} className="text-purple-500" />}
                     {selectedQuestion.category === 'ABAP' && <Terminal size={16} className="text-emerald-500" />}
                     <span className="text-xs font-bold uppercase tracking-widest text-textMuted">{selectedQuestion.category} Protocol</span>
+                    <span className="text-textMuted/30">•</span>
+                    <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded border ${
+                      selectedQuestion.difficulty === 'Easy' ? 'text-emerald-500 border-emerald-500/20 bg-emerald-500/5' : 
+                      selectedQuestion.difficulty === 'Medium' ? 'text-amber-500 border-amber-500/20 bg-amber-500/5' : 
+                      'text-red-500 border-red-500/20 bg-red-500/5'
+                    }`}>
+                      {selectedQuestion.difficulty}
+                    </span>
                   </div>
                   <h1 className="text-4xl font-black text-textMain tracking-tight">{selectedQuestion.title}</h1>
                 </div>
@@ -278,10 +447,21 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
                       <div className="text-[10px] font-bold text-textMuted uppercase mb-1">Standard Reward</div>
                       <div className="text-xl font-black text-primary">+{selectedQuestion.xpFirstSolve} XP</div>
                     </div>
-                    <div className="flex-1 p-4 rounded-2xl bg-white/[0.03] border border-white/5">
+                    <div className="flex-1 p-4 rounded-2xl bg-white/[0.03] border border-white/5 relative overflow-hidden group">
                       <div className="text-[10px] font-bold text-textMuted uppercase mb-1">Repeat Reward</div>
                       <div className="text-xl font-black text-textMuted">+{selectedQuestion.xpRepeatSolve} XP</div>
+                      <div className="absolute -right-2 -bottom-2 opacity-10 group-hover:opacity-20 transition-opacity">
+                        <Clock size={40} className="text-primary" />
+                      </div>
                     </div>
+                  </div>
+                  
+                  <div className="p-3 rounded-xl bg-primary/5 border border-primary/10 flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <Play size={12} className="text-primary animate-pulse" />
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-textMuted">Adaptive Speed Tuning Active</span>
+                    </div>
+                    <span className="text-[10px] text-primary/60 font-mono">Bonus XP for fast execution</span>
                   </div>
                 </div>
 
@@ -304,20 +484,28 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
                         }`}
                       >
                         {feedback.message}
+                        {feedback.bonus && (
+                          <div className="mt-2 py-1 px-2 bg-primary/10 rounded border border-primary/20 flex items-center justify-between">
+                            <span className="text-[10px] text-primary flex items-center">
+                              <Star size={10} className="mr-1 fill-current" /> Speed Bonus
+                            </span>
+                            <span className="text-primary">+{feedback.bonus} XP</span>
+                          </div>
+                        )}
                       </motion.div>
                     )}
 
                     <div className="mt-6">
                       <button 
                         onClick={handleSolve}
-                        disabled={!!getLockInfo(selectedQuestion.id)}
+                        disabled={!!getLockInfo(selectedQuestion.id) || isHardLocked(selectedQuestion)}
                         className={`w-full py-4 rounded-xl font-black uppercase tracking-widest transition-all ${
-                          getLockInfo(selectedQuestion.id)
+                          getLockInfo(selectedQuestion.id) || isHardLocked(selectedQuestion)
                             ? 'bg-white/5 text-textMuted cursor-not-allowed border border-white/5'
                             : 'bg-primary text-white shadow-[0_0_30px_rgba(59,130,246,0.3)] hover:scale-[1.02] active:scale-[0.98]'
                         }`}
                       >
-                        {getLockInfo(selectedQuestion.id) ? 'Locked for 7 Days' : 'Execute Submission'}
+                        {isHardLocked(selectedQuestion) ? 'Protocol Locked' : getLockInfo(selectedQuestion.id) ? 'Locked for 7 Days' : 'Execute Submission'}
                       </button>
                     </div>
                   </div>

@@ -5,6 +5,7 @@ import { audio } from '../lib/audio';
 import { notifier } from '../lib/notifications';
 import { supabase } from '../lib/supabaseClient';
 import { useProgression } from '../hooks/useProgression';
+import { Skeleton } from './Skeleton';
 
 // Types
 interface Task {
@@ -59,6 +60,7 @@ export function EngineCard() {
 
   // Executed tasks for today (store IDs)
   const [executedTaskIds, setExecutedTaskIds] = useState<number[]>([]);
+  const [loading, setLoading] = useState(true);
 
   // Load state on mount
   useEffect(() => {
@@ -97,7 +99,7 @@ export function EngineCard() {
       }
     };
 
-    loadExecutions();
+    loadExecutions().finally(() => setLoading(false));
   }, []);
 
   // Time loop
@@ -265,6 +267,34 @@ export function EngineCard() {
   }
 
   const isCompleted = activeTask ? executedTaskIds.includes(activeTask.id) : false;
+
+  if (loading) {
+    return (
+      <div className="h-full p-6 space-y-6">
+        <div className="flex justify-between items-start">
+          <div className="flex items-center space-x-3">
+            <Skeleton variant="rectangle" className="w-12 h-12" />
+            <div className="space-y-2">
+              <Skeleton className="w-24 h-4" />
+              <Skeleton className="w-16 h-2" />
+            </div>
+          </div>
+          <Skeleton className="w-24 h-8" />
+        </div>
+        <div className="flex-1 flex flex-col justify-end space-y-4">
+          <div className="space-y-2">
+            <Skeleton className="w-1/3 h-3" />
+            <Skeleton className="w-1/2 h-8" />
+          </div>
+          <Skeleton className="w-full h-4" />
+          <div className="flex justify-between items-end">
+            <Skeleton className="w-24 h-12" />
+            <Skeleton className="w-32 h-12" />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`h-full p-6 flex flex-col relative overflow-hidden transition-all duration-500 ${activeTask && !isCompleted ? 'animate-[pulse_3s_cubic-bezier(0.4,0,0.6,1)_infinite]' : ''}`}>

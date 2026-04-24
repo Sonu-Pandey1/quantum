@@ -4,10 +4,12 @@ import {
   Flame, Trophy, Calendar, Zap, Clock, Activity, Target,
   ShieldCheck, ChevronRight, RefreshCw, Loader2
 } from 'lucide-react';
+import { Skeleton, ListSkeleton } from '../components/Skeleton';
 import { useEngagement } from '../hooks/useEngagement';
 import { ActivityGraph } from '../components/ActivityGraph';
 import { useProgression } from '../hooks/useProgression';
 import { format, parseISO } from 'date-fns';
+import { ProgressAnalytics } from '../components/ProgressAnalytics';
 
 export function EngagementHub() {
   const { stats, refresh, loadMore } = useEngagement();
@@ -115,34 +117,60 @@ export function EngagementHub() {
             />
           </div>
 
+          {/* ─── Neural Progress Analytics ────────────────────────── */}
+          <div className="lg:col-span-12">
+            <ProgressAnalytics />
+          </div>
+
           {/* XP Summary */}
           <div className="lg:col-span-12 glass-panel p-4 md:p-6 border border-primary/10 rounded-2xl flex flex-col md:flex-row flex-wrap gap-4 md:items-center">
-            <div className="flex items-center space-x-3">
-              <div className="p-2.5 bg-primary/10 rounded-xl">
-                <Target size={20} className="text-primary" />
-              </div>
-              <div>
-                <p className="text-[10px] text-textMuted uppercase tracking-widest">Total XP Earned</p>
-                <p className="text-2xl font-black text-primary">{totalXp.toLocaleString()}</p>
-              </div>
-            </div>
-            <div className="h-10 w-px bg-border hidden sm:block" />
-            <div>
-              <p className="text-[10px] text-textMuted uppercase tracking-widest">Current Level</p>
-              <p className="text-2xl font-black text-textMain">Lvl {totalLevel}</p>
-            </div>
-            <div className="h-10 w-px bg-border hidden sm:block" />
-            <div className="flex flex-col items-center justify-center p-4 bg-amber-500/5 border border-amber-500/20 rounded-2xl min-w-[120px] relative overflow-hidden group">
-              <div className="absolute inset-0 bg-gradient-to-br from-amber-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-              <Trophy className="text-amber-500 mb-2 drop-shadow-[0_0_10px_rgba(245,158,11,0.4)]" size={20} />
-              <p className="text-[10px] text-amber-500/60 uppercase tracking-[0.2em] font-black mb-1">Current Rank</p>
-              <p className="text-lg font-black text-amber-400 tracking-tight">{rank}</p>
-            </div>
-            <div className="h-10 w-px bg-border hidden sm:block" />
-            <div>
-              <p className="text-[10px] text-textMuted uppercase tracking-widest">Active Days</p>
-              <p className="text-2xl font-black text-textMain">{stats.totalActiveDays}</p>
-            </div>
+            {stats.loading ? (
+              <>
+                <div className="flex items-center space-x-3">
+                  <Skeleton variant="rectangle" className="w-10 h-10" />
+                  <div className="space-y-2">
+                    <Skeleton className="w-20 h-2" />
+                    <Skeleton className="w-12 h-6" />
+                  </div>
+                </div>
+                <div className="h-10 w-px bg-border hidden sm:block" />
+                <div className="space-y-2">
+                  <Skeleton className="w-20 h-2" />
+                  <Skeleton className="w-12 h-6" />
+                </div>
+                <div className="h-10 w-px bg-border hidden sm:block" />
+                <Skeleton className="w-32 h-20 rounded-2xl" />
+              </>
+            ) : (
+              <>
+                <div className="flex items-center space-x-3">
+                  <div className="p-2.5 bg-primary/10 rounded-xl">
+                    <Target size={20} className="text-primary" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-textMuted uppercase tracking-widest">Total XP Earned</p>
+                    <p className="text-2xl font-black text-primary">{totalXp.toLocaleString()}</p>
+                  </div>
+                </div>
+                <div className="h-10 w-px bg-border hidden sm:block" />
+                <div>
+                  <p className="text-[10px] text-textMuted uppercase tracking-widest">Current Level</p>
+                  <p className="text-2xl font-black text-textMain">Lvl {totalLevel}</p>
+                </div>
+                <div className="h-10 w-px bg-border hidden sm:block" />
+                <div className="flex flex-col items-center justify-center p-4 bg-amber-500/5 border border-amber-500/20 rounded-2xl min-w-[120px] relative overflow-hidden group">
+                  <div className="absolute inset-0 bg-gradient-to-br from-amber-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                  <Trophy className="text-amber-500 mb-2 drop-shadow-[0_0_10px_rgba(245,158,11,0.4)]" size={20} />
+                  <p className="text-[10px] text-amber-500/60 uppercase tracking-[0.2em] font-black mb-1">Current Rank</p>
+                  <p className="text-lg font-black text-amber-400 tracking-tight">{rank}</p>
+                </div>
+                <div className="h-10 w-px bg-border hidden sm:block" />
+                <div>
+                  <p className="text-[10px] text-textMuted uppercase tracking-widest">Active Days</p>
+                  <p className="text-2xl font-black text-textMain">{stats.totalActiveDays}</p>
+                </div>
+              </>
+            )}
           </div>
 
           {/* ─── GitHub-style Heatmap ───────────────────────────────── */}
@@ -160,9 +188,7 @@ export function EngagementHub() {
             </h3>
 
             {stats.loading ? (
-              <div className="h-40 glass-panel flex items-center justify-center rounded-2xl border border-white/5">
-                <Loader2 className="w-7 h-7 text-primary animate-spin" />
-              </div>
+              <ListSkeleton count={6} />
             ) : stats.recentActivity.length > 0 ? (
               <>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-4">
@@ -186,6 +212,13 @@ export function EngagementHub() {
                           <p className="text-sm font-bold text-textMain group-hover:text-primary transition-colors">
                             {act.type}
                           </p>
+                          {act.breakdown && (
+                            <div className="flex items-center space-x-2 mt-0.5">
+                              <span className="text-[9px] font-black px-1.5 py-0.5 bg-primary/10 text-primary border border-primary/20 rounded">
+                                {act.breakdown}
+                              </span>
+                            </div>
+                          )}
                           <p className="text-[10px] text-textMuted uppercase tracking-widest mt-1 font-medium">
                             {act.pillar} · {act.relativeTime}
                           </p>
