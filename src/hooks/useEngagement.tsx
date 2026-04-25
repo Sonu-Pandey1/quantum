@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabaseClient';
-import { formatDistanceToNow, parseISO, format, subDays } from 'date-fns';
+import { formatDistanceToNow, parseISO, format } from 'date-fns';
 
 export interface EngagementStats {
   currentLoginStreak: number;

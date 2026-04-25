@@ -4,7 +4,16 @@ import { CheckCircle2, Lock, Loader2, BrainCircuit, Flag, Code2 } from 'lucide-r
 import { audio } from '../lib/audio';
 import { supabase } from '../lib/supabaseClient';
 
-const ROADMAP = [
+interface RoadmapPhase {
+  id: number;
+  phase: string;
+  title: string;
+  desc: string;
+  status: string;
+  type: 'partial' | 'current' | 'locked';
+}
+
+const defaultRoadmap: RoadmapPhase[] = [
   {
     id: 1,
     phase: 'Phase 1',
@@ -41,27 +50,72 @@ const ROADMAP = [
 
 export function PathCard({ onNavigateToLogic }: { onNavigateToLogic?: () => void }) {
   const [solvedCount, setSolvedCount] = useState(0);
+  const [sapTarget, setSapTarget] = useState('SAP JOB IN 90 DAYS');
+  const [roadmap, setRoadmap] = useState<RoadmapPhase[]>([]);
 
   useEffect(() => {
-    const fetchSolvedCount = async () => {
-      if (!supabase) return;
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
+    const fetchUserData = async () => {
+      let uid = 'default';
       
-      try {
-        const { count, error } = await supabase
-          .from('practice_submissions')
-          .select('*', { count: 'exact', head: true })
-          .eq('user_id', session.user.id);
-        
-        if (!error && count !== null) setSolvedCount(count);
-      } catch (e) {
-        // Fallback or ignore
+      if (supabase) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          uid = session.user.id;
+        }
+      }
+
+      // Check Database first if logged in
+      if (uid !== 'default' && supabase) {
+        try {
+          const { data } = await supabase.from('profiles').select('settings').eq('id', uid).single();
+          if (data && data.settings) {
+            const dbSettings = data.settings;
+            if (dbSettings.sapTarget) setSapTarget(dbSettings.sapTarget.toUpperCase());
+            if (dbSettings.roadmap) {
+              setRoadmap(dbSettings.roadmap);
+            }
+          }
+        } catch (e) {
+          // DB fetch error, proceed to localStorage
+        }
+      }
+
+      // If roadmap is still empty, try localStorage
+      setRoadmap((prev) => {
+        if (prev.length > 0) return prev;
+        const savedRoadmap = localStorage.getItem(`quantum_roadmap_${uid}`);
+        if (savedRoadmap) return JSON.parse(savedRoadmap);
+        const globalR = localStorage.getItem('quantum_roadmap');
+        if (globalR) return JSON.parse(globalR);
+        return defaultRoadmap;
+      });
+      
+      // If sapTarget is default, try localStorage
+      setSapTarget((prev) => {
+        if (prev !== 'SAP JOB IN 90 DAYS') return prev;
+        const savedSap = localStorage.getItem(`quantum_sap_target_${uid}`);
+        if (savedSap) return savedSap.toUpperCase();
+        const globalSaved = localStorage.getItem('quantum_sap_target');
+        if (globalSaved) return globalSaved.toUpperCase();
+        return prev;
+      });
+
+      if (uid !== 'default' && supabase) {
+        try {
+          const { count, error } = await supabase
+            .from('practice_submissions')
+            .select('*', { count: 'exact', head: true })
+            .eq('user_id', uid);
+          
+          if (!error && count !== null) setSolvedCount(count);
+        } catch (e) {
+          // Fallback or ignore
+        }
       }
     };
-    fetchSolvedCount();
+    fetchUserData();
     
-    const interval = setInterval(fetchSolvedCount, 5000);
+    const interval = setInterval(fetchUserData, 5000);
     return () => clearInterval(interval);
   }, []);
 
@@ -78,14 +132,14 @@ export function PathCard({ onNavigateToLogic }: { onNavigateToLogic?: () => void
         </div>
         <div>
           <h2 className="text-xl font-semibold text-textMain">The Path</h2>
-          <p className="text-xs text-purple-400 font-medium tracking-wide mt-1 uppercase">SAP Mastery Syllabus</p>
+          <p className="text-xs text-purple-400 font-medium tracking-wide mt-1 uppercase">{sapTarget}</p>
         </div>
       </div>
 
       {/* Skill Tree Timeline */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden pr-2 relative z-10 space-y-4 scrollbar-thin scrollbar-thumb-surfaceHighlight scrollbar-track-transparent">
-        {ROADMAP.map((item, idx) => {
-          const isLast = idx === ROADMAP.length - 1;
+        {roadmap.map((item, idx) => {
+          const isLast = idx === roadmap.length - 1;
           
           return (
             <div key={item.id} className={`relative flex items-start ${item.type === 'locked' ? 'opacity-50' : 'opacity-100'}`}>
@@ -160,7 +214,7 @@ export function PathCard({ onNavigateToLogic }: { onNavigateToLogic?: () => void
       {/* Mission Target */}
       <div className="mt-4 bg-primary/10 border border-primary/20 rounded-lg p-3 flex items-center justify-center">
         <Flag size={16} className="text-primary mr-2" />
-        <span className="text-xs font-bold text-primary tracking-wide">TARGET: SAP JOB IN 90 DAYS</span>
+        <span className="text-xs font-bold text-primary tracking-wide">TARGET: {sapTarget}</span>
       </div>
 
     </div>

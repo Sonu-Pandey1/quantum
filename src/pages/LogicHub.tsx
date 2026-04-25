@@ -16,7 +16,7 @@ const generateProblems = (): Problem[] => {
   const problems: Problem[] = [];
   const topics = ['Arrays', 'Strings', 'Internal Tables', 'ABAP SQL', 'Logic', 'Dynamic', 'Pointers'];
   const difficulties: ('Easy' | 'Medium' | 'Hard')[] = ['Easy', 'Medium', 'Hard'];
-  
+
   // Specific requested ones
   problems.push({ id: 1, title: 'Star Patterns: Pyramid', difficulty: 'Easy', topic: 'Logic', completed: true });
   problems.push({ id: 2, title: 'Fibonacci Sequence', difficulty: 'Easy', topic: 'Dynamic', completed: true });
@@ -58,7 +58,7 @@ export function LogicHub({ onBack }: { onBack: () => void }) {
       setProblems(initialProblems);
       localStorage.setItem('quantum_logic_problems', JSON.stringify(initialProblems));
     }
-    
+
     const loadXp = async () => {
       if (supabase) {
         try {
@@ -72,7 +72,7 @@ export function LogicHub({ onBack }: { onBack: () => void }) {
               return;
             }
           }
-        } catch(e) {
+        } catch (e) {
           console.error("Error loading logic XP:", e);
         }
       }
@@ -92,10 +92,10 @@ export function LogicHub({ onBack }: { onBack: () => void }) {
     const updatedProblems = problems.map(p => p.id === id ? { ...p, completed: true } : p);
     setProblems(updatedProblems);
     localStorage.setItem('quantum_logic_problems', JSON.stringify(updatedProblems));
-    
+
     const newXp = logicXp + 5;
     setLogicXp(newXp);
-    
+
     // Local fallback
     localStorage.setItem('quantum_logic_xp', newXp.toString());
 
@@ -120,7 +120,7 @@ export function LogicHub({ onBack }: { onBack: () => void }) {
   });
 
   return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -20 }}
@@ -128,11 +128,11 @@ export function LogicHub({ onBack }: { onBack: () => void }) {
     >
       {/* Main Content */}
       <div className="flex-1 flex flex-col h-full border-r border-border overflow-hidden">
-        
+
         {/* Header */}
         <div className="p-6 border-b border-border flex items-center justify-between bg-surface/50 backdrop-blur-md">
           <div className="flex items-center space-x-4">
-            <button 
+            <button
               onClick={onBack}
               className="p-2 rounded-lg bg-surfaceHighlight hover:bg-primary/20 text-textMuted hover:text-primary transition-colors border border-transparent hover:border-primary/50"
             >
@@ -147,9 +147,9 @@ export function LogicHub({ onBack }: { onBack: () => void }) {
           </div>
           <div className="flex items-center space-x-2 bg-surfaceHighlight px-4 py-2 rounded-xl border border-border">
             <Search size={16} className="text-textMuted" />
-            <input 
-              type="text" 
-              placeholder="Search problems..." 
+            <input
+              type="text"
+              placeholder="Search problems..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="bg-transparent border-none outline-none text-sm text-textMain w-48"
@@ -163,9 +163,8 @@ export function LogicHub({ onBack }: { onBack: () => void }) {
             <button
               key={tab}
               onClick={() => setActiveTab(tab as any)}
-              className={`pb-4 text-sm font-semibold uppercase tracking-wider transition-colors relative ${
-                activeTab === tab ? 'text-primary' : 'text-textMuted hover:text-textMain'
-              }`}
+              className={`pb-4 text-sm font-semibold uppercase tracking-wider transition-colors relative ${activeTab === tab ? 'text-primary' : 'text-textMuted hover:text-textMain'
+                }`}
             >
               {tab}
               {activeTab === tab && (
@@ -179,15 +178,14 @@ export function LogicHub({ onBack }: { onBack: () => void }) {
         <div className="flex-1 overflow-y-auto p-6 space-y-3 scrollbar-thin scrollbar-thumb-surfaceHighlight scrollbar-track-transparent">
           <AnimatePresence>
             {filtered.map((problem) => (
-              <motion.div 
+              <motion.div
                 key={problem.id}
                 layout
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
-                className={`p-4 rounded-xl border transition-all flex items-center justify-between group ${
-                  problem.completed ? 'bg-emerald-500/5 border-emerald-500/20' : 'bg-surface border-border hover:border-primary/50 hover:shadow-[0_0_15px_rgba(59,130,246,0.1)]'
-                }`}
+                className={`p-4 rounded-xl border transition-all flex items-center justify-between group ${problem.completed ? 'bg-emerald-500/5 border-emerald-500/20' : 'bg-surface border-border hover:border-primary/50 hover:shadow-[0_0_15px_rgba(59,130,246,0.1)]'
+                  }`}
               >
                 <div className="flex items-center space-x-4">
                   <div className={`p-2 rounded-lg ${problem.completed ? 'bg-emerald-500/20 text-emerald-500' : 'bg-surfaceHighlight text-textMuted group-hover:text-primary group-hover:bg-primary/10 transition-colors'}`}>
@@ -196,10 +194,9 @@ export function LogicHub({ onBack }: { onBack: () => void }) {
                   <div>
                     <h3 className={`font-semibold ${problem.completed ? 'text-textMuted line-through' : 'text-textMain'}`}>{problem.title}</h3>
                     <div className="flex items-center space-x-3 mt-1 text-xs">
-                      <span className={`font-bold uppercase tracking-wider ${
-                        problem.difficulty === 'Easy' ? 'text-emerald-500' : 
-                        problem.difficulty === 'Medium' ? 'text-amber-500' : 'text-red-500'
-                      }`}>
+                      <span className={`font-bold uppercase tracking-wider ${problem.difficulty === 'Easy' ? 'text-emerald-500' :
+                          problem.difficulty === 'Medium' ? 'text-amber-500' : 'text-red-500'
+                        }`}>
                         {problem.difficulty}
                       </span>
                       <span className="text-textMuted flex items-center"><Star size={10} className="mr-1" /> {problem.topic}</span>
@@ -207,17 +204,16 @@ export function LogicHub({ onBack }: { onBack: () => void }) {
                   </div>
                 </div>
 
-                <button 
+                <button
                   onClick={() => {
                     audio.playClick();
                     if (!problem.completed) handleSolve(problem.id);
                   }}
                   disabled={problem.completed}
-                  className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${
-                    problem.completed 
-                      ? 'bg-transparent text-emerald-500 cursor-not-allowed opacity-50' 
+                  className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${problem.completed
+                      ? 'bg-transparent text-emerald-500 cursor-not-allowed opacity-50'
                       : 'bg-primary/10 text-primary border border-primary/30 hover:bg-primary hover:text-white hover:shadow-[0_0_15px_rgba(59,130,246,0.5)]'
-                  }`}
+                    }`}
                 >
                   {problem.completed ? 'Solved' : 'Solve'}
                 </button>
@@ -262,7 +258,7 @@ export function LogicHub({ onBack }: { onBack: () => void }) {
             <div key={user.rank} className="p-3 rounded-lg bg-surface border border-border flex items-center space-x-3 opacity-80">
               <div className="text-lg font-bold text-textMuted w-6 text-center">#{user.rank}</div>
               <div className="w-8 h-8 rounded-full bg-surfaceHighlight flex items-center justify-center">
-                <span className="text-[10px] font-bold text-textMuted">{user.name.slice(0,2).toUpperCase()}</span>
+                <span className="text-[10px] font-bold text-textMuted">{user.name.slice(0, 2).toUpperCase()}</span>
               </div>
               <div>
                 <p className="font-semibold text-textMain text-sm">{user.name}</p>

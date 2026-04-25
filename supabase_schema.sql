@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
 -- Safe column adds: runs even if table already existed with old schema
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS total_xp             INTEGER DEFAULT 0;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS pillar_xp            JSONB   DEFAULT '{"Study":0,"Health":0,"Finance":0,"Mind":0}'::jsonb;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS settings             JSONB   DEFAULT '{}'::jsonb;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS streak_count         INTEGER DEFAULT 0;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS last_activity_date   DATE;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS current_login_streak INTEGER DEFAULT 0;

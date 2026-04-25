@@ -62,6 +62,8 @@ export function EngineCard() {
   const [executedTaskIds, setExecutedTaskIds] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const [schedule, setSchedule] = useState<Task[]>(SCHEDULE);
+
   // Load state on mount
   useEffect(() => {
     const todayStr = getTodayString();
@@ -75,9 +77,35 @@ export function EngineCard() {
       }
     }
 
-    // Load executed
+    // Load executed and timetable
     const loadExecutions = async () => {
+      let uid: string | null = null;
       if (supabase) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          uid = session.user.id;
+          
+          // Try to get timetable from DB settings first
+          try {
+            const { data } = await supabase.from('profiles').select('settings').eq('id', uid).single();
+            if (data && data.settings && data.settings.timetable) {
+              setSchedule(data.settings.timetable);
+              // Store locally to speed up future renders
+              localStorage.setItem(`quantum_timetable_${uid}`, JSON.stringify(data.settings.timetable));
+            } else {
+              // Fallback to local storage
+              const customTimetable = localStorage.getItem(`quantum_timetable_${uid}`);
+              if (customTimetable) {
+                setSchedule(JSON.parse(customTimetable));
+              }
+            }
+          } catch (e) {
+            // DB settings failed
+            const customTimetable = localStorage.getItem(`quantum_timetable_${uid}`);
+            if (customTimetable) setSchedule(JSON.parse(customTimetable));
+          }
+        }
+        
         try {
           const { data } = await supabase
             .from('executions')
@@ -92,7 +120,20 @@ export function EngineCard() {
           console.error("Supabase sync failed, falling back to local.");
         }
       }
-      // Fallback
+      
+      // Fallback if no uid
+      if (!uid || uid === 'default') {
+        const fallbackTimetable = localStorage.getItem('quantum_timetable_default') || localStorage.getItem('quantum_timetable');
+        if (fallbackTimetable) {
+          try {
+            setSchedule(JSON.parse(fallbackTimetable));
+          } catch (e) {
+            console.error("Failed to parse custom timetable", e);
+          }
+        }
+      }
+
+      // Fallback Executions
       const execStr = localStorage.getItem(`quantum_exec_${todayStr}`);
       if (execStr) {
         setExecutedTaskIds(JSON.parse(execStr));
@@ -109,16 +150,21 @@ export function EngineCard() {
       setCurrentTime(now);
 
       // Find active task
-      const current = SCHEDULE.find(task => {
-        const start = parseTime(task.start);
-        const end = parseTime(task.end);
+      const current = schedule.find(t => {
+        const tStart = (t as any).start || (t as any).timeStart;
+        const tEnd = (t as any).end || (t as any).timeEnd;
+        if (!tStart || !tEnd) return false;
+        const start = parseTime(tStart);
+        const end = parseTime(tEnd);
         return now >= start && now <= end;
       });
 
       if (current) {
         setActiveTask(current);
-        const start = parseTime(current.start).getTime();
-        const end = parseTime(current.end).getTime();
+        const tStart = (current as any).start || (current as any).timeStart;
+        const tEnd = (current as any).end || (current as any).timeEnd;
+        const start = parseTime(tStart).getTime();
+        const end = parseTime(tEnd).getTime();
         const total = end - start;
         const passed = now.getTime() - start;
         const prct = Math.min(100, Math.max(0, (passed / total) * 100));
@@ -134,7 +180,10 @@ export function EngineCard() {
         } else {
           // If we are more than 50% through and not executed, maybe we are just 'idle' or running.
           // Let's mark as optimal if we are keeping up, behind if we missed a previous one.
-          const previousTasks = SCHEDULE.filter(t => parseTime(t.end) < now);
+          const previousTasks = schedule.filter(t => {
+             const tE = (t as any).end || (t as any).timeEnd;
+             return tE ? parseTime(tE) < now : false;
+          });
           const missedPrevious = previousTasks.some(t => !executedTaskIds.includes(t.id));
           setSystemState(missedPrevious ? 'behind' : 'optimal');
         }
@@ -143,14 +192,17 @@ export function EngineCard() {
         setProgress(0);
         setTimeRemaining('Awaiting next sequence...');
 
-        const previousTasks = SCHEDULE.filter(t => parseTime(t.end) < now);
+        const previousTasks = schedule.filter(t => {
+             const tE = (t as any).end || (t as any).timeEnd;
+             return tE ? parseTime(tE) < now : false;
+        });
         const missedPrevious = previousTasks.some(t => !executedTaskIds.includes(t.id));
         setSystemState(missedPrevious ? 'behind' : 'idle');
       }
 
     }, 1000);
     return () => clearInterval(timer);
-  }, [executedTaskIds]);
+  }, [executedTaskIds, schedule]);
 
   // Handle task change notifications
   useEffect(() => {
@@ -369,7 +421,7 @@ export function EngineCard() {
           <div className="flex flex-col mb-4">
             <div className="flex justify-between items-start mb-2">
               <span className="text-sm font-medium text-textMuted mb-1">
-                Status: <span className="text-textMain">{activeTask ? activeTask.statusMsg : 'Idle / Off-Duty'}</span>
+                Status: <span className="text-textMain">{activeTask ? ((activeTask as any).statusMsg || 'Active Protocol Executing...') : 'Idle / Off-Duty'}</span>
               </span>
               <div className="font-mono text-3xl font-bold text-primary drop-shadow-[0_0_15px_rgba(59,130,246,0.9)] tracking-wider">
                 {currentTime.toLocaleTimeString('en-US', { hour12: false })}
@@ -406,8 +458,8 @@ export function EngineCard() {
                 onMouseEnter={() => audio.playClick()}
                 disabled={!activeTask || isCompleted}
                 className={`flex-1 py-3 px-4 sm:px-6 text-sm sm:text-base rounded-xl font-bold uppercase tracking-widest transition-all duration-300 flex items-center justify-center ${isCompleted
-                    ? 'bg-surfaceHighlight text-textMuted cursor-not-allowed border border-border'
-                    : 'bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/30 hover:border-blue-500/60 shadow-[0_0_10px_rgba(59,130,246,0.1)] hover:shadow-[0_0_20px_rgba(59,130,246,0.4)]'
+                  ? 'bg-surfaceHighlight text-textMuted cursor-not-allowed border border-border'
+                  : 'bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/30 hover:border-blue-500/60 shadow-[0_0_10px_rgba(59,130,246,0.1)] hover:shadow-[0_0_20px_rgba(59,130,246,0.4)]'
                   }`}
               >
                 <Play size={18} className="mr-2" /> {isCompleted ? 'Executed' : 'Execute'}

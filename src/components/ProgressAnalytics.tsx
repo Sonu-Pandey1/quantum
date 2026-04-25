@@ -1,4 +1,3 @@
-import React from 'react';
 import { motion } from 'framer-motion';
 import { Target, TrendingDown, Lightbulb, CheckCircle, BarChart3, AlertCircle } from 'lucide-react';
 import { useAnalytics } from '../hooks/useAnalytics';
@@ -30,7 +29,7 @@ export function ProgressAnalytics() {
           </div>
           <p className="text-2xl font-black text-textMain">{data.totalSolved}</p>
         </div>
-        
+
         <div className="glass-panel p-4 border border-white/5 bg-white/[0.02] rounded-2xl">
           <div className="flex items-center space-x-2 text-textMuted text-[10px] font-bold uppercase tracking-widest mb-1">
             <Target size={12} className="text-primary" />
@@ -57,11 +56,10 @@ export function ProgressAnalytics() {
               <div className="flex justify-between items-end">
                 <div className="flex items-center space-x-3">
                   <span className="text-sm font-bold text-textMain">{stat.category}</span>
-                  <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-tighter ${
-                    stat.status === 'Mastered' ? 'bg-emerald-500/20 text-emerald-400' :
-                    stat.status === 'Fading' ? 'bg-amber-500/20 text-amber-400' :
-                    stat.status === 'Untapped' ? 'bg-white/5 text-textMuted' : 'bg-primary/20 text-primary'
-                  }`}>
+                  <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-tighter ${stat.status === 'Mastered' ? 'bg-emerald-500/20 text-emerald-400' :
+                      stat.status === 'Fading' ? 'bg-amber-500/20 text-amber-400' :
+                        stat.status === 'Untapped' ? 'bg-white/5 text-textMuted' : 'bg-primary/20 text-primary'
+                    }`}>
                     {stat.status}
                   </span>
                 </div>
@@ -73,7 +71,7 @@ export function ProgressAnalytics() {
                 </div>
               </div>
               <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
-                <motion.div 
+                <motion.div
                   initial={{ width: 0 }}
                   animate={{ width: `${stat.accuracy}%` }}
                   className={`h-full rounded-full ${stat.accuracy < 60 ? 'bg-red-500' : 'bg-primary'}`}

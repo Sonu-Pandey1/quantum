@@ -1,30 +1,101 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { HeartPulse, Check, Activity, Dumbbell, Footprints } from 'lucide-react';
+import { HeartPulse, Check, Activity } from 'lucide-react';
 import { audio } from '../lib/audio';
 import { useProgression } from '../hooks/useProgression';
+import { supabase } from '../lib/supabaseClient';
+
+interface HabitTask {
+  id: number;
+  title: string;
+  icon: string;
+}
 
 export function VitalityCard({ onClick }: { onClick?: () => void }) {
   const { addXp } = useProgression();
   const [painLevel, setPainLevel] = useState(3);
-  const [runningDone, setRunningDone] = useState(false);
-  const [pushupsDone, setPushupsDone] = useState(false);
+  const [completedHabits, setCompletedHabits] = useState<number[]>([]);
+  const [habits, setHabits] = useState<HabitTask[]>([]);
 
   // Logic: Vitality Readiness Score
   const calculateScore = () => {
     let score = 100;
-    if (!runningDone) score -= 20;
-    if (!pushupsDone) score -= 20;
+    // Deduct 20 for each uncompleted habit, just as a placeholder logic
+    const uncompletedCount = habits.length - completedHabits.length;
+    score -= uncompletedCount * 20;
     score -= (painLevel - 1) * 5;
     return Math.max(0, score);
   };
 
   const readinessScore = calculateScore();
 
+  const [targetWeight, setTargetWeight] = useState(80);
+
+  useEffect(() => {
+    const fetchUserData = async () => {
+      let uid = 'default';
+      if (supabase) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          uid = session.user.id;
+        }
+      }
+
+      // Check DB first
+      let dbHabits = null;
+      let dbWeight = null;
+      
+      if (uid !== 'default' && supabase) {
+        try {
+          const { data } = await supabase.from('profiles').select('settings').eq('id', uid).single();
+          if (data && data.settings) {
+            if (data.settings.habits) dbHabits = data.settings.habits;
+            if (data.settings.weightGoal) dbWeight = data.settings.weightGoal;
+            
+            // Sync to local
+            if (dbHabits) localStorage.setItem(`quantum_habits_${uid}`, JSON.stringify(dbHabits));
+            if (dbWeight) localStorage.setItem(`quantum_weight_goal_${uid}`, dbWeight.toString());
+          }
+        } catch (e) {
+          // Fallback to local storage if DB fails
+        }
+      }
+
+      // Fetch Weight
+      if (dbWeight) {
+        setTargetWeight(Number(dbWeight));
+      } else {
+        const savedWeight = localStorage.getItem(`quantum_weight_goal_${uid}`) || localStorage.getItem('quantum_weight_goal_default') || localStorage.getItem('quantum_weight_goal');
+        if (savedWeight) {
+          setTargetWeight(Number(savedWeight));
+        }
+      }
+
+      // Fetch Habits
+      if (dbHabits) {
+        setHabits(dbHabits);
+      } else {
+        try {
+          const savedHabits = localStorage.getItem(`quantum_habits_${uid}`) || localStorage.getItem('quantum_habits_default') || localStorage.getItem('quantum_habits');
+          if (savedHabits) {
+            setHabits(JSON.parse(savedHabits));
+          } else {
+            setHabits([
+              { id: 1, title: '5KM Mission', icon: 'Footprints' },
+              { id: 2, title: '100 Pushups', icon: 'Dumbbell' }
+            ]);
+          }
+        } catch (e) {
+          console.error("Failed to parse habits", e);
+        }
+      }
+    };
+    fetchUserData();
+  }, []);
+
   // Weight Progress Logic
   const startWeight = 98;
   const currentWeight = 98; // as requested
-  const targetWeight = 80;
   const totalDrop = startWeight - targetWeight;
   const currentDrop = startWeight - currentWeight;
   // Make sure it has at least a small visual sliver if 0
@@ -39,6 +110,17 @@ export function VitalityCard({ onClick }: { onClick?: () => void }) {
     const y = 100 - ((w - chartMin) / (chartMax - chartMin)) * 100;
     return `${x},${y}`;
   }).join(' ');
+
+  const toggleHabit = (id: number, title: string) => {
+    audio.playClick();
+    if (completedHabits.includes(id)) {
+      setCompletedHabits(completedHabits.filter(hId => hId !== id));
+    } else {
+      audio.playSuccess();
+      addXp('Health', `Completed ${title}`, 10);
+      setCompletedHabits([...completedHabits, id]);
+    }
+  };
 
   return (
     <div
@@ -133,49 +215,25 @@ export function VitalityCard({ onClick }: { onClick?: () => void }) {
         <div>
           <h4 className="text-sm font-semibold text-textMain mb-3 uppercase tracking-wider">Daily Output</h4>
           <div className="grid grid-cols-2 gap-3">
-
-            <button
-              onClick={() => {
-                audio.playClick();
-                if (!runningDone) {
-                  audio.playSuccess();
-                  addXp('Health', 'Completed 5km Run', 20);
-                }
-                setRunningDone(!runningDone);
-              }}
-              className={`relative overflow-hidden flex flex-col items-center justify-center p-4 rounded-xl border transition-all duration-300 ${runningDone
-                  ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.2)]'
-                  : 'bg-surface border-border text-textMuted hover:border-textMuted hover:bg-surfaceHighlight'
-                }`}
-            >
-              <motion.div whileTap={{ scale: 0.9 }} className="z-10 flex flex-col items-center">
-                {runningDone ? <Check size={24} className="mb-2" /> : <Footprints size={24} className="mb-2 opacity-50" />}
-                <span className="text-xs font-bold text-center">5KM Mission</span>
-              </motion.div>
-              {runningDone && <motion.div layoutId="glow1" className="absolute inset-0 bg-emerald-500/5" />}
-            </button>
-
-            <button
-              onClick={() => {
-                audio.playClick();
-                if (!pushupsDone) {
-                  audio.playSuccess();
-                  addXp('Health', 'Completed 100 Pushups', 5);
-                }
-                setPushupsDone(!pushupsDone);
-              }}
-              className={`relative overflow-hidden flex flex-col items-center justify-center p-4 rounded-xl border transition-all duration-300 ${pushupsDone
-                  ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.2)]'
-                  : 'bg-surface border-border text-textMuted hover:border-textMuted hover:bg-surfaceHighlight'
-                }`}
-            >
-              <motion.div whileTap={{ scale: 0.9 }} className="z-10 flex flex-col items-center">
-                {pushupsDone ? <Check size={24} className="mb-2" /> : <Dumbbell size={24} className="mb-2 opacity-50" />}
-                <span className="text-xs font-bold text-center">100 Pushups</span>
-              </motion.div>
-              {pushupsDone && <motion.div layoutId="glow2" className="absolute inset-0 bg-emerald-500/5" />}
-            </button>
-
+            {habits.map((habit) => {
+              const isDone = completedHabits.includes(habit.id);
+              return (
+                <button
+                  key={habit.id}
+                  onClick={() => toggleHabit(habit.id, habit.title)}
+                  className={`relative overflow-hidden flex flex-col items-center justify-center p-4 rounded-xl border transition-all duration-300 ${isDone
+                      ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.2)]'
+                      : 'bg-surface border-border text-textMuted hover:border-textMuted hover:bg-surfaceHighlight'
+                    }`}
+                >
+                  <motion.div whileTap={{ scale: 0.9 }} className="z-10 flex flex-col items-center">
+                    {isDone ? <Check size={24} className="mb-2" /> : <Activity size={24} className="mb-2 opacity-50" />}
+                    <span className="text-xs font-bold text-center line-clamp-1 break-all px-1">{habit.title}</span>
+                  </motion.div>
+                  {isDone && <motion.div layoutId={`glow_${habit.id}`} className="absolute inset-0 bg-emerald-500/5" />}
+                </button>
+              );
+            })}
           </div>
         </div>
 

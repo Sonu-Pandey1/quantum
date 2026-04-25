@@ -1,9 +1,9 @@
 
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Terminal, Shield, TrendingUp, 
-  ChevronRight, ArrowLeft, CheckCircle2, 
+import {
+  Terminal, Shield, TrendingUp,
+  ChevronRight, ArrowLeft, CheckCircle2,
   Target, Rocket, Sparkles, BrainCircuit
 } from 'lucide-react';
 import { useProgression } from '../hooks/useProgression';
@@ -19,23 +19,23 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
   });
 
   const archetypes = [
-    { 
-      id: 'Technical Elite', 
-      title: 'Technical Elite', 
+    {
+      id: 'Technical Elite',
+      title: 'Technical Elite',
       desc: 'Focused on absolute mastery of logic, patterns, and software engineering protocols.',
       icon: <Terminal className="text-primary" />,
       boost: '1.2x Study XP'
     },
-    { 
-      id: 'Wealth Architect', 
-      title: 'Wealth Architect', 
+    {
+      id: 'Wealth Architect',
+      title: 'Wealth Architect',
       desc: 'Optimizing financial systems, asset growth, and long-term wealth preservation.',
       icon: <TrendingUp className="text-yellow-500" />,
       boost: '1.2x Finance XP'
     },
-    { 
-      id: 'Vitality Vanguard', 
-      title: 'Vitality Vanguard', 
+    {
+      id: 'Vitality Vanguard',
+      title: 'Vitality Vanguard',
       desc: 'Engineering the ultimate biological vessel through recovery, nutrition, and metrics.',
       icon: <Shield className="text-red-500" />,
       boost: '1.2x Health XP'
@@ -71,14 +71,14 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
         <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-purple-500/10 blur-[120px] rounded-full" />
       </div>
 
-      <motion.div 
+      <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         className="max-w-2xl w-full glass-panel p-8 md:p-12 border-primary/20 relative z-10"
       >
         <AnimatePresence mode="wait">
           {step === 1 && (
-            <motion.div 
+            <motion.div
               key="step1"
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
@@ -96,8 +96,8 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
 
               <div className="space-y-4">
                 <label className="block text-xs font-black text-textMuted uppercase tracking-widest">Operator Name</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   placeholder="Enter your name..."
@@ -105,7 +105,7 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
                 />
               </div>
 
-              <button 
+              <button
                 onClick={nextStep}
                 disabled={!formData.name}
                 className="w-full py-4 bg-primary text-white font-black uppercase tracking-widest rounded-2xl shadow-[0_0_30px_rgba(59,130,246,0.3)] hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 disabled:grayscale disabled:cursor-not-allowed flex items-center justify-center"
@@ -116,7 +116,7 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
           )}
 
           {step === 2 && (
-            <motion.div 
+            <motion.div
               key="step2"
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
@@ -140,11 +140,10 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
                   <button
                     key={a.id}
                     onClick={() => setFormData({ ...formData, archetype: a.id as Archetype })}
-                    className={`w-full text-left p-6 rounded-2xl border transition-all relative group overflow-hidden ${
-                      formData.archetype === a.id 
-                        ? 'bg-primary/20 border-primary' 
+                    className={`w-full text-left p-6 rounded-2xl border transition-all relative group overflow-hidden ${formData.archetype === a.id
+                        ? 'bg-primary/20 border-primary'
                         : 'bg-white/5 border-white/10 hover:border-white/20'
-                    }`}
+                      }`}
                   >
                     <div className="flex items-center space-x-4 relative z-10">
                       <div className={`p-3 rounded-xl bg-white/10 ${formData.archetype === a.id ? 'text-primary' : 'text-textMuted'}`}>
@@ -165,7 +164,7 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
                 ))}
               </div>
 
-              <button 
+              <button
                 onClick={nextStep}
                 className="w-full py-4 bg-primary text-white font-black uppercase tracking-widest rounded-2xl shadow-[0_0_30px_rgba(59,130,246,0.3)] hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center"
               >
@@ -175,7 +174,7 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
           )}
 
           {step === 3 && (
-            <motion.div 
+            <motion.div
               key="step3"
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
@@ -205,11 +204,10 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
                         setFormData({ ...formData, goals: [...formData.goals, goal] });
                       }
                     }}
-                    className={`p-4 rounded-xl border text-left text-xs font-bold transition-all flex items-center justify-between ${
-                      formData.goals.includes(goal) 
-                        ? 'bg-primary/20 border-primary text-textMain' 
+                    className={`p-4 rounded-xl border text-left text-xs font-bold transition-all flex items-center justify-between ${formData.goals.includes(goal)
+                        ? 'bg-primary/20 border-primary text-textMain'
                         : 'bg-white/5 border-white/10 text-textMuted hover:border-white/20'
-                    }`}
+                      }`}
                   >
                     <span>{goal}</span>
                     {formData.goals.includes(goal) && <CheckCircle2 size={14} className="text-primary" />}
@@ -217,7 +215,7 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
                 ))}
               </div>
 
-              <button 
+              <button
                 onClick={handleComplete}
                 className="w-full py-4 bg-primary text-white font-black uppercase tracking-widest rounded-2xl shadow-[0_0_30px_rgba(59,130,246,0.3)] hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center"
               >

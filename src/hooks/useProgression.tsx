@@ -133,15 +133,15 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
       const profile = await fetchProfile(user.id);
 
       if (!cancelled && profile) {
-        const dbTotalXp    = Number(profile.total_xp) || 0;
+        const dbTotalXp = Number(profile.total_xp) || 0;
         // If pillar_xp is missing or null in DB, default to empty (not discard real data)
-        const dbPillarXp   = (profile.pillar_xp && typeof profile.pillar_xp === 'object')
+        const dbPillarXp = (profile.pillar_xp && typeof profile.pillar_xp === 'object')
           ? (profile.pillar_xp as Record<Pillar, number>)
           : EMPTY_PILLAR_XP;
-        const dbStreak     = Number(profile.streak_count) || 0;
-        const dbLastAct    = profile.last_activity_date ?? null;
-        const dbRole       = (profile.role as 'user' | 'admin') ?? 'user';
-        
+        const dbStreak = Number(profile.streak_count) || 0;
+        const dbLastAct = profile.last_activity_date ?? null;
+        const dbRole = (profile.role as 'user' | 'admin') ?? 'user';
+
         // Load archetype and buffs from localStorage as fallback if DB schema doesn't support them yet
         const localArchetype = localStorage.getItem(`quantum_archetype_${user.id}`) as Archetype || 'None';
         const localBuffs = JSON.parse(localStorage.getItem(`quantum_buffs_${user.id}`) || '[]');
@@ -155,8 +155,8 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
         setBuffs(localBuffs.filter((b: Buff) => b.expiresAt > Date.now()));
 
         // Prime refs so addXp works immediately without waiting for re-render
-        totalXpRef.current    = dbTotalXp;
-        pillarXpRef.current   = dbPillarXp;
+        totalXpRef.current = dbTotalXp;
+        pillarXpRef.current = dbPillarXp;
         streakCountRef.current = dbStreak;
         lastActivityRef.current = dbLastAct;
       }
@@ -201,9 +201,9 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
     };
 
     const currentPillarXp = { ...pillarXpRef.current };
-    const currentTotalXp  = totalXpRef.current;
-    let currentStreak     = streakCountRef.current;
-    let newLastActivity   = lastActivityRef.current;
+    const currentTotalXp = totalXpRef.current;
+    let currentStreak = streakCountRef.current;
+    let newLastActivity = lastActivityRef.current;
 
     // Activity streak logic (DO NOT TOUCH — separate from login streak)
     if (newLastActivity) {
@@ -218,20 +218,20 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
       newLastActivity = today;
     }
 
-    const multiplier  = currentStreak >= 3 ? 1.5 : 1.0;
-    
+    const multiplier = currentStreak >= 3 ? 1.5 : 1.0;
+
     // --- Advanced Multipliers ---
     let finalMultiplier = multiplier;
-    
+
     // 1. Archetype Boost
     if (archetype === 'Technical Elite' && pillar === 'Study') finalMultiplier *= 1.2;
     if (archetype === 'Wealth Architect' && pillar === 'Finance') finalMultiplier *= 1.2;
     if (archetype === 'Vitality Vanguard' && pillar === 'Health') finalMultiplier *= 1.2;
-    
+
     // 2. Active Buffs
     const activeBuffs = buffs.filter(b => b.expiresAt > Date.now() && (b.type === pillar || b.type === 'Global'));
     activeBuffs.forEach(b => { finalMultiplier *= b.multiplier; });
-    
+
     // 3. Imbalance Tax (System Balance Control)
     const currentLevels = {
       Study: calculateLevel(currentPillarXp.Study),
@@ -251,13 +251,13 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
 
     const finalAmount = Math.floor(baseAmount * finalMultiplier);
 
-    const newPillarXp    = currentPillarXp[pillar] + finalAmount;
-    const newTotalXp     = currentTotalXp + finalAmount;
+    const newPillarXp = currentPillarXp[pillar] + finalAmount;
+    const newTotalXp = currentTotalXp + finalAmount;
     const updatedPillarXp: Record<Pillar, number> = { ...currentPillarXp, [pillar]: newPillarXp };
 
     // Level-up detection (before updating state)
-    const oldTotalLevel  = calculateLevel(currentTotalXp);
-    const newTotalLevel  = calculateLevel(newTotalXp);
+    const oldTotalLevel = calculateLevel(currentTotalXp);
+    const newTotalLevel = calculateLevel(newTotalXp);
     const oldPillarLevel = calculateLevel(currentPillarXp[pillar]);
     const newPillarLevel = calculateLevel(newPillarXp);
 
@@ -276,8 +276,8 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
     setTotalXp(newTotalXp);
     setStreakCount(currentStreak);
     setLastActivityDate(newLastActivity);
-    pillarXpRef.current    = updatedPillarXp;
-    totalXpRef.current     = newTotalXp;
+    pillarXpRef.current = updatedPillarXp;
+    totalXpRef.current = newTotalXp;
     streakCountRef.current = currentStreak;
     lastActivityRef.current = newLastActivity;
 
@@ -286,7 +286,7 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
     // 1. Profile update (total_xp + pillar_xp + streak)
     void (async () => {
       if (!supabase) return;
-      
+
       const { error } = await supabase
         .from('profiles')
         .update({
@@ -296,12 +296,12 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
           last_activity_date: newLastActivity,
         })
         .eq('id', uid);
-        
+
       if (error) {
         console.warn('[addXp] profile update failed:', error.message);
         // Rollback on failure
         rollback();
-        
+
         // Attempt a minimal recovery if it was a schema mismatch or similar
         const { error: e2 } = await supabase
           .from('profiles')
@@ -346,10 +346,10 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const levelObj: Record<Pillar, number> = {
-    Study:   calculateLevel(pillarXp.Study),
-    Health:  calculateLevel(pillarXp.Health),
+    Study: calculateLevel(pillarXp.Study),
+    Health: calculateLevel(pillarXp.Health),
     Finance: calculateLevel(pillarXp.Finance),
-    Mind:    calculateLevel(pillarXp.Mind),
+    Mind: calculateLevel(pillarXp.Mind),
   };
 
   const globalLevel = calculateLevel(totalXp);
