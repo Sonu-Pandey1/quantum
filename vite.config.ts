@@ -4,7 +4,7 @@ import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vite.dev/config/
 export default defineConfig({
-  base: process.env.NODE_ENV === 'production' ? '/quantum/' : '/',
+  base: '/',
   plugins: [
     react(),
     VitePWA({
@@ -22,8 +22,8 @@ export default defineConfig({
         background_color: '#050505',
         display: 'standalone',
         orientation: 'portrait',
-        scope: process.env.NODE_ENV === 'production' ? '/quantum/' : '/',
-        start_url: process.env.NODE_ENV === 'production' ? '/quantum/' : '/',
+        scope: '/',
+        start_url: '/',
         icons: [
           {
             src: 'icon-192.png',
