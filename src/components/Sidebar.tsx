@@ -226,7 +226,16 @@ export function Sidebar({ currentView, onViewChange, isPortfolioMode, onTogglePo
   const [backupStatus, setBackupStatus] = useState<'idle' | 'syncing' | 'done'>('idle');
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const profileBtnRef = useRef<HTMLButtonElement>(null);
+  const [isMobileView, setIsMobileView] = useState(false);
+  const desktopBtnRef = useRef<HTMLButtonElement>(null);
+  const mobileBtnRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobileView(window.innerWidth < 768);
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     async function loadUser() {
@@ -288,7 +297,8 @@ export function Sidebar({ currentView, onViewChange, isPortfolioMode, onTogglePo
         className={cn(
           'fixed z-[100] transition-all duration-500 ease-in-out',
           'bottom-0 left-0 right-0 h-[72px] md:h-auto md:top-4 md:bottom-4 md:left-4 md:w-20',
-          'bg-[#0a0a0c]/80 backdrop-blur-3xl border-t md:border border-white/10 md:rounded-[24px] shadow-[0_-10px_40px_rgba(0,0,0,0.4)] md:shadow-2xl px-2 md:px-0 md:py-6'
+          'bg-[#0a0a0c]/80 backdrop-blur-3xl border-t md:border border-white/10 md:rounded-[24px] shadow-[0_-10px_40px_rgba(0,0,0,0.4)] md:shadow-2xl px-2 md:px-0 md:py-6',
+          'md:flex md:flex-col md:items-center'
         )}
       >
         <nav className="flex md:flex-col items-center justify-around md:justify-start w-full flex-1 md:space-y-2 md:overflow-y-auto md:scrollbar-none">
@@ -345,7 +355,7 @@ export function Sidebar({ currentView, onViewChange, isPortfolioMode, onTogglePo
             {/* Mobile Profile Avatar (Fixed on Right) */}
             <div className="shrink-0 h-full flex items-center px-3 bg-[#0a0a0c]/40 backdrop-blur-md border-l border-white/5 shadow-[-10px_0_20px_rgba(0,0,0,0.2)]">
               <button 
-                ref={profileBtnRef} 
+                ref={mobileBtnRef} 
                 onClick={() => setShowProfileMenu(!showProfileMenu)}
                 className="relative flex flex-col items-center justify-center min-w-[65px] h-14"
               >
@@ -362,11 +372,11 @@ export function Sidebar({ currentView, onViewChange, isPortfolioMode, onTogglePo
         </nav>
 
         {/* Desktop Profile Area */}
-        <div className="hidden md:flex flex-col items-center gap-6 mt-10">
+        <div className="hidden md:flex flex-col items-center gap-6 mt-auto pb-2">
           <button onClick={() => { audio.playClick(); handleBackup(); }} className={cn('flex items-center justify-center w-12 h-12 rounded-2xl border border-white/5 hover:border-primary/30 group', backupStatus === 'syncing' && 'animate-pulse')}>
             {backupStatus === 'done' ? <Check className="text-emerald-400" size={20} /> : <DatabaseBackup className="text-textMuted group-hover:text-primary transition-colors" size={20} />}
           </button>
-          <button ref={profileBtnRef} onClick={() => setShowProfileMenu(!showProfileMenu)} className="relative p-[2px] rounded-full bg-gradient-to-tr from-primary/50 to-purple-500/50 hover:scale-105 active:scale-95 group shadow-lg">
+          <button ref={desktopBtnRef} onClick={() => setShowProfileMenu(!showProfileMenu)} className="relative p-[2px] rounded-full bg-gradient-to-tr from-primary/50 to-purple-500/50 hover:scale-105 active:scale-95 group shadow-lg">
             <div className="w-11 h-11 rounded-full bg-surfaceHighlight/80 flex items-center justify-center border border-white/10">
               <span className="text-xs font-black text-textMain">{userData.initials}</span>
             </div>
@@ -451,7 +461,7 @@ export function Sidebar({ currentView, onViewChange, isPortfolioMode, onTogglePo
 
       {/* Desktop Profile Portal */}
       <ProfileDropdown
-        anchor={profileBtnRef}
+        anchor={isMobileView ? mobileBtnRef : desktopBtnRef}
         isOpen={showProfileMenu}
         onClose={() => setShowProfileMenu(false)}
         isPortfolioMode={isPortfolioMode}
