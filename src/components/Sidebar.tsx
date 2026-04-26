@@ -280,8 +280,6 @@ export function Sidebar({ currentView, onViewChange, isPortfolioMode, onTogglePo
 
   if (isAdmin) navItems.push({ id: 'admin', icon: ShieldAlert, label: 'Admin' });
 
-  // Mobile navigation items (top 4 + Menu)
-  const mobilePrimaryNav = navItems.slice(0, 4);
 
   return (
     <>

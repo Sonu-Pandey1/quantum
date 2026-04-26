@@ -9,7 +9,7 @@ import { useProgression } from '../hooks/useProgression';
 import type { Archetype } from '../hooks/useProgression';
 
 export function StrategicControl() {
-  const { state, updateProfile } = useProgression();
+  const { state, updateProfile, setArchetype } = useProgression();
   const [userName, setUserName] = useState(state.displayName);
   const [goals, setGoals] = useState<string[]>(state.goals);
   const [newGoal, setNewGoal] = useState('');

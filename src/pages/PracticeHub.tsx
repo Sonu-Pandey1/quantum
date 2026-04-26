@@ -1,9 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  ChevronLeft, BrainCircuit, Search, Filter, 
-  Terminal, CheckCircle2, AlertCircle, Star,
-  Lock, ArrowRight, BookOpen, Settings
+  ChevronLeft, BrainCircuit, Search,
+  CheckCircle2, Star, Lock
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { audio } from '../lib/audio';
@@ -60,7 +59,7 @@ interface Submission {
 
 export function PracticeHub({ onBack }: { onBack: () => void }) {
   const [activeTab, setActiveTab] = useState<'All' | 'Pattern' | 'Logic' | 'HR' | 'ABAP' | 'Training'>('All');
-  const [difficultyFilter, setDifficultyFilter] = useState<'All' | 'Easy' | 'Medium' | 'Hard'>('All');
+  const [difficultyFilter] = useState<'All' | 'Easy' | 'Medium' | 'Hard'>('All');
   const [search, setSearch] = useState('');
   const [submissions, setSubmissions] = useState<Record<string, Submission>>({});
   const [selectedQuestion, setSelectedQuestion] = useState<Question | null>(null);

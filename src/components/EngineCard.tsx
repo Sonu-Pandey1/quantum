@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Target, CheckCircle2, AlertTriangle, Image as ImageIcon, X, PauseCircle, CheckCircle, Play, SkipForward, Bell } from 'lucide-react';
+import { Target, CheckCircle2, AlertTriangle, Image as ImageIcon, X, PauseCircle, CheckCircle, SkipForward, Bell } from 'lucide-react';
 import { audio } from '../lib/audio';
 import { notifier } from '../lib/notifications';
 import { supabase } from '../lib/supabaseClient';
