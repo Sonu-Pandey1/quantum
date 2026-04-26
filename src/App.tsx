@@ -1,5 +1,5 @@
 
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
@@ -19,8 +19,38 @@ import { supabase } from './lib/supabaseClient';
 import { recordLoginToday } from './hooks/useEngagement';
 import type { Session } from '@supabase/supabase-js';
 import { AuthScreen } from './components/AuthScreen';
-import { ProgressionProvider } from './hooks/useProgression';
+import { ProgressionProvider, useProgression } from './hooks/useProgression';
 import { LevelUpModal } from './components/LevelUpModal';
+
+
+class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean }> {
+  constructor(props: any) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() { return { hasError: true }; }
+  componentDidCatch(error: any, errorInfo: any) { console.error('App Crash:', error, errorInfo); }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="h-screen w-full bg-background flex flex-col items-center justify-center p-8 text-center">
+          <div className="w-16 h-16 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center mb-6">
+            <span className="text-2xl">⚠️</span>
+          </div>
+          <h2 className="text-xl font-black text-textMain mb-2 uppercase tracking-tighter">Neural Link Interrupted</h2>
+          <p className="text-xs text-textMuted max-w-xs mb-8">A critical error occurred in the system core. Authorization state may be inconsistent.</p>
+          <button 
+            onClick={() => window.location.reload()}
+            className="px-6 py-3 bg-primary text-white rounded-xl font-bold uppercase tracking-widest text-xs hover:scale-105 transition-all"
+          >
+            Re-establish Link
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 function AppContent({ currentView, setCurrentView, isPortfolioMode, setIsPortfolioMode, isAdmin }: any) {
   return (
@@ -36,7 +66,7 @@ function AppContent({ currentView, setCurrentView, isPortfolioMode, setIsPortfol
         isAdmin={isAdmin}
       />
 
-      <main className="flex-1 flex flex-col h-full relative z-0 md:ml-28 pb-0">
+      <main className="flex-1 flex flex-col h-full relative z-0 md:ml-20 pb-[80px] md:pb-0 overflow-hidden">
         <Header hideVow={currentView !== 'dashboard'} />
         <AnimatePresence mode="wait">
           {currentView === 'dashboard' ? (
@@ -160,15 +190,16 @@ function AppContent({ currentView, setCurrentView, isPortfolioMode, setIsPortfol
   );
 }
 
-function App() {
+function AppContainer() {
+  const { state, loading } = useProgression();
   const [currentView, setCurrentView] = useState<string>('dashboard');
   const [isPortfolioMode, setIsPortfolioMode] = useState(false);
-  const [session, setSession] = useState<Session | null>(null);
-  const [loadingAuth, setLoadingAuth] = useState(true);
-  const [onboardingCompleted, setOnboardingCompleted] = useState(() => !!localStorage.getItem('quantum_onboarding_completed'));
   const [isAdmin, setIsAdmin] = useState(false);
+  const { role } = state;
 
-  const loginRecordedRef = useRef(false);
+  useEffect(() => {
+    setIsAdmin(role === 'admin');
+  }, [role]);
 
   useEffect(() => {
     const handleHashChange = () => {
@@ -189,6 +220,35 @@ function App() {
     }
   }, [currentView]);
 
+  if (loading) {
+    return (
+      <div className="h-screen w-full bg-background flex flex-col items-center justify-center p-8 space-y-8 text-white">
+        <div className="w-12 h-12 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
+        <p className="text-[10px] text-textMuted uppercase tracking-[0.3em] font-black">Syncing Neural Identity...</p>
+      </div>
+    );
+  }
+
+  if (!state.onboardingCompleted) {
+    return <Onboarding onComplete={() => {}} />;
+  }
+
+  return (
+    <AppContent 
+      currentView={currentView} 
+      setCurrentView={setCurrentView}
+      isPortfolioMode={isPortfolioMode}
+      setIsPortfolioMode={setIsPortfolioMode}
+      isAdmin={isAdmin}
+    />
+  );
+}
+
+function App() {
+  const [session, setSession] = useState<Session | null>(null);
+  const [loadingAuth, setLoadingAuth] = useState(true);
+  const loginRecordedRef = useRef(false);
+
   useEffect(() => {
     const client = supabase;
     if (!client) {
@@ -196,23 +256,11 @@ function App() {
       return;
     }
 
-    const fetchRole = async (userId: string) => {
-      try {
-        const { data } = await client.from('profiles').select('role').eq('id', userId).single();
-        setIsAdmin(data?.role === 'admin');
-      } catch (e) {
-        setIsAdmin(false);
-      }
-    };
-
     client.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
-      if (session) {
-        fetchRole(session.user.id);
-        if (!loginRecordedRef.current) {
-          recordLoginToday(session.user.id);
-          loginRecordedRef.current = true;
-        }
+      if (session && !loginRecordedRef.current) {
+        recordLoginToday(session.user.id);
+        loginRecordedRef.current = true;
       }
       setLoadingAuth(false);
     });
@@ -220,13 +268,11 @@ function App() {
     const { data: { subscription } } = client.auth.onAuthStateChange((_event, session) => {
       setSession(session);
       if (session) {
-        fetchRole(session.user.id);
         if (!loginRecordedRef.current) {
           recordLoginToday(session.user.id);
           loginRecordedRef.current = true;
         }
       } else {
-        setIsAdmin(false);
         loginRecordedRef.current = false;
       }
     });
@@ -255,19 +301,15 @@ function App() {
 
   return (
     <ProgressionProvider>
-      {onboardingCompleted ? (
-        <AppContent 
-          currentView={currentView} 
-          setCurrentView={setCurrentView}
-          isPortfolioMode={isPortfolioMode}
-          setIsPortfolioMode={setIsPortfolioMode}
-          isAdmin={isAdmin}
-        />
-      ) : (
-        <Onboarding onComplete={() => setOnboardingCompleted(true)} />
-      )}
+      <AppContainer />
     </ProgressionProvider>
   );
 }
 
-export default App;
+export default function Root() {
+  return (
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
+  );
+}

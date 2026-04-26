@@ -11,31 +11,36 @@ const vows = [
 ];
 
 export function Header({ hideVow = false }: { hideVow?: boolean }) {
-  const [index, setIndex] = useState(() => Math.floor(Math.random() * vows.length));
   const { state } = useProgression();
+  const displayVows = state.goals && state.goals.length > 0 ? state.goals : vows;
+  const [index, setIndex] = useState(0);
 
   useEffect(() => {
     if (hideVow) return;
     const interval = setInterval(() => {
-      setIndex((prev) => (prev + 1) % vows.length);
+      setIndex((prev) => (prev + 1) % displayVows.length);
     }, 5000);
     return () => clearInterval(interval);
-  }, [hideVow]);
+  }, [hideVow, displayVows.length]);
 
   const getProgress = (xp: number) => {
     return (Math.max(0, xp) % 100);
   };
 
   return (
-    <header className="h-16 md:h-20 bg-transparent flex items-center justify-between px-4 md:px-8 z-[90] sticky top-0">
+    <header className="h-16 md:h-20 bg-[#0a0a0c]/40 backdrop-blur-md flex items-center justify-between px-4 md:px-8 z-[90] sticky top-0 border-b border-white/5">
       {/* Left: Branding */}
-      <div className="flex items-center space-x-3">
-        <div className="p-2 bg-primary/20 rounded-lg hidden sm:block">
-          <Zap className="text-primary" size={20} />
+      <div className="flex items-center space-x-2 md:space-x-3">
+        <div className="p-1.5 md:p-2 bg-primary/20 rounded-lg hidden xs:block">
+          <Zap className="text-primary" size={16} />
         </div>
         <div>
-          <h2 className="text-sm md:text-base font-black text-textMain tracking-tight">QUANTUM <span className="text-primary">GROWTH</span></h2>
-          <p className="text-[9px] text-textMuted uppercase tracking-widest font-bold opacity-50">Operational System v2.4</p>
+          <h2 className="text-[10px] md:text-base font-black text-textMain tracking-tight uppercase">
+            QUANTUM <span className="text-primary">GROWTH</span>
+          </h2>
+          <p className="text-[7px] md:text-[9px] text-textMuted uppercase tracking-[0.2em] font-bold opacity-50">
+            CORE v2.4
+          </p>
         </div>
       </div>
 
@@ -53,7 +58,7 @@ export function Header({ hideVow = false }: { hideVow?: boolean }) {
                 transition={{ duration: 0.5, ease: "anticipate" }}
                 className="text-xs font-bold text-textMain/80 absolute w-full whitespace-nowrap italic"
               >
-                "{vows[index]}"
+                "{displayVows[index]}"
               </motion.p>
             </AnimatePresence>
           </div>
@@ -61,13 +66,13 @@ export function Header({ hideVow = false }: { hideVow?: boolean }) {
       )}
 
       {/* Right: Rank & Progress */}
-      <div className="flex items-center space-x-4 md:space-x-6">
+      <div className="flex items-center space-x-3 md:space-x-6">
         <div className="flex flex-col items-end">
           <div className="flex items-center space-x-2 mb-1">
-            <span className="text-[10px] font-bold text-amber-400 uppercase tracking-wider">{state.rank}</span>
-            <Trophy size={14} className="text-amber-500" />
+            <span className="text-[9px] md:text-[10px] font-bold text-amber-400 uppercase tracking-wider">{state.rank}</span>
+            <Trophy size={12} className="text-amber-500 md:w-[14px] md:h-[14px]" />
           </div>
-          <div className="w-24 md:w-32 h-1.5 bg-white/5 rounded-full overflow-hidden flex border border-white/5 shadow-inner">
+          <div className="w-16 xs:w-20 md:w-32 h-1 bg-white/5 rounded-full overflow-hidden flex border border-white/5 shadow-inner">
             <motion.div 
               className="bg-blue-500 h-full"
               initial={{ width: 0 }}
@@ -91,9 +96,9 @@ export function Header({ hideVow = false }: { hideVow?: boolean }) {
           </div>
         </div>
         
-        <div className="flex flex-col items-center justify-center p-1.5 md:p-2 bg-primary/10 border border-primary/20 rounded-xl min-w-[40px] md:min-w-[48px]">
-          <span className="text-[9px] text-primary font-bold uppercase leading-none mb-1">Lvl</span>
-          <span className="text-sm md:text-base font-black text-textMain leading-none">{state.totalLevel}</span>
+        <div className="flex flex-col items-center justify-center p-1 md:p-2 bg-primary/10 border border-primary/20 rounded-lg md:rounded-xl min-w-[32px] md:min-w-[48px]">
+          <span className="text-[7px] md:text-[9px] text-primary font-bold uppercase leading-none mb-0.5 md:mb-1">Lvl</span>
+          <span className="text-xs md:text-base font-black text-textMain leading-none">{state.totalLevel}</span>
         </div>
       </div>
     </header>

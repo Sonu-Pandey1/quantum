@@ -9,15 +9,17 @@ import { useProgression } from '../hooks/useProgression';
 import type { Archetype } from '../hooks/useProgression';
 
 export function StrategicControl() {
-  const { state, setArchetype } = useProgression();
-  const [userName, setUserName] = useState(localStorage.getItem('quantum_user_name') || '');
-  const [goals, setGoals] = useState<string[]>(JSON.parse(localStorage.getItem('quantum_user_goals') || '[]'));
+  const { state, updateProfile } = useProgression();
+  const [userName, setUserName] = useState(state.displayName);
+  const [goals, setGoals] = useState<string[]>(state.goals);
   const [newGoal, setNewGoal] = useState('');
 
-  const saveSettings = () => {
-    localStorage.setItem('quantum_user_name', userName);
-    localStorage.setItem('quantum_user_goals', JSON.stringify(goals));
-    alert('Strategic alignment saved.');
+  const saveSettings = async () => {
+    await updateProfile({
+      display_name: userName,
+      goals: goals
+    });
+    alert('Strategic alignment synchronized with Neural Core.');
   };
 
   const addGoal = () => {

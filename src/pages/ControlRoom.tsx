@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Save, Settings, Clock, Activity, Target, Plus, Trash2 } from 'lucide-react';
 import { audio } from '../lib/audio';
 import { supabase } from '../lib/supabaseClient';
+import { cn } from '../lib/utils';
 
 interface TimetableTask {
   id: number;
@@ -65,16 +66,10 @@ export function ControlRoom() {
       return defaultHabits;
     }
   });
-  const [roadmap, setRoadmap] = useState<RoadmapPhase[]>(() => {
-    try {
-      const stored = localStorage.getItem('quantum_roadmap');
-      return stored ? JSON.parse(stored) : defaultRoadmap;
-    } catch {
-      return defaultRoadmap;
-    }
-  });
-  const [weightGoal, setWeightGoal] = useState(() => localStorage.getItem('quantum_weight_goal') || '70');
-  const [sapTarget, setSapTarget] = useState(() => localStorage.getItem('quantum_sap_target') || 'Master ABAP Objects');
+  const [roadmap, setRoadmap] = useState<RoadmapPhase[]>(defaultRoadmap);
+  const [weightGoal, setWeightGoal] = useState('70');
+  const [sapTarget, setSapTarget] = useState('Master ABAP Objects');
+  const [sundayRest, setSundayRest] = useState(true);
   const [savedMessage, setSavedMessage] = useState('');
   const [userId, setUserId] = useState<string | null>(null);
 
@@ -102,13 +97,15 @@ export function ControlRoom() {
             if (s.roadmap) setRoadmap(s.roadmap);
             if (s.weightGoal) setWeightGoal(s.weightGoal.toString());
             if (s.sapTarget) setSapTarget(s.sapTarget);
+            if (s.sundayRest !== undefined) setSundayRest(s.sundayRest);
 
-            // Sync to local for offline support
-            localStorage.setItem(`quantum_timetable_${uid}`, JSON.stringify(s.timetable));
-            localStorage.setItem(`quantum_habits_${uid}`, JSON.stringify(s.habits));
-            localStorage.setItem(`quantum_roadmap_${uid}`, JSON.stringify(s.roadmap));
-            localStorage.setItem(`quantum_weight_goal_${uid}`, s.weightGoal.toString());
-            localStorage.setItem(`quantum_sap_target_${uid}`, s.sapTarget);
+            // Sync to local for offline support (with safety checks)
+            if (s.timetable) localStorage.setItem(`quantum_timetable_${uid}`, JSON.stringify(s.timetable));
+            if (s.habits) localStorage.setItem(`quantum_habits_${uid}`, JSON.stringify(s.habits));
+            if (s.roadmap) localStorage.setItem(`quantum_roadmap_${uid}`, JSON.stringify(s.roadmap));
+            if (s.weightGoal !== undefined) localStorage.setItem(`quantum_weight_goal_${uid}`, s.weightGoal.toString());
+            if (s.sapTarget) localStorage.setItem(`quantum_sap_target_${uid}`, s.sapTarget);
+            localStorage.setItem(`quantum_sunday_rest_${uid}`, (s.sundayRest ?? true).toString());
             return;
           }
         } catch (e) {
@@ -117,20 +114,23 @@ export function ControlRoom() {
       }
 
       // 2. Local Fallback (for guests or failed DB fetch)
-      const t = localStorage.getItem(`quantum_timetable_${uid}`) || localStorage.getItem('quantum_timetable');
-      if (t) { try { setTasks(JSON.parse(t)); } catch(e){} }
+      const t = localStorage.getItem(`quantum_timetable_${uid}`);
+      if (t && t !== "undefined") { try { setTasks(JSON.parse(t)); } catch(e){} }
 
-      const h = localStorage.getItem(`quantum_habits_${uid}`) || localStorage.getItem('quantum_habits');
-      if (h) { try { setHabits(JSON.parse(h)); } catch(e){} }
+      const h = localStorage.getItem(`quantum_habits_${uid}`);
+      if (h && h !== "undefined") { try { setHabits(JSON.parse(h)); } catch(e){} }
 
-      const r = localStorage.getItem(`quantum_roadmap_${uid}`) || localStorage.getItem('quantum_roadmap');
-      if (r) { try { setRoadmap(JSON.parse(r)); } catch(e){} }
+      const r = localStorage.getItem(`quantum_roadmap_${uid}`);
+      if (r && r !== "undefined") { try { setRoadmap(JSON.parse(r)); } catch(e){} }
 
-      const w = localStorage.getItem(`quantum_weight_goal_${uid}`) || localStorage.getItem('quantum_weight_goal');
+      const w = localStorage.getItem(`quantum_weight_goal_${uid}`);
       if (w) setWeightGoal(w);
 
-      const s = localStorage.getItem(`quantum_sap_target_${uid}`) || localStorage.getItem('quantum_sap_target');
+      const s = localStorage.getItem(`quantum_sap_target_${uid}`);
       if (s) setSapTarget(s);
+
+      const sr = localStorage.getItem(`quantum_sunday_rest_${uid}`);
+      if (sr) setSundayRest(sr !== 'false');
     }
     loadUserConfig();
   }, []);
@@ -143,7 +143,16 @@ export function ControlRoom() {
       tasks.forEach((t, i) => { if(!t.title || !t.start || !t.end) throw new Error(`Task #${i+1} is incomplete`); });
       habits.forEach((h, i) => { if(!h.title) throw new Error(`Habit #${i+1} is missing title`); });
 
-      const uid = userId || 'default';
+      let currentUid = userId;
+      if (!currentUid && supabase) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          currentUid = session.user.id;
+          setUserId(currentUid);
+        }
+      }
+
+      const uid = currentUid || 'default';
       
       // Save Locally
       localStorage.setItem(`quantum_timetable_${uid}`, JSON.stringify(tasks));
@@ -151,18 +160,20 @@ export function ControlRoom() {
       localStorage.setItem(`quantum_roadmap_${uid}`, JSON.stringify(roadmap));
       localStorage.setItem(`quantum_weight_goal_${uid}`, weightGoal);
       localStorage.setItem(`quantum_sap_target_${uid}`, sapTarget);
+      localStorage.setItem(`quantum_sunday_rest_${uid}`, sundayRest.toString());
 
       // Save to Supabase
-      if (userId && supabase) {
+      if (currentUid && supabase) {
         const { error } = await supabase.from('profiles').update({
           settings: {
             timetable: tasks,
             habits: habits,
             roadmap: roadmap,
             weightGoal,
-            sapTarget
+            sapTarget,
+            sundayRest
           }
-        }).eq('id', userId);
+        }).eq('id', currentUid);
 
         if (error) {
           console.error("Supabase Save Error:", error);
@@ -247,7 +258,7 @@ export function ControlRoom() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         
         {/* Timetable Configuration */}
         <div className="glass-panel p-6 flex flex-col space-y-4 min-h-[600px]">
@@ -376,6 +387,36 @@ export function ControlRoom() {
                   </motion.div>
                 ))}
               </AnimatePresence>
+            </div>
+          </div>
+
+          {/* System Protocols */}
+          <div className="glass-panel p-6 space-y-6">
+            <div className="flex items-center space-x-2 text-primary font-bold">
+              <Clock size={20} />
+              <h2>System Protocols</h2>
+            </div>
+            
+            <div className="flex items-center justify-between p-4 bg-surfaceHighlight/50 border border-border rounded-xl">
+              <div>
+                <p className="text-sm font-bold text-textMain">Sunday Rest Mode</p>
+                <p className="text-[10px] text-textMuted uppercase">Automatic offline state every Sunday</p>
+              </div>
+              <button 
+                onClick={() => setSundayRest(!sundayRest)}
+                className={cn(
+                  "w-12 h-6 rounded-full transition-all relative border",
+                  sundayRest ? "bg-emerald-500/20 border-emerald-500" : "bg-white/5 border-white/10"
+                )}
+              >
+                <motion.div 
+                  animate={{ x: sundayRest ? 24 : 2 }}
+                  className={cn(
+                    "w-4 h-4 rounded-full absolute top-0.5",
+                    sundayRest ? "bg-emerald-500" : "bg-textMuted"
+                  )}
+                />
+              </button>
             </div>
           </div>
 

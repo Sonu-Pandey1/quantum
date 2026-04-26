@@ -35,6 +35,9 @@ interface ProgressionState {
   lastActivityDate: string | null;
   role: 'user' | 'admin';
   archetype: Archetype;
+  goals: string[];
+  onboardingCompleted: boolean;
+  displayName: string;
   buffs: Buff[];
 }
 
@@ -42,7 +45,8 @@ interface ProgressionContextType {
   state: ProgressionState;
   addXp: (pillar: Pillar, actionType: string, baseAmount: number) => Promise<void>;
   addBuff: (buff: Buff) => void;
-  setArchetype: (a: Archetype) => void;
+  setArchetype: (a: Archetype) => Promise<void>;
+  updateProfile: (updates: Partial<{ archetype: Archetype; goals: string[]; onboarding_completed: boolean; display_name: string }>) => Promise<void>;
   showLevelUp: boolean;
   levelUpData: { pillar: Pillar | 'Global'; newLevel: number; newRank?: string } | null;
   closeLevelUp: () => void;
@@ -96,6 +100,9 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
   const [lastActivityDate, setLastActivityDate] = useState<string | null>(null);
   const [role, setRole] = useState<'user' | 'admin'>('user');
   const [archetype, setArchetype] = useState<Archetype>('None');
+  const [goals, setGoals] = useState<string[]>([]);
+  const [onboardingCompleted, setOnboardingCompleted] = useState(false);
+  const [displayName, setDisplayName] = useState('');
   const [buffs, setBuffs] = useState<Buff[]>([]);
   const [showLevelUp, setShowLevelUp] = useState(false);
   const [levelUpData, setLevelUpData] = useState<{
@@ -134,16 +141,20 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
 
       if (!cancelled && profile) {
         const dbTotalXp = Number(profile.total_xp) || 0;
-        // If pillar_xp is missing or null in DB, default to empty (not discard real data)
         const dbPillarXp = (profile.pillar_xp && typeof profile.pillar_xp === 'object')
           ? (profile.pillar_xp as Record<Pillar, number>)
           : EMPTY_PILLAR_XP;
         const dbStreak = Number(profile.streak_count) || 0;
         const dbLastAct = profile.last_activity_date ?? null;
         const dbRole = (profile.role as 'user' | 'admin') ?? 'user';
+        
+        // Identity data from DB
+        // Identity data from DB
+        const dbArchetype = (profile as any).archetype as Archetype || 'None';
+        const dbGoals = (profile as any).goals as string[] || [];
+        const dbOnboarding = (profile as any).onboarding_completed || localStorage.getItem(`quantum_onboarding_${user.id}`) === 'true';
+        const dbName = (profile as any).display_name || '';
 
-        // Load archetype and buffs from localStorage as fallback if DB schema doesn't support them yet
-        const localArchetype = localStorage.getItem(`quantum_archetype_${user.id}`) as Archetype || 'None';
         const localBuffs = JSON.parse(localStorage.getItem(`quantum_buffs_${user.id}`) || '[]');
 
         setTotalXp(dbTotalXp);
@@ -151,7 +162,10 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
         setStreakCount(dbStreak);
         setLastActivityDate(dbLastAct);
         setRole(dbRole);
-        setArchetype(localArchetype);
+        setArchetype(dbArchetype);
+        setGoals(dbGoals);
+        setOnboardingCompleted(dbOnboarding);
+        setDisplayName(dbName);
         setBuffs(localBuffs.filter((b: Buff) => b.expiresAt > Date.now()));
 
         // Prime refs so addXp works immediately without waiting for re-render
@@ -366,8 +380,11 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
           streakCount,
           lastActivityDate,
           role,
-          archetype,
+          onboardingCompleted,
+          displayName,
           buffs,
+          archetype,
+          goals,
         },
         addXp,
         addBuff: (buff: Buff) => {
@@ -375,9 +392,27 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
           setBuffs(newBuffs);
           if (userIdRef.current) localStorage.setItem(`quantum_buffs_${userIdRef.current}`, JSON.stringify(newBuffs));
         },
-        setArchetype: (a: Archetype) => {
+        setArchetype: async (a: Archetype) => {
           setArchetype(a);
-          if (userIdRef.current) localStorage.setItem(`quantum_archetype_${userIdRef.current}`, a);
+          if (userIdRef.current && supabase) {
+            await supabase.from('profiles').update({ archetype: a }).eq('id', userIdRef.current);
+          }
+        },
+        updateProfile: async (updates: any) => {
+          if (updates.archetype) setArchetype(updates.archetype);
+          if (updates.goals) setGoals(updates.goals);
+          if (updates.onboarding_completed !== undefined) {
+            setOnboardingCompleted(updates.onboarding_completed);
+            if (userIdRef.current) {
+              localStorage.setItem(`quantum_onboarding_${userIdRef.current}`, updates.onboarding_completed.toString());
+            }
+          }
+          if (updates.display_name) setDisplayName(updates.display_name);
+
+          if (userIdRef.current && supabase) {
+            const { error } = await supabase.from('profiles').update(updates).eq('id', userIdRef.current);
+            if (error) console.error('[useProgression] updateProfile error:', error.message);
+          }
         },
         showLevelUp,
         levelUpData,

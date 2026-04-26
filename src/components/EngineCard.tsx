@@ -61,6 +61,7 @@ export function EngineCard() {
   // Executed tasks for today (store IDs)
   const [executedTaskIds, setExecutedTaskIds] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
+  const [sundayRest, setSundayRest] = useState(true);
 
   const [schedule, setSchedule] = useState<Task[]>(SCHEDULE);
 
@@ -90,19 +91,24 @@ export function EngineCard() {
             const { data } = await supabase.from('profiles').select('settings').eq('id', uid).single();
             if (data && data.settings && data.settings.timetable) {
               setSchedule(data.settings.timetable);
+              if (data.settings.sundayRest !== undefined) setSundayRest(data.settings.sundayRest);
               // Store locally to speed up future renders
               localStorage.setItem(`quantum_timetable_${uid}`, JSON.stringify(data.settings.timetable));
+              if (data.settings.sundayRest !== undefined) {
+                localStorage.setItem(`quantum_sunday_rest_${uid}`, data.settings.sundayRest.toString());
+              }
             } else {
               // Fallback to local storage
               const customTimetable = localStorage.getItem(`quantum_timetable_${uid}`);
-              if (customTimetable) {
-                setSchedule(JSON.parse(customTimetable));
-              }
+              if (customTimetable && customTimetable !== "undefined") setSchedule(JSON.parse(customTimetable));
+              
+              const customRest = localStorage.getItem(`quantum_sunday_rest_${uid}`);
+              if (customRest && customRest !== "undefined") setSundayRest(customRest !== 'false');
             }
           } catch (e) {
             // DB settings failed
             const customTimetable = localStorage.getItem(`quantum_timetable_${uid}`);
-            if (customTimetable) setSchedule(JSON.parse(customTimetable));
+            if (customTimetable && customTimetable !== "undefined") setSchedule(JSON.parse(customTimetable));
           }
         }
         
@@ -291,9 +297,9 @@ export function EngineCard() {
   const isSunday = new Date().getDay() === 0;
 
   // Sunday Rest View
-  if (isSunday) {
+  if (isSunday && sundayRest) {
     return (
-      <div className="glass-panel col-span-1 md:col-span-2 lg:col-span-3 row-span-2 p-6 flex flex-col justify-center items-center text-center relative overflow-hidden bg-emerald-950/20">
+      <div className="h-full p-6 flex flex-col justify-center items-center text-center relative overflow-hidden bg-emerald-950/20">
         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-500 to-teal-400 opacity-50" />
         <PauseCircle size={64} className="text-emerald-500 mb-4 opacity-80" />
         <h2 className="text-2xl font-bold text-textMain mb-2">System Offline</h2>
@@ -308,7 +314,7 @@ export function EngineCard() {
   // Skipped View
   if (isSkippedToday) {
     return (
-      <div className="glass-panel col-span-1 md:col-span-2 lg:col-span-3 row-span-2 p-6 flex flex-col justify-center items-center text-center relative overflow-hidden bg-amber-950/20">
+      <div className="h-full p-6 flex flex-col justify-center items-center text-center relative overflow-hidden bg-amber-950/20">
         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-amber-500 to-orange-400 opacity-50" />
         <AlertTriangle size={64} className="text-amber-500 mb-4 opacity-80" />
         <h2 className="text-2xl font-bold text-textMain mb-2">Protocol Skipped</h2>
@@ -349,11 +355,11 @@ export function EngineCard() {
   }
 
   return (
-    <div className={`h-full p-6 flex flex-col relative overflow-hidden transition-all duration-500 ${activeTask && !isCompleted ? 'animate-[pulse_3s_cubic-bezier(0.4,0,0.6,1)_infinite]' : ''}`}>
+    <div className={`h-full p-4 md:p-6 flex flex-col relative overflow-hidden transition-all duration-500 ${activeTask && !isCompleted ? 'animate-[pulse_3s_cubic-bezier(0.4,0,0.6,1)_infinite]' : ''}`}>
 
       {/* Decorative Icon */}
-      <div className="absolute top-0 right-0 p-8 opacity-5 pointer-events-none">
-        <Target size={150} />
+      <div className="absolute top-0 right-0 p-4 md:p-8 opacity-5 pointer-events-none">
+        <Target size={100} className="md:w-[150px] md:h-[150px]" />
       </div>
 
       {/* Checkmark Animation Overlay */}
@@ -370,107 +376,100 @@ export function EngineCard() {
               animate={{ rotate: 0, strokeDashoffset: 0 }}
               transition={{ duration: 0.5, type: 'spring' }}
             >
-              <CheckCircle2 size={100} className="text-emerald-500" />
+              <CheckCircle2 size={80} className="text-emerald-500 md:w-[100px] md:h-[100px]" />
             </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      <div className="flex justify-between items-start mb-6 z-10">
-        <div className="flex items-center space-x-3">
-          <div className="p-3 bg-primary/20 rounded-xl relative">
-            <Target className="text-primary" size={24} />
+      <div className="flex justify-between items-start mb-4 md:mb-6 z-10">
+        <div className="flex items-center space-x-2 md:space-x-3">
+          <div className="p-2 md:p-3 bg-primary/20 rounded-xl relative">
+            <Target className="text-primary" size={20} />
             {activeTask && !isCompleted && (
-              <span className="absolute top-0 right-0 w-3 h-3 bg-primary rounded-full animate-ping" />
+              <span className="absolute top-0 right-0 w-2 h-2 bg-primary rounded-full animate-ping" />
             )}
           </div>
           <div>
-            <h2 className="text-xl font-semibold text-textMain">The Engine</h2>
-            <p className="text-xs text-primary font-medium tracking-wide mt-1 uppercase">Action-First Protocol</p>
+            <h2 className="text-lg md:text-xl font-semibold text-textMain">The Engine</h2>
+            <p className="text-[10px] text-primary font-medium tracking-wide mt-0.5 uppercase">Action Protocol</p>
           </div>
         </div>
 
         {/* System Tags */}
-        <div className="flex gap-2">
+        <div className="flex gap-1.5 md:gap-2">
           <button
             onClick={() => {
               audio.playClick();
               notifier.requestPermission();
             }}
-            className="px-2 py-1 bg-surfaceHighlight hover:bg-surface border border-border rounded-md text-textMuted hover:text-textMain flex items-center transition-colors"
-            title="Enable Notifications"
+            className="p-1.5 md:px-2 md:py-1 bg-surfaceHighlight border border-border rounded-md text-textMuted flex items-center"
           >
-            <Bell size={14} />
+            <Bell size={12} className="md:w-[14px] md:h-[14px]" />
           </button>
           {systemState === 'optimal' && (
-            <div className="px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 text-xs font-bold rounded-md flex items-center">
-              <CheckCircle size={14} className="mr-1.5" /> System Optimal
+            <div className="px-2 py-1 md:px-3 md:py-1 bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 text-[10px] font-bold rounded-md flex items-center">
+              <CheckCircle size={12} className="mr-1 md:mr-1.5" /> <span className="hidden xs:inline">Optimal</span>
             </div>
           )}
           {systemState === 'behind' && (
-            <div className="px-3 py-1 bg-red-500/10 border border-red-500/20 text-red-500 text-xs font-bold rounded-md flex items-center">
-              <AlertTriangle size={14} className="mr-1.5" /> Critical Delay
+            <div className="px-2 py-1 md:px-3 md:py-1 bg-red-500/10 border border-red-500/20 text-red-500 text-[10px] font-bold rounded-md flex items-center">
+              <AlertTriangle size={12} className="mr-1 md:mr-1.5" /> <span className="hidden xs:inline">Delay</span>
             </div>
           )}
         </div>
       </div>
 
       <div className="flex-1 flex flex-col justify-end z-10 relative">
-        <div className="space-y-4">
+        <div className="space-y-3 md:space-y-4">
 
-          <div className="flex flex-col mb-4">
-            <div className="flex justify-between items-start mb-2">
-              <span className="text-sm font-medium text-textMuted mb-1">
-                Status: <span className="text-textMain">{activeTask ? ((activeTask as any).statusMsg || 'Active Protocol Executing...') : 'Idle / Off-Duty'}</span>
+          <div className="flex flex-col mb-2 md:mb-4">
+            <div className="flex justify-between items-start mb-1 md:mb-2">
+              <span className="text-[10px] md:text-sm font-medium text-textMuted">
+                Status: <span className="text-textMain">{activeTask ? ((activeTask as any).statusMsg || 'Active...') : 'Idle'}</span>
               </span>
-              <div className="font-mono text-3xl font-bold text-primary drop-shadow-[0_0_15px_rgba(59,130,246,0.9)] tracking-wider">
-                {currentTime.toLocaleTimeString('en-US', { hour12: false })}
+              <div className="font-mono text-xl md:text-3xl font-bold text-primary tracking-wider">
+                {currentTime.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' })}
               </div>
             </div>
-            <h3 className="text-2xl font-bold text-textMain">{activeTask ? activeTask.title : 'No Active Task'}</h3>
-            <p className="text-lg font-bold text-primary animate-pulse mt-2 bg-primary/10 inline-block px-3 py-1 rounded-md w-max border border-primary/20">
+            <h3 className="text-lg md:text-2xl font-bold text-textMain line-clamp-1">{activeTask ? activeTask.title : 'No Active Task'}</h3>
+            <p className="text-xs md:text-lg font-bold text-primary animate-pulse mt-1 md:mt-2 bg-primary/10 inline-block px-2 py-0.5 md:px-3 md:py-1 rounded-md w-max border border-primary/20">
               {timeRemaining}
             </p>
           </div>
 
-          <div className="w-full bg-surfaceHighlight rounded-full h-4 mb-2 overflow-hidden relative shadow-inner">
+          <div className="w-full bg-surfaceHighlight rounded-full h-3 md:h-4 mb-1 md:mb-2 overflow-hidden relative shadow-inner">
             <motion.div
-              className="bg-primary h-4 rounded-full relative shadow-[0_0_20px_rgba(59,130,246,0.8)]"
+              className="bg-primary h-full rounded-full relative"
               initial={{ width: 0 }}
               animate={{ width: `${progress}%` }}
               transition={{ duration: 1, ease: "linear" }}
-            >
-              {activeTask && !isCompleted && (
-                <div className="absolute top-0 right-0 bottom-0 w-24 bg-gradient-to-r from-transparent to-white/60 animate-pulse" />
-              )}
-            </motion.div>
+            />
           </div>
 
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4 pt-2">
+          <div className="flex flex-row justify-between items-end gap-2 pt-1 md:pt-2">
             <div>
-              <p className="text-3xl font-bold text-textMain">{Math.floor(progress)}%</p>
-              <p className="text-sm text-textMuted mt-1">Current Protocol Progress</p>
+              <p className="text-xl md:text-3xl font-black text-textMain">{Math.floor(progress)}%</p>
+              <p className="text-[9px] md:text-sm text-textMuted uppercase font-bold tracking-widest">Progress</p>
             </div>
 
-            <div className="flex items-center space-x-3 w-full sm:w-auto">
+            <div className="flex items-center space-x-2">
               <button
                 onClick={handleComplete}
-                onMouseEnter={() => audio.playClick()}
                 disabled={!activeTask || isCompleted}
-                className={`flex-1 py-3 px-4 sm:px-6 text-sm sm:text-base rounded-xl font-bold uppercase tracking-widest transition-all duration-300 flex items-center justify-center ${isCompleted
-                  ? 'bg-surfaceHighlight text-textMuted cursor-not-allowed border border-border'
-                  : 'bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/30 hover:border-blue-500/60 shadow-[0_0_10px_rgba(59,130,246,0.1)] hover:shadow-[0_0_20px_rgba(59,130,246,0.4)]'
+                className={`py-2 px-4 md:py-3 md:px-6 text-xs md:text-base rounded-xl font-black uppercase tracking-widest transition-all ${isCompleted
+                  ? 'bg-surfaceHighlight text-textMuted'
+                  : 'bg-primary/20 text-primary border border-primary/30 hover:bg-primary/30'
                   }`}
               >
-                <Play size={18} className="mr-2" /> {isCompleted ? 'Executed' : 'Execute'}
+                {isCompleted ? 'Done' : 'Execute'}
               </button>
 
               <button
                 onClick={() => setSkipModalOpen(true)}
-                onMouseEnter={() => audio.playClick()}
-                className="px-6 py-3 bg-surfaceHighlight hover:bg-surfaceHighlight/80 text-textMuted hover:text-textMain border border-border hover:border-textMuted rounded-xl font-bold uppercase tracking-widest transition-all duration-300 flex items-center justify-center shadow-sm hover:shadow-[0_0_15px_rgba(255,255,255,0.1)]"
+                className="p-2 md:p-3 bg-surfaceHighlight text-textMuted rounded-xl border border-border"
               >
-                <SkipForward size={18} />
+                <SkipForward size={16} />
               </button>
             </div>
           </div>

@@ -84,9 +84,13 @@ export function PathCard({ onNavigateToLogic }: { onNavigateToLogic?: () => void
       setRoadmap((prev) => {
         if (prev.length > 0) return prev;
         const savedRoadmap = localStorage.getItem(`quantum_roadmap_${uid}`);
-        if (savedRoadmap) return JSON.parse(savedRoadmap);
+        if (savedRoadmap && savedRoadmap !== "undefined") {
+          try { return JSON.parse(savedRoadmap); } catch(e) { console.error("Roadmap parse error", e); }
+        }
         const globalR = localStorage.getItem('quantum_roadmap');
-        if (globalR) return JSON.parse(globalR);
+        if (globalR && globalR !== "undefined") {
+          try { return JSON.parse(globalR); } catch(e) { console.error("Global Roadmap parse error", e); }
+        }
         return defaultRoadmap;
       });
       

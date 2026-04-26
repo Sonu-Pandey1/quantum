@@ -77,7 +77,7 @@ export function VitalityCard({ onClick }: { onClick?: () => void }) {
       } else {
         try {
           const savedHabits = localStorage.getItem(`quantum_habits_${uid}`) || localStorage.getItem('quantum_habits_default') || localStorage.getItem('quantum_habits');
-          if (savedHabits) {
+          if (savedHabits && savedHabits !== "undefined") {
             setHabits(JSON.parse(savedHabits));
           } else {
             setHabits([

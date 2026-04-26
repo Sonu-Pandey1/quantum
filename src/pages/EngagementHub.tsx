@@ -51,19 +51,19 @@ export function EngagementHub() {
       animate={{ opacity: 1 }}
       className="flex flex-col h-full w-full relative z-10 overflow-hidden"
     >
-      <div className="flex-1 overflow-y-auto p-4 md:p-8 pb-32 md:pb-8 scrollbar-thin scrollbar-thumb-surfaceHighlight scrollbar-track-transparent">
+      <div className="flex-1 overflow-y-auto p-4 md:p-8 pb-10 md:pb-8 scrollbar-thin scrollbar-thumb-surfaceHighlight scrollbar-track-transparent">
         
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-4 md:gap-6">
           
           {/* Page Header */}
-          <div className="lg:col-span-12 flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-2">
+          <div className="lg:col-span-12 flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-2">
             <div>
               <div className="flex items-center space-x-3 mb-1">
-                <Zap className="text-primary animate-pulse" size={26} />
-                <h1 className="text-2xl font-black text-textMain tracking-tight">Engagement Hub</h1>
+                <Zap className="text-primary animate-pulse" size={22} />
+                <h1 className="text-xl md:text-2xl font-black text-textMain tracking-tight uppercase">Engagement Hub</h1>
               </div>
-              <p className="text-xs text-textMuted uppercase tracking-widest font-medium">
-                Real-time activity · Login streaks · Contribution graph
+              <p className="text-[10px] md:text-xs text-textMuted uppercase tracking-widest font-medium opacity-60">
+                Neural Activity · Persistence Logic
               </p>
             </div>
             <button
@@ -76,47 +76,48 @@ export function EngagementHub() {
             </button>
           </div>
 
-          {/* ─── Streak & Engagement Cards ─────────────────────────── */}
           <div className="lg:col-span-3">
             <StatCard
-              title="Login Streak"
+              title="Streak"
               value={stats.loading ? '—' : String(stats.currentLoginStreak)}
               unit="Days"
-              icon={<Flame className="text-orange-500" size={22} />}
+              icon={<Flame className="text-orange-500" size={18} />}
               sub={stats.lastLoginDate
                 ? `Last: ${format(parseISO(stats.lastLoginDate), 'MMM d')}`
-                : 'No logins yet'}
+                : 'None'}
               color="orange"
             />
           </div>
           <div className="lg:col-span-3">
             <StatCard
-              title="Longest Streak"
+              title="Best"
               value={stats.loading ? '—' : String(stats.longestLoginStreak)}
               unit="Days"
-              icon={<Trophy className="text-amber-500" size={22} />}
+              icon={<Trophy className="text-amber-500" size={18} />}
               color="amber"
             />
           </div>
           <div className="lg:col-span-3">
             <StatCard
-              title="Total Login Days"
+              title="Total"
               value={stats.loading ? '—' : String(stats.totalLoginDays)}
               unit="Days"
-              icon={<Calendar className="text-primary" size={22} />}
+              icon={<Calendar className="text-primary" size={18} />}
               color="blue"
             />
           </div>
           <div className="lg:col-span-3">
             <StatCard
-              title="Consistency"
+              title="Stability"
               value={stats.loading ? '—' : String(consistencyPct)}
               unit="%"
-              icon={<ShieldCheck className="text-emerald-500" size={22} />}
+              icon={<ShieldCheck className="text-emerald-500" size={18} />}
               color="emerald"
             />
           </div>
+        </div>
 
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mt-6">
           {/* ─── Neural Progress Analytics ────────────────────────── */}
           <div className="lg:col-span-12">
             <ProgressAnalytics />

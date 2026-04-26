@@ -225,6 +225,7 @@ export function Sidebar({ currentView, onViewChange, isPortfolioMode, onTogglePo
   const [userData, setUserData] = useState({ name: 'Commander', id: '—', initials: 'US' });
   const [backupStatus, setBackupStatus] = useState<'idle' | 'syncing' | 'done'>('idle');
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const profileBtnRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -247,24 +248,13 @@ export function Sidebar({ currentView, onViewChange, isPortfolioMode, onTogglePo
 
   const handleBackup = () => {
     setBackupStatus('syncing');
-    
-    // Create actual backup logic: export data to JSON
     const exportData = async () => {
       if (!supabase) return;
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) return;
-
-        // Fetch user data for backup
         const { data: profile } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
-        
-        const backup = {
-          timestamp: new Date().toISOString(),
-          userId: session.user.id,
-          profile,
-          // You can add more tables here if needed
-        };
-
+        const backup = { timestamp: new Date().toISOString(), userId: session.user.id, profile };
         const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
@@ -273,16 +263,9 @@ export function Sidebar({ currentView, onViewChange, isPortfolioMode, onTogglePo
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-      } catch (err) {
-        console.error('Backup failed:', err);
-      }
+      } catch (err) { console.error('Backup failed:', err); }
     };
-
-    setTimeout(() => {
-      exportData();
-      setBackupStatus('done');
-      setTimeout(() => setBackupStatus('idle'), 3000);
-    }, 1500);
+    setTimeout(() => { exportData(); setBackupStatus('done'); setTimeout(() => setBackupStatus('idle'), 3000); }, 1500);
   };
 
   const navItems = [
@@ -295,111 +278,180 @@ export function Sidebar({ currentView, onViewChange, isPortfolioMode, onTogglePo
     { id: 'control_room', icon: Settings, label: 'System' },
   ];
 
-  if (isAdmin) {
-    navItems.push({ id: 'admin', icon: ShieldAlert, label: 'Admin Panel' });
-  }
+  if (isAdmin) navItems.push({ id: 'admin', icon: ShieldAlert, label: 'Admin' });
+
+  // Mobile navigation items (top 4 + Menu)
+  const mobilePrimaryNav = navItems.slice(0, 4);
 
   return (
     <>
+      {/* Desktop Sidebar / Mobile Floating Bar Wrapper */}
       <motion.aside
         className={cn(
           'fixed z-[100] transition-all duration-500 ease-in-out',
           'bottom-0 left-0 right-0 h-[72px] md:h-auto md:top-4 md:bottom-4 md:left-4 md:w-20',
-          'flex flex-row md:flex-col items-center justify-between',
-          'bg-[#0a0a0c]/60 backdrop-blur-2xl border-t md:border border-white/5 md:rounded-[24px] shadow-[0_20px_50px_rgba(0,0,0,0.5)] px-4 md:px-0 md:py-6 overflow-hidden'
+          'bg-[#0a0a0c]/80 backdrop-blur-3xl border-t md:border border-white/10 md:rounded-[24px] shadow-[0_-10px_40px_rgba(0,0,0,0.4)] md:shadow-2xl px-2 md:px-0 md:py-6'
         )}
       >
+        <nav className="flex md:flex-col items-center justify-around md:justify-start w-full flex-1 md:space-y-2 md:overflow-y-auto md:scrollbar-none">
+          {/* Main Navigation (Desktop) */}
+          <div className="hidden md:flex flex-col items-center space-y-2 w-full">
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = currentView === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => { audio.playClick(); onViewChange(item.id); }}
+                  className={cn(
+                    'relative flex items-center justify-center transition-all duration-300 rounded-xl w-14 h-14 group',
+                    isActive ? 'text-primary' : 'text-textMuted hover:text-textMain'
+                  )}
+                >
+                  <Icon size={isActive ? 24 : 22} className={cn('relative z-10 transition-all duration-300', isActive && 'drop-shadow-[0_0_8px_rgba(59,130,246,0.5)]')} />
+                  {isActive && (
+                    <motion.div layoutId="sidebar-active" className="absolute inset-0 bg-primary/10 rounded-xl border border-primary/20 z-0" />
+                  )}
+                  <div className="absolute left-full ml-4 px-3 py-1.5 bg-[#0f111a] border border-white/10 rounded-lg text-[10px] font-bold uppercase tracking-widest text-white opacity-0 group-hover:opacity-100 pointer-events-none translate-x-[-10px] group-hover:translate-x-0 transition-all duration-300 shadow-2xl whitespace-nowrap z-[110]">
+                    {item.label}
+                  </div>
+                </button>
+              );
+            })}
+          </div>          {/* Mobile Navigation (Bottom Bar) */}
+          <div className="flex md:hidden w-full items-center h-full overflow-hidden">
+            <div className="flex-1 flex items-center px-4 h-full overflow-x-auto no-scrollbar space-x-1 scroll-smooth">
+              {navItems.map((item) => {
+                const Icon = item.icon;
+                const isActive = currentView === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => { audio.playClick(); onViewChange(item.id); }}
+                    className={cn(
+                      'relative flex flex-col items-center justify-center transition-all duration-300 rounded-xl min-w-[75px] h-14 shrink-0',
+                      isActive ? 'text-primary' : 'text-textMuted'
+                    )}
+                  >
+                    {isActive && (
+                      <motion.div layoutId="mobile-active" className="absolute inset-0 bg-primary/10 rounded-xl border border-primary/20" />
+                    )}
+                    <Icon size={22} className={cn('relative z-10 transition-all', isActive && 'drop-shadow-[0_0_8px_rgba(59,130,246,0.5)]')} />
+                    <span className="relative z-10 text-[9px] uppercase tracking-tighter font-black mt-1 whitespace-nowrap">{item.label}</span>
+                  </button>
+                );
+              })}
+              <div className="min-w-[10px] h-1 shrink-0" /> {/* Spacer */}
+            </div>
 
-
-        {/* Nav Links */}
-        <nav className="flex-1 flex md:flex-col items-center justify-around md:justify-start w-full md:space-y-2 md:overflow-y-auto md:scrollbar-none md:py-2">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = currentView === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => {
-                  audio.playClick();
-                  onViewChange(item.id);
-                }}
-                onMouseEnter={() => audio.playClick()}
-                className={cn(
-                  'relative flex-1 md:flex-none flex flex-col items-center justify-center transition-all duration-300 rounded-xl md:w-14 md:h-14 group',
-                  isActive ? 'text-primary' : 'text-textMuted hover:text-textMain'
-                )}
+            {/* Mobile Profile Avatar (Fixed on Right) */}
+            <div className="shrink-0 h-full flex items-center px-3 bg-[#0a0a0c]/40 backdrop-blur-md border-l border-white/5 shadow-[-10px_0_20px_rgba(0,0,0,0.2)]">
+              <button 
+                ref={profileBtnRef} 
+                onClick={() => setShowProfileMenu(!showProfileMenu)}
+                className="relative flex flex-col items-center justify-center min-w-[65px] h-14"
               >
-                {/* Active Highlight */}
-                {isActive && (
-                  <motion.div 
-                    layoutId="sidebar-active"
-                    className="absolute inset-0 bg-primary/10 rounded-2xl md:rounded-[20px] border border-primary/20 shadow-[0_0_20px_rgba(59,130,246,0.15)]" 
-                  />
-                )}
-                
-                {/* Icon Wrapper */}
-                <div className={cn(
-                  'relative z-10 flex items-center justify-center w-10 h-10 rounded-xl transition-all duration-300',
-                  isActive ? 'scale-110' : 'group-hover:bg-white/5'
-                )}>
-                  <Icon size={isActive ? 24 : 22} className={cn('transition-all duration-300', isActive && 'drop-shadow-[0_0_8px_rgba(59,130,246,0.5)]')} />
+                <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-primary/50 to-purple-500/50 p-[1.5px] shadow-lg">
+                  <div className="w-full h-full rounded-full bg-surfaceHighlight/80 flex items-center justify-center border border-white/10">
+                    <span className="text-[10px] font-black text-textMain">{userData.initials}</span>
+                  </div>
                 </div>
-
-                {/* Mobile Label (optional, hidden here for clean look) */}
-                <span className={cn(
-                  'text-[8px] uppercase tracking-tighter font-black mt-1 md:hidden transition-all',
-                  isActive ? 'opacity-100' : 'opacity-40'
-                )}>
-                  {item.label}
-                </span>
-
-                {/* Desktop Tooltip/Label */}
-                <div className="hidden md:block absolute left-full ml-4 px-3 py-1.5 bg-[#0f111a] border border-white/10 rounded-lg text-[10px] font-bold uppercase tracking-widest text-white opacity-0 group-hover:opacity-100 pointer-events-none translate-x-[-10px] group-hover:translate-x-0 transition-all duration-300 shadow-2xl whitespace-nowrap z-[110]">
-                  {item.label}
-                </div>
+                <span className="text-[9px] uppercase tracking-tighter font-black mt-1 text-textMuted">Account</span>
+                <div className="absolute top-3 right-4 w-2 h-2 rounded-full bg-emerald-500 border border-[#0a0a0c]" />
               </button>
-            );
-          })}
+            </div>
+          </div>
         </nav>
 
-        {/* Profile & Settings Area */}
-        <div className="flex md:flex-col items-center gap-4 md:gap-6 md:mt-10">
-          {/* Backup Icon (Desktop only) */}
-          <button
-            onClick={() => {
-              audio.playClick();
-              handleBackup();
-            }}
-            className={cn(
-              'hidden md:flex items-center justify-center w-12 h-12 rounded-2xl transition-all border border-white/5 hover:border-primary/30 group',
-              backupStatus === 'syncing' ? 'animate-pulse' : ''
-            )}
-            title="Export Protocol Data"
-          >
-            {backupStatus === 'done' ? (
-              <Check className="text-emerald-400" size={20} />
-            ) : (
-              <DatabaseBackup className="text-textMuted group-hover:text-primary transition-colors" size={20} />
-            )}
+        {/* Desktop Profile Area */}
+        <div className="hidden md:flex flex-col items-center gap-6 mt-10">
+          <button onClick={() => { audio.playClick(); handleBackup(); }} className={cn('flex items-center justify-center w-12 h-12 rounded-2xl border border-white/5 hover:border-primary/30 group', backupStatus === 'syncing' && 'animate-pulse')}>
+            {backupStatus === 'done' ? <Check className="text-emerald-400" size={20} /> : <DatabaseBackup className="text-textMuted group-hover:text-primary transition-colors" size={20} />}
           </button>
-
-          {/* User Avatar */}
-          <div className="relative">
-            <button
-              ref={profileBtnRef}
-              onClick={() => setShowProfileMenu((prev) => !prev)}
-              className="relative p-[2px] rounded-full bg-gradient-to-tr from-primary/50 to-purple-500/50 hover:from-primary hover:to-purple-500 transition-all duration-500 hover:scale-105 active:scale-95 group shadow-lg"
-            >
-              <div className="w-10 h-10 md:w-11 md:h-11 rounded-full bg-surfaceHighlight/80 flex items-center justify-center overflow-hidden border border-white/10">
-                <span className="text-[10px] md:text-xs font-black text-textMain group-hover:scale-110 transition-transform">{userData.initials}</span>
-              </div>
-              <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-500 border-2 border-[#0a0a0c] rounded-full shadow-[0_0_10px_rgba(16,185,129,0.5)]" />
-            </button>
-          </div>
+          <button ref={profileBtnRef} onClick={() => setShowProfileMenu(!showProfileMenu)} className="relative p-[2px] rounded-full bg-gradient-to-tr from-primary/50 to-purple-500/50 hover:scale-105 active:scale-95 group shadow-lg">
+            <div className="w-11 h-11 rounded-full bg-surfaceHighlight/80 flex items-center justify-center border border-white/10">
+              <span className="text-xs font-black text-textMain">{userData.initials}</span>
+            </div>
+          </button>
         </div>
       </motion.aside>
 
-      {/* Portal dropdown — renders outside sidebar so overflow:hidden never clips it */}
+      {/* Mobile Sliding Menu Drawer */}
+      <AnimatePresence>
+        {isMobileMenuOpen && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsMobileMenuOpen(false)}
+              className="fixed inset-0 bg-black/60 backdrop-blur-md z-[90] md:hidden"
+            />
+            <motion.div
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              className="fixed right-0 top-0 bottom-0 w-[280px] bg-[#0a0a0c] border-l border-white/10 z-[95] md:hidden flex flex-col p-6 pt-24"
+            >
+              <div className="flex items-center space-x-4 mb-10 pb-6 border-b border-white/10">
+                <div className="w-14 h-14 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center">
+                  <span className="text-xl font-black text-primary">{userData.initials}</span>
+                </div>
+                <div>
+                  <h3 className="font-bold text-textMain">{userData.name}</h3>
+                  <p className="text-[10px] text-textMuted uppercase tracking-widest">Protocol Commander</p>
+                </div>
+              </div>
+
+              <div className="space-y-2 flex-1 overflow-y-auto">
+                <p className="text-[10px] text-textMuted uppercase tracking-widest font-bold mb-4 opacity-50">Operational Hub</p>
+                {navItems.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = currentView === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => { audio.playClick(); onViewChange(item.id); setIsMobileMenuOpen(false); }}
+                      className={cn(
+                        'w-full flex items-center space-x-4 p-4 rounded-2xl transition-all border',
+                        isActive 
+                          ? 'bg-primary/10 border-primary/30 text-primary' 
+                          : 'bg-white/5 border-transparent text-textMuted'
+                      )}
+                    >
+                      <Icon size={18} />
+                      <span className="font-bold text-sm">{item.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="mt-auto space-y-3 pt-6 border-t border-white/10">
+                <button 
+                  onClick={() => { audio.playClick(); handleBackup(); }}
+                  className="w-full flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/10 text-textMuted text-xs font-bold"
+                >
+                  <div className="flex items-center space-x-3">
+                    <DatabaseBackup size={16} />
+                    <span>Export Protocol Data</span>
+                  </div>
+                  {backupStatus === 'done' && <Check size={14} className="text-emerald-400" />}
+                </button>
+                <button 
+                  onClick={async () => { if (supabase) await supabase.auth.signOut(); window.location.reload(); }}
+                  className="w-full flex items-center space-x-3 p-4 bg-red-500/10 rounded-2xl border border-red-500/20 text-red-400 text-xs font-bold"
+                >
+                  <LogOut size={16} />
+                  <span>Disconnect Link</span>
+                </button>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* Desktop Profile Portal */}
       <ProfileDropdown
         anchor={profileBtnRef}
         isOpen={showProfileMenu}

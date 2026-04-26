@@ -11,12 +11,14 @@ import type { Archetype } from '../hooks/useProgression';
 
 export function Onboarding({ onComplete }: { onComplete: () => void }) {
   const [step, setStep] = useState(1);
-  const { setArchetype } = useProgression();
+  const { updateProfile } = useProgression();
   const [formData, setFormData] = useState({
     name: '',
     archetype: 'None' as Archetype,
     goals: [] as string[]
   });
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState('');
 
   const archetypes = [
     {
@@ -54,12 +56,29 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
   const nextStep = () => setStep(s => s + 1);
   const prevStep = () => setStep(s => s - 1);
 
-  const handleComplete = () => {
-    setArchetype(formData.archetype);
-    // Save additional goal data to localStorage
-    localStorage.setItem('quantum_onboarding_completed', 'true');
-    localStorage.setItem('quantum_user_name', formData.name);
-    localStorage.setItem('quantum_user_goals', JSON.stringify(formData.goals));
+  const handleComplete = async () => {
+    setIsSaving(true);
+    
+    const statuses = [
+      'Establishing Neural Link...',
+      'Synchronizing Identity Modules...',
+      'Encrypting Strategic Goals...',
+      'Archetype Integration: Complete.',
+      'System Initialization Finalized.'
+    ];
+
+    for (let i = 0; i < statuses.length; i++) {
+      setSaveStatus(statuses[i]);
+      await new Promise(r => setTimeout(r, 800));
+    }
+
+    await updateProfile({
+      archetype: formData.archetype,
+      goals: formData.goals,
+      display_name: formData.name,
+      onboarding_completed: true
+    });
+    
     onComplete();
   };
 
@@ -77,7 +96,35 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
         className="max-w-2xl w-full glass-panel p-8 md:p-12 border-primary/20 relative z-10"
       >
         <AnimatePresence mode="wait">
-          {step === 1 && (
+          {isSaving ? (
+            <motion.div
+              key="saving"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="flex flex-col items-center justify-center py-20 space-y-8"
+            >
+              <div className="relative">
+                <div className="w-24 h-24 rounded-full border-4 border-primary/20 border-t-primary animate-spin" />
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <Rocket className="text-primary animate-bounce" size={32} />
+                </div>
+              </div>
+              <div className="text-center space-y-2">
+                <p className="text-xl font-black text-textMain tracking-widest uppercase italic">{saveStatus}</p>
+                <div className="flex justify-center space-x-1">
+                  {[...Array(3)].map((_, i) => (
+                    <motion.div
+                      key={i}
+                      animate={{ opacity: [0.3, 1, 0.3] }}
+                      transition={{ duration: 1, repeat: Infinity, delay: i * 0.2 }}
+                      className="w-1.5 h-1.5 bg-primary rounded-full"
+                    />
+                  ))}
+                </div>
+              </div>
+            </motion.div>
+          ) : step === 1 ? (
             <motion.div
               key="step1"
               initial={{ opacity: 0, x: 20 }}
@@ -113,9 +160,7 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
                 Continue Protocol <ChevronRight className="ml-2" size={18} />
               </button>
             </motion.div>
-          )}
-
-          {step === 2 && (
+          ) : step === 2 ? (
             <motion.div
               key="step2"
               initial={{ opacity: 0, x: 20 }}
@@ -141,8 +186,8 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
                     key={a.id}
                     onClick={() => setFormData({ ...formData, archetype: a.id as Archetype })}
                     className={`w-full text-left p-6 rounded-2xl border transition-all relative group overflow-hidden ${formData.archetype === a.id
-                        ? 'bg-primary/20 border-primary'
-                        : 'bg-white/5 border-white/10 hover:border-white/20'
+                        ? 'bg-primary/20 border-primary shadow-[0_0_20px_rgba(59,130,246,0.1)]'
+                        : 'bg-white/5 border-white/10 hover:border-white/30 hover:bg-white/[0.08] hover:scale-[1.01]'
                       }`}
                   >
                     <div className="flex items-center space-x-4 relative z-10">
@@ -171,9 +216,7 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
                 Confirm Archetype <ChevronRight className="ml-2" size={18} />
               </button>
             </motion.div>
-          )}
-
-          {step === 3 && (
+          ) : (
             <motion.div
               key="step3"
               initial={{ opacity: 0, x: 20 }}

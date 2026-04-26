@@ -25,18 +25,35 @@ interface BentoGridProps {
   isPortfolioMode?: boolean;
 }
 
+import { useProgression } from '../hooks/useProgression';
+
 export function BentoGrid({ onNavigateToLogic, onNavigate, isPortfolioMode }: BentoGridProps) {
+  const { state } = useProgression();
+  
   return (
-    <div className="flex-1 overflow-y-auto overflow-x-hidden p-3 md:p-8 pb-32 md:pb-32 relative z-10 scrollbar-thin scrollbar-thumb-surfaceHighlight scrollbar-track-transparent w-full">
+    <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-8 pb-10 md:pb-32 relative z-10 scrollbar-thin scrollbar-thumb-surfaceHighlight scrollbar-track-transparent w-full">
       
       {/* Decorative gradient orb */}
       <div className="absolute top-0 left-1/4 w-96 h-96 bg-primary/20 rounded-full blur-[120px] pointer-events-none -z-10" />
       <div className="absolute bottom-1/4 right-1/4 w-[500px] h-[500px] bg-purple-600/10 rounded-full blur-[150px] pointer-events-none -z-10" />
 
-      <div className="max-w-7xl mx-auto space-y-4 md:space-y-8">
+      <div className="max-w-7xl mx-auto space-y-6 md:space-y-8">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-textMain mb-1">Command Center</h1>
-          <p className="text-textMuted mb-6">Overview of active systems and protocols.</p>
+          <h1 className="text-xl md:text-3xl font-bold tracking-tight text-textMain mb-1 uppercase tracking-tighter">
+            {state.displayName ? `${state.displayName}'s ` : ''}Command Center
+          </h1>
+          <p className="text-[10px] md:text-sm text-textMuted mb-2 flex items-center space-x-2">
+            <span className="flex items-center">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-2 animate-pulse" />
+              Operational Status: Online
+            </span>
+            {state.archetype !== 'None' && (
+              <>
+                <span className="w-1 h-1 bg-white/20 rounded-full" />
+                <span className="text-primary font-bold uppercase tracking-widest text-[9px] md:text-[10px]">{state.archetype}</span>
+              </>
+            )}
+          </p>
         </div>
 
         <motion.div 
