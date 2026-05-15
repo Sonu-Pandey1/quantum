@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   ChevronLeft, BrainCircuit, Search,
-  CheckCircle2, Star, Lock, Timer, Zap
+  CheckCircle2, Star, Lock, Timer
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { audio } from '../lib/audio';

@@ -45,7 +45,7 @@ const BADGE_LABELS: Record<string, string> = {
 };
 
 export function TimetableHub() {
-  const { state, addXp } = useProgression();
+  const { addXp } = useProgression();
 
   // Get userId from supabase session via progression context workaround
   const [supaUserId] = useState<string | null>(() => {
