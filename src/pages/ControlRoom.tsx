@@ -15,6 +15,7 @@ interface TimetableTask {
   dayOfWeek?: number;   // 0=Sun … 6=Sat (undefined = applies to all days)
   category?: string;   // 'gym' | 'study' | 'work' | 'mind' | 'other'
   isWeekend?: boolean; // marks as optional weekend bonus task
+  task_target?: 'High' | 'Medium' | 'Low';
 }
 
 interface HabitTask {
@@ -320,7 +321,7 @@ export function ControlRoom() {
                         className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-textMain outline-none focus:border-primary"
                       />
                     </div>
-                    <div className="sm:w-36">
+                    <div className="sm:w-32">
                       <label className="text-[10px] text-textMuted font-bold uppercase tracking-wider mb-1 block">Category</label>
                       <select
                         value={task.category || 'other'}
@@ -332,6 +333,22 @@ export function ControlRoom() {
                         <option value="work">💼 Work</option>
                         <option value="mind">🧘 Mind</option>
                         <option value="other">⚙️ Other</option>
+                      </select>
+                    </div>
+                    <div className="sm:w-40">
+                      <label className="text-[10px] text-textMuted font-bold uppercase tracking-wider mb-1 block">Priority</label>
+                      <select
+                        value={task.task_target || 'Medium'}
+                        onChange={(e) => handleTaskChange(task.id, 'task_target', e.target.value)}
+                        className={`w-full bg-background border rounded-lg px-2 py-2 text-sm font-bold outline-none focus:border-primary ${
+                          task.task_target === 'High' ? 'text-red-400 border-red-500/20' :
+                          task.task_target === 'Medium' ? 'text-amber-400 border-amber-500/20' :
+                          'text-blue-400 border-blue-500/20'
+                        }`}
+                      >
+                        <option value="High">🔴 Most Important (100XP)</option>
+                        <option value="Medium">🟡 Important (60XP)</option>
+                        <option value="Low">🔵 Other (40XP)</option>
                       </select>
                     </div>
                   </div>

@@ -55,7 +55,7 @@ export function TimetableHub() {
 
   const {
     tasks, completions, badges, loading, todayStats,
-    isWeekend, addTask, deleteTask, copyDayToDay, toggleCompletion, claimDayBonus
+    isWeekend, addTask, updateTask, deleteTask, copyDayToDay, toggleCompletion, claimDayBonus
   } = useTimetable(supaUserId);
 
   const [activeDay, setActiveDay] = useState<DayOfWeek>(new Date().getDay() as DayOfWeek);
@@ -234,41 +234,50 @@ export function TimetableHub() {
                       placeholder="Task name (e.g. Morning run, Read 30 mins)..."
                       className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-2.5 text-sm text-textMain focus:border-primary outline-none placeholder:text-white/20"
                     />
-                    <div className="flex flex-wrap gap-2">
-                      {CATEGORIES.map(c => (
-                        <button
-                          key={c.id}
-                          onClick={() => setNewCategory(c.id)}
-                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[10px] font-black uppercase tracking-widest transition-all ${
-                            newCategory === c.id
-                              ? 'bg-primary/20 border-primary text-primary'
-                              : 'bg-surfaceHighlight border-white/10 text-textMuted hover:border-white/20'
-                          }`}
-                        >
-                          <c.icon size={10} /> {c.label}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <label className="text-[10px] font-bold text-textMuted uppercase tracking-widest shrink-0">Priority</label>
-                      <div className="flex gap-2">
-                        {[
-                          { id: 'High', label: 'Most Important (100xp)', color: 'text-red-400', bg: 'bg-red-500/10', border: 'border-red-500/20' },
-                          { id: 'Medium', label: 'Important (60xp)', color: 'text-amber-400', bg: 'bg-amber-500/10', border: 'border-amber-500/20' },
-                          { id: 'Low', label: 'Other (40xp)', color: 'text-blue-400', bg: 'bg-blue-500/10', border: 'border-blue-500/20' },
-                        ].map(t => (
-                          <button
-                            key={t.id}
-                            onClick={() => setNewTarget(t.id as any)}
-                            className={`px-3 py-1.5 rounded-xl border text-[9px] font-black uppercase tracking-widest transition-all ${
-                              newTarget === t.id
-                                ? `${t.bg} ${t.border} ${t.color}`
-                                : 'bg-surfaceHighlight border-white/10 text-textMuted hover:border-white/20'
-                            }`}
-                          >
-                            {t.label}
-                          </button>
-                        ))}
+                    <div className="p-4 bg-surfaceHighlight/50 border border-white/5 rounded-2xl space-y-4">
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-textMuted uppercase tracking-widest block opacity-50">Core Category</label>
+                        <div className="flex flex-wrap gap-2">
+                          {CATEGORIES.map(c => (
+                            <button
+                              key={c.id}
+                              type="button"
+                              onClick={() => setNewCategory(c.id)}
+                              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[10px] font-black uppercase tracking-widest transition-all ${
+                                newCategory === c.id
+                                  ? 'bg-primary/20 border-primary text-primary shadow-[0_0_15px_rgba(59,130,246,0.1)]'
+                                  : 'bg-surface border-white/10 text-textMuted hover:border-white/20'
+                              }`}
+                            >
+                              <c.icon size={10} /> {c.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-textMuted uppercase tracking-widest block opacity-50">Strategic Priority</label>
+                        <div className="grid grid-cols-3 gap-2">
+                          {[
+                            { id: 'High', label: 'MOST IMPORTANT', sub: '100 XP', color: 'text-red-400', bg: 'bg-red-500/10', border: 'border-red-500/20' },
+                            { id: 'Medium', label: 'IMPORTANT', sub: '60 XP', color: 'text-amber-400', bg: 'bg-amber-500/10', border: 'border-amber-500/20' },
+                            { id: 'Low', label: 'OTHER', sub: '40 XP', color: 'text-blue-400', bg: 'bg-blue-500/10', border: 'border-blue-500/20' },
+                          ].map(t => (
+                            <button
+                              key={t.id}
+                              type="button"
+                              onClick={() => setNewTarget(t.id as any)}
+                              className={`flex flex-col items-center justify-center p-3 rounded-2xl border transition-all ${
+                                newTarget === t.id
+                                  ? `${t.bg} ${t.border} ${t.color} ring-1 ring-white/10 scale-[1.02] shadow-lg`
+                                  : 'bg-surface border-white/5 text-textMuted hover:border-white/10'
+                              }`}
+                            >
+                              <span className="text-[9px] font-black tracking-widest leading-none mb-1">{t.label}</span>
+                              <span className="text-[11px] font-black uppercase">{t.sub}</span>
+                            </button>
+                          ))}
+                        </div>
                       </div>
                     </div>
 
@@ -344,13 +353,21 @@ export function TimetableHub() {
                         <p className="text-[10px] text-textMuted">{task.start_time || '--:--'} · {cat.label} · {task.duration_minutes} min · {task.pillar}</p>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
-                        <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded border ${
-                          task.task_target === 'High' ? 'text-red-400 border-red-500/20 bg-red-500/5' :
-                          task.task_target === 'Medium' ? 'text-amber-400 border-amber-500/20 bg-amber-500/5' :
-                          'text-blue-400 border-blue-500/20 bg-blue-500/5'
-                        }`}>
+                        <button
+                          onClick={() => {
+                            const next: Record<string, string> = { 'High': 'Medium', 'Medium': 'Low', 'Low': 'High' };
+                            const newPriority = next[task.task_target || 'Medium'];
+                            updateTask(task.id, { task_target: newPriority as any });
+                            toast.success(`Priority shifted to ${newPriority}`, { id: `pri-${task.id}`, duration: 1000 });
+                          }}
+                          className={`text-[9px] font-black uppercase px-2.5 py-1 rounded-xl border transition-all hover:scale-105 active:scale-95 ${
+                            task.task_target === 'High' ? 'text-red-400 border-red-500/20 bg-red-500/10' :
+                            task.task_target === 'Medium' ? 'text-amber-400 border-amber-500/20 bg-amber-500/10' :
+                            'text-blue-400 border-blue-500/20 bg-blue-500/10'
+                          }`}
+                        >
                           {task.task_target === 'High' ? '100 XP' : task.task_target === 'Medium' ? '60 XP' : '40 XP'}
-                        </span>
+                        </button>
                         <button
                           onClick={() => deleteTask(task.id)}
                           className="p-1.5 rounded-lg hover:bg-red-500/10 hover:text-red-400 text-textMuted transition-all"
