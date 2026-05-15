@@ -236,7 +236,6 @@ export function Sidebar({ currentView, onViewChange, isPortfolioMode, onTogglePo
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isMobileView, setIsMobileView] = useState(false);
   const desktopBtnRef = useRef<HTMLButtonElement>(null);
-  const mobileBtnRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     const handleResize = () => setIsMobileView(window.innerWidth < 768);
@@ -337,14 +336,6 @@ export function Sidebar({ currentView, onViewChange, isPortfolioMode, onTogglePo
           </div>          {/* Mobile Navigation (Bottom Bar) */}
           <div className="flex md:hidden w-full items-center h-full overflow-hidden">
             <div className="flex-1 flex items-center px-4 h-full overflow-x-auto no-scrollbar space-x-1 scroll-smooth">
-              {/* Drawer Toggle Button */}
-              <button
-                onClick={() => { audio.playClick(); setIsMobileMenuOpen(true); }}
-                className="relative flex flex-col items-center justify-center transition-all duration-300 rounded-xl min-w-[65px] h-14 shrink-0 text-textMuted hover:text-primary bg-white/5 border border-white/5"
-              >
-                <Menu size={22} className="relative z-10" />
-                <span className="relative z-10 text-[9px] uppercase tracking-tighter font-black mt-1 whitespace-nowrap">Menu</span>
-              </button>
               {navItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = currentView === item.id;
@@ -368,19 +359,16 @@ export function Sidebar({ currentView, onViewChange, isPortfolioMode, onTogglePo
               <div className="min-w-[10px] h-1 shrink-0" /> {/* Spacer */}
             </div>
 
-            {/* Mobile Profile Avatar (Fixed on Right) */}
+            {/* Fixed Menu Button on Right */}
             <div className="shrink-0 h-full flex items-center px-3 bg-[#0a0a0c]/40 backdrop-blur-md border-l border-white/5 shadow-[-10px_0_20px_rgba(0,0,0,0.2)]">
-              <button 
-                ref={mobileBtnRef} 
-                onClick={() => setShowProfileMenu(!showProfileMenu)}
+              <button
+                onClick={() => { audio.playClick(); setIsMobileMenuOpen(true); }}
                 className="relative flex flex-col items-center justify-center min-w-[65px] h-14"
               >
-                <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-primary/50 to-purple-500/50 p-[1.5px] shadow-lg">
-                  <div className="w-full h-full rounded-full bg-surfaceHighlight/80 flex items-center justify-center border border-white/10">
-                    <span className="text-[10px] font-black text-textMain">{userData.initials}</span>
-                  </div>
+                <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center border border-primary/20 mb-0.5">
+                  <Menu size={20} className="text-primary" />
                 </div>
-                <span className="text-[9px] uppercase tracking-tighter font-black mt-1 text-textMuted">Account</span>
+                <span className="text-[9px] uppercase tracking-tighter font-black text-textMuted">Menu</span>
                 <div className="absolute top-3 right-4 w-2 h-2 rounded-full bg-emerald-500 border border-[#0a0a0c]" />
               </button>
             </div>
@@ -418,7 +406,7 @@ export function Sidebar({ currentView, onViewChange, isPortfolioMode, onTogglePo
               transition={{ type: 'spring', damping: 25, stiffness: 300 }}
               className="fixed right-0 top-0 bottom-0 w-[280px] bg-[#0a0a0c] border-l border-white/10 z-[95] md:hidden flex flex-col p-6 pt-24"
             >
-              <div className="flex items-center space-x-4 mb-10 pb-6 border-b border-white/10">
+              <div className="flex items-center space-x-4 mb-8 pb-6 border-b border-white/10">
                 <div className="w-14 h-14 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center">
                   <span className="text-xl font-black text-primary">{userData.initials}</span>
                 </div>
@@ -426,6 +414,24 @@ export function Sidebar({ currentView, onViewChange, isPortfolioMode, onTogglePo
                   <h3 className="font-bold text-textMain">{userData.name}</h3>
                   <p className="text-[10px] text-textMuted uppercase tracking-widest">Protocol Commander</p>
                 </div>
+              </div>
+
+              <div className="space-y-2 mb-8">
+                <p className="text-[10px] text-textMuted uppercase tracking-widest font-bold mb-4 opacity-50">Profile Settings</p>
+                <button
+                  onClick={() => { audio.playClick(); onViewChange('engagement'); setIsMobileMenuOpen(false); }}
+                  className="w-full flex items-center space-x-4 p-4 rounded-2xl bg-white/5 border border-white/5 text-textMain"
+                >
+                  <User size={18} className="text-blue-400" />
+                  <span className="font-bold text-sm">Profile Overview</span>
+                </button>
+                <button
+                  onClick={() => { audio.playClick(); onTogglePortfolio(); setIsMobileMenuOpen(false); }}
+                  className="w-full flex items-center space-x-4 p-4 rounded-2xl bg-white/5 border border-white/5 text-textMain"
+                >
+                  {isPortfolioMode ? <EyeOff size={18} className="text-purple-400" /> : <Eye size={18} className="text-emerald-400" />}
+                  <span className="font-bold text-sm">{isPortfolioMode ? 'Exit Portfolio' : 'Portfolio Mode'}</span>
+                </button>
               </div>
 
               <div className="space-y-2 flex-1 overflow-y-auto">
@@ -476,16 +482,18 @@ export function Sidebar({ currentView, onViewChange, isPortfolioMode, onTogglePo
       </AnimatePresence>
 
       {/* Desktop Profile Portal */}
-      <ProfileDropdown
-        anchor={isMobileView ? mobileBtnRef : desktopBtnRef}
-        isOpen={showProfileMenu}
-        onClose={() => setShowProfileMenu(false)}
-        isPortfolioMode={isPortfolioMode}
-        onTogglePortfolio={onTogglePortfolio}
-        onNavigate={onViewChange}
-        displayName={userData.name}
-        userId={userData.id}
-      />
+      {!isMobileView && (
+        <ProfileDropdown
+          anchor={desktopBtnRef}
+          isOpen={showProfileMenu}
+          onClose={() => setShowProfileMenu(false)}
+          isPortfolioMode={isPortfolioMode}
+          onTogglePortfolio={onTogglePortfolio}
+          onNavigate={onViewChange}
+          displayName={userData.name}
+          userId={userData.id}
+        />
+      )}
     </>
   );
 }

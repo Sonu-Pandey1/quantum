@@ -90,4 +90,27 @@
   .scrollbar-thin::-webkit-scrollbar-thumb {
     @apply bg-white/5 rounded-full hover:bg-white/10 transition-colors;
   }
+
+  /* Mobile-specific layout enhancements */
+  @media (max-width: 768px) {
+    .mobile-padding {
+      @apply p-4;
+    }
+    .mobile-margin {
+      @apply m-4;
+    }
+    .mobile-safe-bottom {
+      @apply pb-32;
+    }
+    .mobile-card-spacing {
+      @apply space-y-4;
+    }
+    .mobile-text-sm {
+      @apply text-[13px] leading-relaxed;
+    }
+    /* Better touch targets */
+    button, a {
+      @apply min-h-[44px] min-w-[44px];
+    }
+  }
 }
