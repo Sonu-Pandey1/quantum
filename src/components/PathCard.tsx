@@ -87,9 +87,11 @@ export function PathCard({ onNavigateToLogic }: { onNavigateToLogic?: () => void
         if (savedRoadmap && savedRoadmap !== "undefined") {
           try { return JSON.parse(savedRoadmap); } catch(e) { console.error("Roadmap parse error", e); }
         }
-        const globalR = localStorage.getItem('quantum_roadmap');
-        if (globalR && globalR !== "undefined") {
-          try { return JSON.parse(globalR); } catch(e) { console.error("Global Roadmap parse error", e); }
+        if (uid === 'default') {
+          const globalR = localStorage.getItem('quantum_roadmap');
+          if (globalR && globalR !== "undefined") {
+            try { return JSON.parse(globalR); } catch(e) { console.error("Global Roadmap parse error", e); }
+          }
         }
         return defaultRoadmap;
       });
@@ -99,8 +101,10 @@ export function PathCard({ onNavigateToLogic }: { onNavigateToLogic?: () => void
         if (prev !== 'SAP JOB IN 90 DAYS') return prev;
         const savedSap = localStorage.getItem(`quantum_sap_target_${uid}`);
         if (savedSap) return savedSap.toUpperCase();
-        const globalSaved = localStorage.getItem('quantum_sap_target');
-        if (globalSaved) return globalSaved.toUpperCase();
+        if (uid === 'default') {
+          const globalSaved = localStorage.getItem('quantum_sap_target');
+          if (globalSaved) return globalSaved.toUpperCase();
+        }
         return prev;
       });
 

@@ -206,17 +206,19 @@ CREATE POLICY "Users can manage own login logs"
 
 CREATE TABLE IF NOT EXISTS public.executions (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id     UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
   task_id     INTEGER NOT NULL,
   date_string TEXT    NOT NULL,
   executed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
 );
 
+ALTER TABLE public.executions ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE;
 ALTER TABLE public.executions ENABLE ROW LEVEL SECURITY;
 
--- Public access: EngineCard doesn't filter by user_id — global task list
 DROP POLICY IF EXISTS "Allow public access to executions" ON public.executions;
-CREATE POLICY "Allow public access to executions"
-  ON public.executions FOR ALL USING (true);
+DROP POLICY IF EXISTS "Users manage own executions" ON public.executions;
+CREATE POLICY "Users manage own executions"
+  ON public.executions FOR ALL USING (auth.uid() = user_id);
 
 
 -- ===========================================================================
@@ -228,16 +230,19 @@ CREATE POLICY "Allow public access to executions"
 
 CREATE TABLE IF NOT EXISTS public.investments (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id     UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
   description TEXT    NOT NULL,
   amount      NUMERIC NOT NULL,
   created_at  TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
 );
 
+ALTER TABLE public.investments ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE;
 ALTER TABLE public.investments ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Allow public access to investments" ON public.investments;
-CREATE POLICY "Allow public access to investments"
-  ON public.investments FOR ALL USING (true);
+DROP POLICY IF EXISTS "Users manage own investments" ON public.investments;
+CREATE POLICY "Users manage own investments"
+  ON public.investments FOR ALL USING (auth.uid() = user_id);
 
 
 -- ===========================================================================
@@ -249,17 +254,20 @@ CREATE POLICY "Allow public access to investments"
 
 CREATE TABLE IF NOT EXISTS public.logic_xp (
   id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id      UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
   problem_name TEXT    NOT NULL,
   difficulty   TEXT,
   xp_gained    INTEGER DEFAULT 0 NOT NULL,
   created_at   TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
 );
 
+ALTER TABLE public.logic_xp ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE;
 ALTER TABLE public.logic_xp ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Allow public access to logic_xp" ON public.logic_xp;
-CREATE POLICY "Allow public access to logic_xp"
-  ON public.logic_xp FOR ALL USING (true);
+DROP POLICY IF EXISTS "Users manage own logic_xp" ON public.logic_xp;
+CREATE POLICY "Users manage own logic_xp"
+  ON public.logic_xp FOR ALL USING (auth.uid() = user_id);
 
 
 -- ===========================================================================

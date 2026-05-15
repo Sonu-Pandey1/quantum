@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Cpu, DatabaseBackup, Check, Target, LogOut, Settings, User, Eye, EyeOff, Briefcase, Activity, ShieldAlert, Zap, BrainCircuit } from 'lucide-react';
+import { Cpu, DatabaseBackup, Check, Target, LogOut, Settings, User, Eye, EyeOff, Briefcase, Activity, ShieldAlert, Zap, BrainCircuit, Menu } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { audio } from '../lib/audio';
 import { supabase } from '../lib/supabaseClient';
+import toast from 'react-hot-toast';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -166,13 +167,20 @@ function ProfileDropdown({
             <button
               onClick={async () => {
                 if (!supabase) return;
-                const { data } = await supabase.from('profiles').select('role').single();
+                const { data: { session } } = await supabase.auth.getSession();
+                if (!session) {
+                  alert('Session expired. Please log in.');
+                  return;
+                }
+                const { data } = await supabase.from('profiles').select('role').eq('id', session.user.id).single();
                 if (data?.role === 'admin') {
                   audio.playClick();
                   onNavigate('super_admin');
                   onClose();
                 } else {
-                  alert('Administrator privileges required.');
+                  toast.error('Administrator privileges required.', {
+                    style: { background: '#050508', color: '#fff', border: '1px solid rgba(239, 68, 68, 0.5)' }
+                  });
                 }
               }}
               className="w-full text-left px-3 py-2 text-xs font-medium text-white/60 hover:text-white hover:bg-white/8 rounded-xl flex items-center gap-2.5 transition-all duration-150"
@@ -329,6 +337,14 @@ export function Sidebar({ currentView, onViewChange, isPortfolioMode, onTogglePo
           </div>          {/* Mobile Navigation (Bottom Bar) */}
           <div className="flex md:hidden w-full items-center h-full overflow-hidden">
             <div className="flex-1 flex items-center px-4 h-full overflow-x-auto no-scrollbar space-x-1 scroll-smooth">
+              {/* Drawer Toggle Button */}
+              <button
+                onClick={() => { audio.playClick(); setIsMobileMenuOpen(true); }}
+                className="relative flex flex-col items-center justify-center transition-all duration-300 rounded-xl min-w-[65px] h-14 shrink-0 text-textMuted hover:text-primary bg-white/5 border border-white/5"
+              >
+                <Menu size={22} className="relative z-10" />
+                <span className="relative z-10 text-[9px] uppercase tracking-tighter font-black mt-1 whitespace-nowrap">Menu</span>
+              </button>
               {navItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = currentView === item.id;

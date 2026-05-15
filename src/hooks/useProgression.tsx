@@ -6,13 +6,16 @@ import confetti from 'canvas-confetti';
 
 export type Pillar = 'Study' | 'Health' | 'Finance' | 'Mind';
 
-// Logarithmic scaling: Level = (XP / 100)^(1/1.5) + 1
-// Level 1: 0 XP
-// Level 2: 282 XP
-// Level 10: 3,162 XP
-function calculateLevel(xp: number): number {
+// Option A baseline fix: baseline is a DISPLAY-ONLY label shift.
+// Raw level always starts at 1 from 0 XP — same formula for everyone.
+// baselineOffset is ADDED to the display label only.
+// e.g. baseline=-500, 0XP => displayed as level -499 (not affecting XP math)
+function rawLevel(xp: number): number {
   if (xp <= 0) return 1;
   return Math.floor(Math.pow(xp / 100, 1 / 1.5)) + 1;
+}
+function calculateLevel(xp: number, baselineOffset: number = 0): number {
+  return rawLevel(xp) + baselineOffset;
 }
 
 export interface Buff {
@@ -39,6 +42,8 @@ interface ProgressionState {
   onboardingCompleted: boolean;
   displayName: string;
   buffs: Buff[];
+  theme: string;
+  baselineLevel: number;
 }
 
 interface ProgressionContextType {
@@ -46,7 +51,8 @@ interface ProgressionContextType {
   addXp: (pillar: Pillar, actionType: string, baseAmount: number) => Promise<void>;
   addBuff: (buff: Buff) => void;
   setArchetype: (a: Archetype) => Promise<void>;
-  updateProfile: (updates: Partial<{ archetype: Archetype; goals: string[]; onboarding_completed: boolean; display_name: string }>) => Promise<void>;
+  updateProfile: (updates: Partial<{ archetype: Archetype; goals: string[]; onboarding_completed: boolean; display_name: string; settings: any }>) => Promise<void>;
+  setTheme: (theme: string) => void;
   showLevelUp: boolean;
   levelUpData: { pillar: Pillar | 'Global'; newLevel: number; newRank?: string } | null;
   closeLevelUp: () => void;
@@ -78,7 +84,7 @@ async function fetchProfile(userId: string) {
   try {
     const { data, error } = await supabase
       .from('profiles')
-      .select('total_xp, pillar_xp, streak_count, last_activity_date, role')
+      .select('total_xp, pillar_xp, streak_count, last_activity_date, role, onboarding_completed, archetype, goals, display_name, settings')
       .eq('id', userId)
       .single();
 
@@ -104,6 +110,7 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
   const [onboardingCompleted, setOnboardingCompleted] = useState(false);
   const [displayName, setDisplayName] = useState('');
   const [buffs, setBuffs] = useState<Buff[]>([]);
+  const [theme, setThemeState] = useState('quantum');
   const [showLevelUp, setShowLevelUp] = useState(false);
   const [levelUpData, setLevelUpData] = useState<{
     pillar: Pillar | 'Global';
@@ -111,6 +118,7 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
     newRank?: string;
   } | null>(null);
   const [loading, setLoading] = useState(true);
+  const [baselineLevel, setBaselineLevel] = useState(0);
 
   // Refs — always hold latest values, addXp reads from here to avoid stale closures
   const pillarXpRef = useRef(EMPTY_PILLAR_XP);
@@ -118,11 +126,17 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
   const streakCountRef = useRef(0);
   const lastActivityRef = useRef<string | null>(null);
   const userIdRef = useRef<string | null>(null);
+  const archetypeRef = useRef<Archetype>('None');
+  const buffsRef = useRef<Buff[]>([]);
+  const baselineLevelRef = useRef(0);
 
   useEffect(() => { pillarXpRef.current = pillarXp; }, [pillarXp]);
   useEffect(() => { totalXpRef.current = totalXp; }, [totalXp]);
   useEffect(() => { streakCountRef.current = streakCount; }, [streakCount]);
   useEffect(() => { lastActivityRef.current = lastActivityDate; }, [lastActivityDate]);
+  useEffect(() => { archetypeRef.current = archetype; }, [archetype]);
+  useEffect(() => { buffsRef.current = buffs; }, [buffs]);
+  useEffect(() => { baselineLevelRef.current = baselineLevel; }, [baselineLevel]);
 
   // ── Load profile on mount ─────────────────────────────────────────────────
   useEffect(() => {
@@ -156,6 +170,9 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
         const dbName = (profile as any).display_name || '';
 
         const localBuffs = JSON.parse(localStorage.getItem(`quantum_buffs_${user.id}`) || '[]');
+        const dbSettings = (profile as any).settings || {};
+        const dbTheme = dbSettings.theme || localStorage.getItem(`quantum_theme_${user.id}`) || 'quantum';
+        const dbBaselineLevel = Number(dbSettings.baselineLevel) || 0;
 
         setTotalXp(dbTotalXp);
         setPillarXp(dbPillarXp);
@@ -167,12 +184,16 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
         setOnboardingCompleted(dbOnboarding);
         setDisplayName(dbName);
         setBuffs(localBuffs.filter((b: Buff) => b.expiresAt > Date.now()));
+        setThemeState(dbTheme);
+        setBaselineLevel(dbBaselineLevel);
 
         // Prime refs so addXp works immediately without waiting for re-render
         totalXpRef.current = dbTotalXp;
         pillarXpRef.current = dbPillarXp;
         streakCountRef.current = dbStreak;
         lastActivityRef.current = dbLastAct;
+        archetypeRef.current = dbArchetype;
+        buffsRef.current = localBuffs.filter((b: Buff) => b.expiresAt > Date.now());
       }
 
       if (!cancelled) setLoading(false);
@@ -238,20 +259,21 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
     let finalMultiplier = multiplier;
 
     // 1. Archetype Boost
-    if (archetype === 'Technical Elite' && pillar === 'Study') finalMultiplier *= 1.2;
-    if (archetype === 'Wealth Architect' && pillar === 'Finance') finalMultiplier *= 1.2;
-    if (archetype === 'Vitality Vanguard' && pillar === 'Health') finalMultiplier *= 1.2;
+    const currentArchetype = archetypeRef.current;
+    if (currentArchetype === 'Technical Elite' && pillar === 'Study') finalMultiplier *= 1.2;
+    if (currentArchetype === 'Wealth Architect' && pillar === 'Finance') finalMultiplier *= 1.2;
+    if (currentArchetype === 'Vitality Vanguard' && pillar === 'Health') finalMultiplier *= 1.2;
 
     // 2. Active Buffs
-    const activeBuffs = buffs.filter(b => b.expiresAt > Date.now() && (b.type === pillar || b.type === 'Global'));
+    const activeBuffs = buffsRef.current.filter(b => b.expiresAt > Date.now() && (b.type === pillar || b.type === 'Global'));
     activeBuffs.forEach(b => { finalMultiplier *= b.multiplier; });
 
     // 3. Imbalance Tax (System Balance Control)
     const currentLevels = {
-      Study: calculateLevel(currentPillarXp.Study),
-      Health: calculateLevel(currentPillarXp.Health),
-      Finance: calculateLevel(currentPillarXp.Finance),
-      Mind: calculateLevel(currentPillarXp.Mind),
+      Study: calculateLevel(currentPillarXp.Study, baselineLevelRef.current),
+      Health: calculateLevel(currentPillarXp.Health, baselineLevelRef.current),
+      Finance: calculateLevel(currentPillarXp.Finance, baselineLevelRef.current),
+      Mind: calculateLevel(currentPillarXp.Mind, baselineLevelRef.current),
     };
     const maxLevel = Math.max(...Object.values(currentLevels));
     const thisLevel = currentLevels[pillar];
@@ -270,10 +292,10 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
     const updatedPillarXp: Record<Pillar, number> = { ...currentPillarXp, [pillar]: newPillarXp };
 
     // Level-up detection (before updating state)
-    const oldTotalLevel = calculateLevel(currentTotalXp);
-    const newTotalLevel = calculateLevel(newTotalXp);
-    const oldPillarLevel = calculateLevel(currentPillarXp[pillar]);
-    const newPillarLevel = calculateLevel(newPillarXp);
+    const oldTotalLevel = calculateLevel(currentTotalXp, baselineLevelRef.current);
+    const newTotalLevel = calculateLevel(newTotalXp, baselineLevelRef.current);
+    const oldPillarLevel = calculateLevel(currentPillarXp[pillar], baselineLevelRef.current);
+    const newPillarLevel = calculateLevel(newPillarXp, baselineLevelRef.current);
 
     if (newTotalLevel > oldTotalLevel) {
       confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
@@ -360,13 +382,13 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const levelObj: Record<Pillar, number> = {
-    Study: calculateLevel(pillarXp.Study),
-    Health: calculateLevel(pillarXp.Health),
-    Finance: calculateLevel(pillarXp.Finance),
-    Mind: calculateLevel(pillarXp.Mind),
+    Study: calculateLevel(pillarXp.Study, baselineLevel),
+    Health: calculateLevel(pillarXp.Health, baselineLevel),
+    Finance: calculateLevel(pillarXp.Finance, baselineLevel),
+    Mind: calculateLevel(pillarXp.Mind, baselineLevel),
   };
 
-  const globalLevel = calculateLevel(totalXp);
+  const globalLevel = calculateLevel(totalXp, baselineLevel);
 
   return (
     <ProgressionContext.Provider
@@ -385,21 +407,28 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
           buffs,
           archetype,
           goals,
+          theme,
+          baselineLevel
         },
         addXp,
         addBuff: (buff: Buff) => {
           const newBuffs = [...buffs, buff];
           setBuffs(newBuffs);
+          buffsRef.current = newBuffs;
           if (userIdRef.current) localStorage.setItem(`quantum_buffs_${userIdRef.current}`, JSON.stringify(newBuffs));
         },
         setArchetype: async (a: Archetype) => {
           setArchetype(a);
+          archetypeRef.current = a;
           if (userIdRef.current && supabase) {
             await supabase.from('profiles').update({ archetype: a }).eq('id', userIdRef.current);
           }
         },
         updateProfile: async (updates: any) => {
-          if (updates.archetype) setArchetype(updates.archetype);
+          if (updates.archetype) {
+            setArchetype(updates.archetype);
+            archetypeRef.current = updates.archetype;
+          }
           if (updates.goals) setGoals(updates.goals);
           if (updates.onboarding_completed !== undefined) {
             setOnboardingCompleted(updates.onboarding_completed);
@@ -408,10 +437,26 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
             }
           }
           if (updates.display_name) setDisplayName(updates.display_name);
+          if (updates.settings?.baselineLevel !== undefined) {
+            setBaselineLevel(updates.settings.baselineLevel);
+            baselineLevelRef.current = updates.settings.baselineLevel;
+          }
 
           if (userIdRef.current && supabase) {
             const { error } = await supabase.from('profiles').update(updates).eq('id', userIdRef.current);
             if (error) console.error('[useProgression] updateProfile error:', error.message);
+          }
+        },
+        setTheme: (newTheme: string) => {
+          setThemeState(newTheme);
+          if (userIdRef.current) {
+            localStorage.setItem(`quantum_theme_${userIdRef.current}`, newTheme);
+            if (supabase) {
+              supabase.from('profiles').select('settings').eq('id', userIdRef.current).single().then(({data}) => {
+                const updatedSettings = { ...(data?.settings || {}), theme: newTheme };
+                supabase?.from('profiles').update({ settings: updatedSettings }).eq('id', userIdRef.current).then();
+              });
+            }
           }
         },
         showLevelUp,

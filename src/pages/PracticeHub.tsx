@@ -70,21 +70,31 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
   const [hardStreak, setHardStreak] = useState(0);
   const { addXp, state } = useProgression();
 
-  // Load hard streak from localStorage
-  useEffect(() => {
-    const saved = localStorage.getItem('quantum_hard_streak');
-    if (saved) setHardStreak(parseInt(saved));
-  }, []);
+  const [userId, setUserId] = useState<string>('default');
 
   const saveHardStreak = (newStreak: number) => {
     setHardStreak(newStreak);
-    localStorage.setItem('quantum_hard_streak', newStreak.toString());
+    localStorage.setItem(`quantum_hard_streak_${userId}`, newStreak.toString());
   };
 
   const fetchSubmissions = useCallback(async () => {
-    if (!supabase) return;
+    if (!supabase) {
+      const saved = localStorage.getItem('quantum_hard_streak_default');
+      if (saved) setHardStreak(parseInt(saved));
+      setLoading(false);
+      return;
+    }
     const { data: { session } } = await supabase.auth.getSession();
-    if (!session) return;
+    const uid = session?.user?.id || 'default';
+    setUserId(uid);
+
+    const saved = localStorage.getItem(`quantum_hard_streak_${uid}`);
+    if (saved) setHardStreak(parseInt(saved));
+
+    if (!session) {
+      setLoading(false);
+      return;
+    }
 
     try {
       const { data, error } = await supabase

@@ -18,10 +18,18 @@ export function LedgerCard({ onClick }: { onClick?: () => void }) {
   const [investments, setInvestments] = useState<Investment[]>([]);
   const [newTitle, setNewTitle] = useState('');
   const [newAmount, setNewAmount] = useState('');
+  const [userId, setUserId] = useState<string>('default');
 
   useEffect(() => {
     const loadInvestments = async () => {
+      let uid = 'default';
       if (supabase) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          uid = session.user.id;
+          setUserId(uid);
+        }
+
         try {
           const { data } = await supabase
             .from('investments')
@@ -29,20 +37,27 @@ export function LedgerCard({ onClick }: { onClick?: () => void }) {
             .order('created_at', { ascending: false });
 
           if (data && data.length > 0) {
-            setInvestments(data.map(d => ({
-              id: d.id,
-              title: d.description,
-              amount: d.amount,
-              date: new Date(d.created_at).toISOString().split('T')[0]
-            })));
-            return;
+            const userInvs = data.filter(d => (d as any).user_id === uid);
+            if (userInvs.length > 0) {
+              setInvestments(userInvs.map(d => ({
+                id: d.id,
+                title: d.description,
+                amount: d.amount,
+                date: new Date(d.created_at).toISOString().split('T')[0]
+              })));
+              return;
+            } else {
+              const saved = localStorage.getItem(`quantum_investments_${uid}`);
+              if (saved) setInvestments(JSON.parse(saved));
+              return;
+            }
           }
         } catch (e) {
           console.error("Supabase sync failed, falling back to local.");
         }
       }
       // Fallback
-      const saved = localStorage.getItem('quantum_investments');
+      const saved = localStorage.getItem(`quantum_investments_${uid}`);
       if (saved) {
         setInvestments(JSON.parse(saved));
       }
@@ -64,16 +79,18 @@ export function LedgerCard({ onClick }: { onClick?: () => void }) {
     const updated = [investment, ...investments];
     setInvestments(updated);
 
-    // Local fallback
-    localStorage.setItem('quantum_investments', JSON.stringify(updated));
+    // Local fallback scoped
+    localStorage.setItem(`quantum_investments_${userId}`, JSON.stringify(updated));
 
     // Supabase sync
     if (supabase) {
       try {
-        await supabase.from('investments').insert([{
+        const payload: any = {
           description: investment.title,
           amount: investment.amount
-        }]);
+        };
+        if (userId !== 'default') payload.user_id = userId;
+        await supabase.from('investments').insert([payload]);
       } catch (e) {
         console.error("Failed to sync investment.");
       }

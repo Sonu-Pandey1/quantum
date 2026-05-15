@@ -7,19 +7,28 @@ import {
 } from 'lucide-react';
 import { useProgression } from '../hooks/useProgression';
 import type { Archetype } from '../hooks/useProgression';
+import toast from 'react-hot-toast';
 
 export function StrategicControl() {
-  const { state, updateProfile, setArchetype } = useProgression();
+  const { state, updateProfile, setArchetype, setTheme } = useProgression();
   const [userName, setUserName] = useState(state.displayName);
   const [goals, setGoals] = useState<string[]>(state.goals);
   const [newGoal, setNewGoal] = useState('');
+  const [baselineLevel, setBaselineLevel] = useState(state.baselineLevel || 0);
 
   const saveSettings = async () => {
     await updateProfile({
       display_name: userName,
-      goals: goals
+      goals: goals,
+      settings: { theme: state.theme, baselineLevel: baselineLevel }
     });
-    alert('Strategic alignment synchronized with Neural Core.');
+    toast.success('Strategic alignment synchronized with Neural Core.', {
+      style: {
+        background: '#050508',
+        color: '#fff',
+        border: '1px solid rgba(59, 130, 246, 0.5)',
+      },
+    });
   };
 
   const addGoal = () => {
@@ -101,6 +110,61 @@ export function StrategicControl() {
                     ))}
                   </div>
                 </div>
+
+                <div>
+                  <label className="block text-[10px] font-black text-textMuted uppercase tracking-widest mb-2">Neural Interface Theme</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { id: 'quantum', label: 'Quantum Blue', color: 'bg-blue-500' },
+                      { id: 'emerald', label: 'Emerald Matrix', color: 'bg-emerald-500' },
+                      { id: 'purple', label: 'Cyber Purple', color: 'bg-purple-500' },
+                      { id: 'gold', label: 'Vanguard Gold', color: 'bg-yellow-500' }
+                    ].map((t) => (
+                      <button
+                        key={t.id}
+                        onClick={() => setTheme(t.id)}
+                        className={`w-full p-3 rounded-xl border text-left transition-all flex items-center space-x-3 ${
+                          state.theme === t.id 
+                            ? 'bg-white/10 border-white/20 text-textMain shadow-[inset_0_0_20px_rgba(255,255,255,0.05)]' 
+                            : 'bg-white/5 border-white/5 text-textMuted hover:border-white/20'
+                        }`}
+                      >
+                        <div className={`w-3 h-3 rounded-full ${t.color}`} />
+                        <span className="text-[10px] font-bold">{t.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Life Baseline Calibration */}
+                <div className="pt-4 border-t border-white/5">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-[10px] font-black text-textMuted uppercase tracking-widest flex items-center">
+                      <Target size={12} className="mr-1.5 text-primary" /> Life Baseline Calibration
+                    </label>
+                    <span className={`text-xs font-black px-2 py-0.5 rounded ${baselineLevel < 0 ? 'bg-red-500/10 text-red-400' : baselineLevel > 0 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-surfaceHighlight text-textMuted'}`}>
+                      {baselineLevel > 0 ? '+' : ''}{baselineLevel}
+                    </span>
+                  </div>
+                  <p className="text-[9px] text-textMuted mb-4 leading-relaxed opacity-80">
+                    Set your current life situation. If you are starting from a tough spot physically, mentally, or financially, you can start with a negative baseline (down to -500). If you are already advanced, you can set a positive baseline (up to +500).
+                  </p>
+                  
+                  <input 
+                    type="range" 
+                    min="-500" 
+                    max="500" 
+                    value={baselineLevel}
+                    onChange={(e) => setBaselineLevel(Number(e.target.value))}
+                    className="w-full accent-primary bg-surfaceHighlight h-2 rounded-lg appearance-none cursor-pointer"
+                  />
+                  <div className="flex justify-between text-[8px] font-bold text-textMuted uppercase mt-2">
+                    <span>-500 (Abyss)</span>
+                    <span>0 (Neutral)</span>
+                    <span>+500 (Apex)</span>
+                  </div>
+                </div>
+
               </div>
             </div>
 

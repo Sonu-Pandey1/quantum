@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ShieldAlert, Wind, MessageSquare, Send, UserCheck, Code2 } from 'lucide-react';
 import { audio } from '../lib/audio';
+import { supabase } from '../lib/supabaseClient';
 
 const INTERVIEW_QUESTIONS = [
   "Explain the difference between a Work Area and an Internal Table in SAP ABAP.",
@@ -21,10 +22,20 @@ export function GuardCard() {
   const [breathingTimer, setBreathingTimer] = useState(60);
   const [commLog, setCommLog] = useState('');
   const [savedLogs, setSavedLogs] = useState<{ id: string, text: string }[]>([]);
+  const [userId, setUserId] = useState<string>('default');
 
   useEffect(() => {
-    const logs = localStorage.getItem('quantum_comms');
-    if (logs) setSavedLogs(JSON.parse(logs));
+    if (supabase) {
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        const uid = session?.user?.id || 'default';
+        setUserId(uid);
+        const logs = localStorage.getItem(`quantum_comms_${uid}`);
+        if (logs) setSavedLogs(JSON.parse(logs));
+      });
+    } else {
+      const logs = localStorage.getItem('quantum_comms_default');
+      if (logs) setSavedLogs(JSON.parse(logs));
+    }
   }, []);
 
   useEffect(() => {
@@ -55,8 +66,21 @@ export function GuardCard() {
   };
 
   const submitAnswer = () => {
+    if (answer.trim().length < 10) {
+      setFeedback("Your answer is too short. Please provide a detailed response.");
+      return;
+    }
     audio.playSuccess();
-    setFeedback("Excellent structure. Your technical accuracy is high, and your tone is confident. Keep practicing vocal delivery.");
+    const length = answer.trim().length;
+    let newFeedback = "";
+    if (length < 50) {
+      newFeedback = "Your response is a bit brief. Try to elaborate on the 'how' and 'why' to demonstrate deeper understanding.";
+    } else if (length > 200 && (answer.toLowerCase().includes('because') || answer.toLowerCase().includes('example') || answer.toLowerCase().includes('how'))) {
+      newFeedback = "Excellent structure! You provided good context and examples. Your technical accuracy appears high based on the detail provided.";
+    } else {
+      newFeedback = "Good effort. Your technical accuracy is decent, but consider adding more specific examples and confident tone.";
+    }
+    setFeedback(newFeedback);
   };
 
   const addCommLog = () => {
@@ -64,7 +88,7 @@ export function GuardCard() {
     const newLog = { id: Date.now().toString(), text: commLog };
     const updated = [newLog, ...savedLogs].slice(0, 5); // Keep last 5
     setSavedLogs(updated);
-    localStorage.setItem('quantum_comms', JSON.stringify(updated));
+    localStorage.setItem(`quantum_comms_${userId}`, JSON.stringify(updated));
     setCommLog('');
   };
 

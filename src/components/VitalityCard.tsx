@@ -65,9 +65,12 @@ export function VitalityCard({ onClick }: { onClick?: () => void }) {
       if (dbWeight) {
         setTargetWeight(Number(dbWeight));
       } else {
-        const savedWeight = localStorage.getItem(`quantum_weight_goal_${uid}`) || localStorage.getItem('quantum_weight_goal_default') || localStorage.getItem('quantum_weight_goal');
+        const savedWeight = localStorage.getItem(`quantum_weight_goal_${uid}`);
         if (savedWeight) {
           setTargetWeight(Number(savedWeight));
+        } else if (uid === 'default') {
+          const globalWeight = localStorage.getItem('quantum_weight_goal_default') || localStorage.getItem('quantum_weight_goal');
+          if (globalWeight) setTargetWeight(Number(globalWeight));
         }
       }
 
@@ -76,9 +79,18 @@ export function VitalityCard({ onClick }: { onClick?: () => void }) {
         setHabits(dbHabits);
       } else {
         try {
-          const savedHabits = localStorage.getItem(`quantum_habits_${uid}`) || localStorage.getItem('quantum_habits_default') || localStorage.getItem('quantum_habits');
+          const savedHabits = localStorage.getItem(`quantum_habits_${uid}`);
           if (savedHabits && savedHabits !== "undefined") {
             setHabits(JSON.parse(savedHabits));
+          } else if (uid === 'default') {
+            const globalHabits = localStorage.getItem('quantum_habits_default') || localStorage.getItem('quantum_habits');
+            if (globalHabits && globalHabits !== "undefined") setHabits(JSON.parse(globalHabits));
+            else {
+              setHabits([
+                { id: 1, title: '5KM Mission', icon: 'Footprints' },
+                { id: 2, title: '100 Pushups', icon: 'Dumbbell' }
+              ]);
+            }
           } else {
             setHabits([
               { id: 1, title: '5KM Mission', icon: 'Footprints' },

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ShieldCheck, Trophy, Zap } from 'lucide-react';
 import { useProgression } from '../hooks/useProgression';
+import { audio } from '../lib/audio';
 
 const vows = [
   "Action over Thinking.",
@@ -10,7 +11,7 @@ const vows = [
   "Discipline equals freedom."
 ];
 
-export function Header({ hideVow = false }: { hideVow?: boolean }) {
+export function Header({ hideVow = false, onNavigateToRank }: { hideVow?: boolean, onNavigateToRank?: () => void }) {
   const { state } = useProgression();
   const displayVows = state.goals && state.goals.length > 0 ? state.goals : vows;
   const [index, setIndex] = useState(0);
@@ -66,41 +67,33 @@ export function Header({ hideVow = false }: { hideVow?: boolean }) {
       )}
 
       {/* Right: Rank & Progress */}
-      <div className="flex items-center space-x-3 md:space-x-6">
+      <div 
+        className="flex items-center space-x-3 md:space-x-6 cursor-pointer group hover:bg-white/5 p-2 rounded-xl transition-colors"
+        onClick={() => {
+          audio.playClick();
+          if (onNavigateToRank) onNavigateToRank();
+        }}
+      >
         <div className="flex flex-col items-end">
           <div className="flex items-center space-x-2 mb-1">
-            <span className="text-[10px] md:text-[10px] font-bold text-amber-400 uppercase tracking-wider">{state.rank}</span>
-            <Trophy size={13} className="text-amber-500 md:w-[14px] md:h-[14px]" />
+            <span className="text-[10px] md:text-[10px] font-bold text-amber-400 uppercase tracking-wider group-hover:text-amber-300 transition-colors">{state.rank}</span>
+            <Trophy size={13} className="text-amber-500 md:w-[14px] md:h-[14px] group-hover:scale-110 transition-transform" />
           </div>
-          <div className="w-16 xs:w-20 md:w-32 h-1 bg-white/5 rounded-full overflow-hidden flex border border-white/5 shadow-inner">
+          <div className="w-16 xs:w-20 md:w-32 h-1 bg-white/5 rounded-full overflow-hidden flex border border-white/5 shadow-inner relative group-hover:border-primary/30 transition-colors">
             <motion.div 
-              className="bg-blue-500 h-full"
+              className="bg-gradient-to-r from-primary to-blue-400 h-full w-full"
               initial={{ width: 0 }}
-              animate={{ width: `${getProgress(state.xp.Study) / 4}%` }}
-            />
-            <motion.div 
-              className="bg-emerald-500 h-full"
-              initial={{ width: 0 }}
-              animate={{ width: `${getProgress(state.xp.Health) / 4}%` }}
-            />
-            <motion.div 
-              className="bg-amber-500 h-full"
-              initial={{ width: 0 }}
-              animate={{ width: `${getProgress(state.xp.Finance) / 4}%` }}
-            />
-            <motion.div 
-              className="bg-purple-500 h-full"
-              initial={{ width: 0 }}
-              animate={{ width: `${getProgress(state.xp.Mind) / 4}%` }}
+              animate={{ width: `${getProgress(state.totalXp)}%` }}
             />
           </div>
         </div>
         
-        <div className="flex flex-col items-center justify-center p-1.5 md:p-2 bg-primary/10 border border-primary/20 rounded-lg md:rounded-xl min-w-[36px] md:min-w-[48px]">
+        <div className="flex flex-col items-center justify-center p-1.5 md:p-2 bg-primary/10 border border-primary/20 rounded-lg md:rounded-xl min-w-[36px] md:min-w-[48px] group-hover:bg-primary/20 group-hover:border-primary/40 transition-colors shadow-[0_0_15px_rgba(59,130,246,0.1)] group-hover:shadow-[0_0_20px_rgba(59,130,246,0.3)]">
           <span className="text-[8px] md:text-[9px] text-primary font-bold uppercase leading-none mb-1 md:mb-1">Lvl</span>
           <span className="text-sm md:text-base font-black text-textMain leading-none">{state.totalLevel}</span>
         </div>
       </div>
+
     </header>
   );
 }

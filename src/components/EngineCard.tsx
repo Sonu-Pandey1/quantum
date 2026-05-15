@@ -23,12 +23,11 @@ interface SkipRecord {
 }
 
 const SCHEDULE: Task[] = [
-  { id: 1, start: '05:00', end: '05:45', title: 'Wake Up & Refresh', statusMsg: 'System Initialization...' },
-  { id: 2, start: '05:45', end: '07:15', title: 'The Burn (Run 5km + 100 Pushups)', statusMsg: 'Physical Output Maximize...' },
-  { id: 3, start: '08:30', end: '17:30', title: 'Office Mission (Work & Communication)', statusMsg: 'Corporate Directive Active...' },
-  { id: 4, start: '18:10', end: '21:00', title: 'Deep Study (SAP ABAP Mastery)', statusMsg: 'Logic Building in Progress...' },
-  { id: 5, start: '21:00', end: '22:00', title: 'Recovery (Dinner & Night Walk)', statusMsg: 'Nutritional Intake & Decompression...' },
-  { id: 6, start: '22:00', end: '23:59', title: 'Final Grind & System Review', statusMsg: 'Protocol Review & Shut Down...' },
+  { id: 1, start: '06:00', end: '07:00', title: 'Morning Routine & Movement', statusMsg: 'System Initialization...' },
+  { id: 2, start: '09:00', end: '12:00', title: 'Deep Work Block 1', statusMsg: 'Maximum Focus...' },
+  { id: 3, start: '13:00', end: '17:00', title: 'Deep Work Block 2 & Communications', statusMsg: 'Executing Objectives...' },
+  { id: 4, start: '18:00', end: '20:00', title: 'Skill Development', statusMsg: 'Learning & Growth...' },
+  { id: 5, start: '20:00', end: '22:00', title: 'Decompression & Review', statusMsg: 'Recovery Protocol...' },
 ];
 
 function getTodayString() {
@@ -62,6 +61,7 @@ export function EngineCard() {
   const [executedTaskIds, setExecutedTaskIds] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
   const [sundayRest, setSundayRest] = useState(true);
+  const [userId, setUserId] = useState<string>('default');
 
   const [schedule, setSchedule] = useState<Task[]>(SCHEDULE);
 
@@ -69,22 +69,13 @@ export function EngineCard() {
   useEffect(() => {
     const todayStr = getTodayString();
 
-    // Load skips
-    const skipsStr = localStorage.getItem('quantum_skips');
-    if (skipsStr) {
-      const skips: SkipRecord[] = JSON.parse(skipsStr);
-      if (skips.some(s => s.date === todayStr)) {
-        setIsSkippedToday(true);
-      }
-    }
-
-    // Load executed and timetable
     const loadExecutions = async () => {
-      let uid: string | null = null;
+      let uid: string = 'default';
       if (supabase) {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) {
           uid = session.user.id;
+          setUserId(uid);
           
           // Try to get timetable from DB settings first
           try {
@@ -92,13 +83,11 @@ export function EngineCard() {
             if (data && data.settings && data.settings.timetable) {
               setSchedule(data.settings.timetable);
               if (data.settings.sundayRest !== undefined) setSundayRest(data.settings.sundayRest);
-              // Store locally to speed up future renders
               localStorage.setItem(`quantum_timetable_${uid}`, JSON.stringify(data.settings.timetable));
               if (data.settings.sundayRest !== undefined) {
                 localStorage.setItem(`quantum_sunday_rest_${uid}`, data.settings.sundayRest.toString());
               }
             } else {
-              // Fallback to local storage
               const customTimetable = localStorage.getItem(`quantum_timetable_${uid}`);
               if (customTimetable && customTimetable !== "undefined") setSchedule(JSON.parse(customTimetable));
               
@@ -106,7 +95,6 @@ export function EngineCard() {
               if (customRest && customRest !== "undefined") setSundayRest(customRest !== 'false');
             }
           } catch (e) {
-            // DB settings failed
             const customTimetable = localStorage.getItem(`quantum_timetable_${uid}`);
             if (customTimetable && customTimetable !== "undefined") setSchedule(JSON.parse(customTimetable));
           }
@@ -115,20 +103,43 @@ export function EngineCard() {
         try {
           const { data } = await supabase
             .from('executions')
-            .select('task_id')
+            .select('*')
             .eq('date_string', todayStr);
 
           if (data && data.length > 0) {
-            setExecutedTaskIds(data.map(d => d.task_id));
-            return;
+            // Filter by user_id if available, otherwise scoped local storage
+            const userExecs = data.filter(d => (d as any).user_id === uid);
+            if (userExecs.length > 0) {
+              setExecutedTaskIds(userExecs.map(d => d.task_id));
+            } else {
+              const execStr = localStorage.getItem(`quantum_exec_${uid}_${todayStr}`);
+              if (execStr) setExecutedTaskIds(JSON.parse(execStr));
+            }
+          } else {
+            const execStr = localStorage.getItem(`quantum_exec_${uid}_${todayStr}`);
+            if (execStr) setExecutedTaskIds(JSON.parse(execStr));
           }
         } catch (e) {
           console.error("Supabase sync failed, falling back to local.");
+          const execStr = localStorage.getItem(`quantum_exec_${uid}_${todayStr}`);
+          if (execStr) setExecutedTaskIds(JSON.parse(execStr));
         }
+      } else {
+        const execStr = localStorage.getItem(`quantum_exec_${uid}_${todayStr}`);
+        if (execStr) setExecutedTaskIds(JSON.parse(execStr));
       }
       
+      // Load skips scoped to uid
+      const skipsStr = localStorage.getItem(`quantum_skips_${uid}`);
+      if (skipsStr) {
+        const skips: SkipRecord[] = JSON.parse(skipsStr);
+        if (skips.some(s => s.date === todayStr)) {
+          setIsSkippedToday(true);
+        }
+      }
+
       // Fallback if no uid
-      if (!uid || uid === 'default') {
+      if (uid === 'default') {
         const fallbackTimetable = localStorage.getItem('quantum_timetable_default') || localStorage.getItem('quantum_timetable');
         if (fallbackTimetable) {
           try {
@@ -137,12 +148,6 @@ export function EngineCard() {
             console.error("Failed to parse custom timetable", e);
           }
         }
-      }
-
-      // Fallback Executions
-      const execStr = localStorage.getItem(`quantum_exec_${todayStr}`);
-      if (execStr) {
-        setExecutedTaskIds(JSON.parse(execStr));
       }
     };
 
@@ -213,16 +218,16 @@ export function EngineCard() {
   // Handle task change notifications
   useEffect(() => {
     if (activeTask) {
-      const storedLast = localStorage.getItem('quantum_last_notified_task');
+      const storedLast = localStorage.getItem(`quantum_last_notified_task_${userId}`);
       if (storedLast !== activeTask.id.toString()) {
         notifier.send(
           "Protocol Shift",
           `Commencing: ${activeTask.title}`
         );
-        localStorage.setItem('quantum_last_notified_task', activeTask.id.toString());
+        localStorage.setItem(`quantum_last_notified_task_${userId}`, activeTask.id.toString());
       }
     }
-  }, [activeTask]);
+  }, [activeTask, userId]);
 
   const handleComplete = async () => {
     audio.playSuccess();
@@ -234,16 +239,18 @@ export function EngineCard() {
     const updated = [...executedTaskIds, activeTask.id];
     setExecutedTaskIds(updated);
 
-    // Local fallback
-    localStorage.setItem(`quantum_exec_${todayStr}`, JSON.stringify(updated));
+    // Local fallback scoped
+    localStorage.setItem(`quantum_exec_${userId}_${todayStr}`, JSON.stringify(updated));
 
     // Supabase Sync
     if (supabase) {
       try {
-        await supabase.from('executions').insert([{
+        const payload: any = {
           task_id: activeTask.id,
           date_string: todayStr
-        }]);
+        };
+        if (userId !== 'default') payload.user_id = userId;
+        await supabase.from('executions').insert([payload]);
       } catch (e) {
         console.error("Failed to sync execution to cloud.");
       }
@@ -261,7 +268,7 @@ export function EngineCard() {
     }
 
     const todayStr = getTodayString();
-    const skipsStr = localStorage.getItem('quantum_skips');
+    const skipsStr = localStorage.getItem(`quantum_skips_${userId}`);
     const skips: SkipRecord[] = skipsStr ? JSON.parse(skipsStr) : [];
 
     // Validation rules
@@ -288,7 +295,7 @@ export function EngineCard() {
 
     // Commit skip
     const newSkip: SkipRecord = { date: todayStr, reason: skipReason };
-    localStorage.setItem('quantum_skips', JSON.stringify([...skips, newSkip]));
+    localStorage.setItem(`quantum_skips_${userId}`, JSON.stringify([...skips, newSkip]));
 
     setIsSkippedToday(true);
     setSkipModalOpen(false);

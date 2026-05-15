@@ -5,6 +5,7 @@ import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { BentoGrid } from './components/BentoGrid';
 import { PracticeHub } from './pages/PracticeHub';
+import { RankAndRewards } from './pages/RankAndRewards';
 import { ParticleBackground } from './components/ParticleBackground';
 import { AnalyticsMatrix } from './pages/AnalyticsMatrix';
 import { ControlRoom } from './pages/ControlRoom';
@@ -21,6 +22,7 @@ import type { Session } from '@supabase/supabase-js';
 import { AuthScreen } from './components/AuthScreen';
 import { ProgressionProvider, useProgression } from './hooks/useProgression';
 import { LevelUpModal } from './components/LevelUpModal';
+import { Toaster } from 'react-hot-toast';
 
 
 class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean }> {
@@ -67,7 +69,7 @@ function AppContent({ currentView, setCurrentView, isPortfolioMode, setIsPortfol
       />
 
       <main className="flex-1 flex flex-col h-full relative z-0 md:ml-20 pb-[80px] md:pb-0 overflow-hidden">
-        <Header hideVow={currentView !== 'dashboard'} />
+        <Header hideVow={currentView !== 'dashboard'} onNavigateToRank={() => setCurrentView('rank')} />
         <AnimatePresence mode="wait">
           {currentView === 'dashboard' ? (
             <motion.div 
@@ -126,7 +128,7 @@ function AppContent({ currentView, setCurrentView, isPortfolioMode, setIsPortfol
               transition={{ duration: 0.3 }}
               className="flex-1 h-full overflow-hidden bg-background"
             >
-              <EngagementHub />
+              <EngagementHub onNavigateToRank={() => setCurrentView('rank')} />
             </motion.div>
           ) : currentView === 'admin' ? (
             <motion.div 
@@ -172,6 +174,17 @@ function AppContent({ currentView, setCurrentView, isPortfolioMode, setIsPortfol
             >
               <SuperAdmin />
             </motion.div>
+          ) : currentView === 'rank' ? (
+            <motion.div 
+              key="rank"
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.98 }}
+              transition={{ duration: 0.3 }}
+              className="flex-1 h-full overflow-hidden bg-background overflow-y-auto"
+            >
+              <RankAndRewards />
+            </motion.div>
           ) : (
             <motion.div 
               key="strategic_control"
@@ -200,6 +213,23 @@ function AppContainer() {
   useEffect(() => {
     setIsAdmin(role === 'admin');
   }, [role]);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    if (state.theme === 'emerald') {
+      root.style.setProperty('--color-primary', '16 185 129'); // #10b981
+      root.style.setProperty('--color-primary-hover', '52 211 153'); // #34d399
+    } else if (state.theme === 'purple') {
+      root.style.setProperty('--color-primary', '139 92 246'); // #8b5cf6
+      root.style.setProperty('--color-primary-hover', '167 139 250'); // #a78bfa
+    } else if (state.theme === 'gold') {
+      root.style.setProperty('--color-primary', '234 179 8'); // #eab308
+      root.style.setProperty('--color-primary-hover', '250 204 21'); // #facc15
+    } else {
+      root.style.setProperty('--color-primary', '59 130 246'); // #3b82f6
+      root.style.setProperty('--color-primary-hover', '96 165 250'); // #60a5fa
+    }
+  }, [state.theme]);
 
   useEffect(() => {
     const handleHashChange = () => {
@@ -247,11 +277,13 @@ function AppContainer() {
 function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [loadingAuth, setLoadingAuth] = useState(true);
+  const [supabaseConfigured, setSupabaseConfigured] = useState(true);
   const loginRecordedRef = useRef(false);
 
   useEffect(() => {
     const client = supabase;
     if (!client) {
+      setSupabaseConfigured(false);
       setLoadingAuth(false);
       return;
     }
@@ -295,12 +327,26 @@ function App() {
     );
   }
 
+  if (!supabaseConfigured) {
+    return (
+      <div className="h-screen w-full bg-background flex flex-col items-center justify-center p-8 space-y-6 text-center">
+        <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center mb-2">
+          <span className="text-3xl">⚠️</span>
+        </div>
+        <h2 className="text-2xl font-black text-textMain tracking-tighter uppercase">Configuration Required</h2>
+        <p className="text-sm text-textMuted max-w-md">
+          Supabase environment variables are missing. Please configure <code className="bg-white/10 px-2 py-1 rounded">.env.local</code> with your Supabase URL and Anon Key to initialize the application.
+        </p>
+      </div>
+    );
+  }
+
   if (!session) {
     return <AuthScreen />;
   }
 
   return (
-    <ProgressionProvider>
+    <ProgressionProvider key={session.user.id}>
       <AppContainer />
     </ProgressionProvider>
   );
@@ -309,6 +355,7 @@ function App() {
 export default function Root() {
   return (
     <ErrorBoundary>
+      <Toaster position="top-right" />
       <App />
     </ErrorBoundary>
   );

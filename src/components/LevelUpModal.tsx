@@ -3,19 +3,40 @@ import { ChevronUp } from 'lucide-react';
 import { useProgression } from '../hooks/useProgression';
 import { audio } from '../lib/audio';
 import { useEffect } from 'react';
+import toast from 'react-hot-toast';
 
 export function LevelUpModal() {
-  const { showLevelUp, levelUpData, closeLevelUp, state } = useProgression();
+  const { showLevelUp, levelUpData, closeLevelUp } = useProgression();
 
   useEffect(() => {
-    if (showLevelUp) {
-      audio.playSuccess(); // Double success or distinct chime can be added
+    if (showLevelUp && levelUpData) {
+      if (levelUpData.pillar === 'Global') {
+        audio.playSuccess();
+        // Auto-dismiss major modal after 8 seconds
+        const timer = setTimeout(() => {
+          closeLevelUp();
+        }, 8000);
+        return () => clearTimeout(timer);
+      } else {
+        // Minor level up (Pillar)
+        audio.playClick();
+        toast.success(`${levelUpData.pillar} Pillar: Level ${levelUpData.newLevel}`, {
+          icon: '✨',
+          style: {
+            background: '#050508',
+            color: '#fff',
+            border: '1px solid rgba(59, 130, 246, 0.5)',
+          },
+          duration: 3000,
+        });
+        closeLevelUp();
+      }
     }
-  }, [showLevelUp]);
+  }, [showLevelUp, levelUpData, closeLevelUp]);
 
   return (
     <AnimatePresence>
-      {showLevelUp && levelUpData && (
+      {showLevelUp && levelUpData && levelUpData.pillar === 'Global' && (
         <motion.div 
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -45,7 +66,7 @@ export function LevelUpModal() {
             </div>
 
             <h2 className="text-xl font-bold tracking-widest text-primary uppercase mb-2 relative z-10">
-              {levelUpData.pillar} Level Up
+              GLOBAL LEVEL UP
             </h2>
             
             <h1 className="text-4xl md:text-5xl font-black text-textMain tracking-tight mb-4 drop-shadow-2xl relative z-10">
@@ -54,7 +75,11 @@ export function LevelUpModal() {
 
             <div className="bg-surfaceHighlight/50 border border-border px-6 py-3 rounded-2xl mb-8 relative z-10">
               <p className="text-2xl font-bold text-white">Level {levelUpData.newLevel}</p>
-              <p className="text-sm text-textMuted font-mono">Current Rank: {state.rank}</p>
+              {levelUpData.newRank && (
+                <p className="text-sm text-textMuted font-mono mt-1">
+                  Rank Achieved: <span className="text-primary font-bold">{levelUpData.newRank}</span>
+                </p>
+              )}
             </div>
 
             <button 
@@ -63,6 +88,14 @@ export function LevelUpModal() {
             >
               Acknowledge
             </button>
+
+            {/* Auto dismiss progress bar */}
+            <motion.div 
+              initial={{ width: "100%" }}
+              animate={{ width: 0 }}
+              transition={{ duration: 8, ease: "linear" }}
+              className="absolute bottom-0 left-0 h-1 bg-primary/50"
+            />
           </motion.div>
         </motion.div>
       )}

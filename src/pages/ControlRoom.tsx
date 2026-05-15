@@ -30,45 +30,30 @@ interface RoadmapPhase {
 }
 
 const defaultTasks: TimetableTask[] = [
-  { id: 1, start: '05:00', end: '05:45', title: 'Wake Up & Refresh', statusMsg: 'System Initialization...', icon: 'Sun' },
-  { id: 2, start: '05:45', end: '07:15', title: 'The Burn (Run 5km + 100 Pushups)', statusMsg: 'Physical Output Maximize...', icon: 'Activity' },
-  { id: 3, start: '08:30', end: '17:30', title: 'Office Mission (Work & Communication)', statusMsg: 'Corporate Directive Active...', icon: 'Briefcase' },
-  { id: 4, start: '18:10', end: '21:00', title: 'Deep Study (SAP ABAP Mastery)', statusMsg: 'Logic Building in Progress...', icon: 'Book' },
-  { id: 5, start: '21:00', end: '22:00', title: 'Recovery (Dinner & Night Walk)', statusMsg: 'Nutritional Intake & Decompression...', icon: 'Moon' },
-  { id: 6, start: '22:00', end: '23:59', title: 'Final Grind & System Review', statusMsg: 'Protocol Review & Shut Down...', icon: 'Lock' },
+  { id: 1, start: '06:00', end: '07:00', title: 'Morning Routine & Movement', statusMsg: 'System Initialization...', icon: 'Sun' },
+  { id: 2, start: '09:00', end: '12:00', title: 'Deep Work Block 1', statusMsg: 'Maximum Focus...', icon: 'Briefcase' },
+  { id: 3, start: '13:00', end: '17:00', title: 'Deep Work Block 2 & Communications', statusMsg: 'Executing Objectives...', icon: 'Activity' },
+  { id: 4, start: '18:00', end: '20:00', title: 'Skill Development', statusMsg: 'Learning & Growth...', icon: 'Book' },
+  { id: 5, start: '20:00', end: '22:00', title: 'Decompression & Review', statusMsg: 'Recovery Protocol...', icon: 'Moon' },
 ];
 
 const defaultHabits: HabitTask[] = [
-  { id: 1, title: '5KM Mission', icon: 'Footprints' },
-  { id: 2, title: '100 Pushups', icon: 'Dumbbell' }
+  { id: 1, title: 'Read 10 Pages', icon: 'Book' },
+  { id: 2, title: 'Exercise 30 mins', icon: 'Dumbbell' }
 ];
 
 const defaultRoadmap: RoadmapPhase[] = [
-  { id: 1, phase: 'Phase 1', title: 'ABAP Fundamentals', desc: 'Variables, Data Types, Internal Tables', status: '60% Complete', type: 'partial' },
-  { id: 2, phase: 'Phase 2', title: 'Modularization', desc: 'Includes, Function Modules, Subroutines', status: 'CURRENT FOCUS', type: 'current' },
-  { id: 3, phase: 'Phase 3', title: 'Advanced ABAP & RAP', desc: 'OData, CDS Views, RAP Business Objects', status: 'LOCKED', type: 'locked' }
+  { id: 1, phase: 'Phase 1', title: 'Foundations', desc: 'Core principles and basics', status: '60% Complete', type: 'partial' },
+  { id: 2, phase: 'Phase 2', title: 'Intermediate Concepts', desc: 'Advanced topics and projects', status: 'CURRENT FOCUS', type: 'current' },
+  { id: 3, phase: 'Phase 3', title: 'Mastery', desc: 'Expert level execution', status: 'LOCKED', type: 'locked' }
 ];
 
 export function ControlRoom() {
-  const [tasks, setTasks] = useState<TimetableTask[]>(() => {
-    try {
-      const stored = localStorage.getItem('quantum_timetable');
-      return stored ? JSON.parse(stored) : defaultTasks;
-    } catch {
-      return defaultTasks;
-    }
-  });
-  const [habits, setHabits] = useState<HabitTask[]>(() => {
-    try {
-      const stored = localStorage.getItem('quantum_habits');
-      return stored ? JSON.parse(stored) : defaultHabits;
-    } catch {
-      return defaultHabits;
-    }
-  });
+  const [tasks, setTasks] = useState<TimetableTask[]>(defaultTasks);
+  const [habits, setHabits] = useState<HabitTask[]>(defaultHabits);
   const [roadmap, setRoadmap] = useState<RoadmapPhase[]>(defaultRoadmap);
   const [weightGoal, setWeightGoal] = useState('70');
-  const [sapTarget, setSapTarget] = useState('Master ABAP Objects');
+  const [sapTarget, setSapTarget] = useState('Master Core Skills');
   const [sundayRest, setSundayRest] = useState(true);
   const [savedMessage, setSavedMessage] = useState('');
   const [userId, setUserId] = useState<string | null>(null);

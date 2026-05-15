@@ -11,7 +11,7 @@ import { useProgression } from '../hooks/useProgression';
 import { format, parseISO } from 'date-fns';
 import { ProgressAnalytics } from '../components/ProgressAnalytics';
 
-export function EngagementHub() {
+export function EngagementHub({ onNavigateToRank }: { onNavigateToRank?: () => void }) {
   const { stats, refresh, loadMore } = useEngagement();
   const { state: { totalXp, totalLevel, rank } } = useProgression();
   const [refreshing, setRefreshing] = useState(false);
@@ -159,11 +159,14 @@ export function EngagementHub() {
                   <p className="text-2xl font-black text-textMain">Lvl {totalLevel}</p>
                 </div>
                 <div className="h-10 w-px bg-border hidden sm:block" />
-                <div className="flex flex-col items-center justify-center p-4 bg-amber-500/5 border border-amber-500/20 rounded-2xl min-w-[120px] relative overflow-hidden group">
+                <div 
+                  className="flex flex-col items-center justify-center p-4 bg-amber-500/5 border border-amber-500/20 rounded-2xl min-w-[120px] relative overflow-hidden group cursor-pointer hover:scale-105 transition-transform"
+                  onClick={() => onNavigateToRank && onNavigateToRank()}
+                >
                   <div className="absolute inset-0 bg-gradient-to-br from-amber-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                  <Trophy className="text-amber-500 mb-2 drop-shadow-[0_0_10px_rgba(245,158,11,0.4)]" size={20} />
-                  <p className="text-[10px] text-amber-500/60 uppercase tracking-[0.2em] font-black mb-1">Current Rank</p>
-                  <p className="text-lg font-black text-amber-400 tracking-tight">{rank}</p>
+                  <Trophy className="text-amber-500 mb-2 drop-shadow-[0_0_10px_rgba(245,158,11,0.4)] group-hover:scale-110 transition-transform" size={20} />
+                  <p className="text-[10px] text-amber-500/60 uppercase tracking-[0.2em] font-black mb-1 group-hover:text-amber-500/80 transition-colors">Current Rank</p>
+                  <p className="text-lg font-black text-amber-400 tracking-tight group-hover:text-amber-300 transition-colors">{rank}</p>
                 </div>
                 <div className="h-10 w-px bg-border hidden sm:block" />
                 <div>

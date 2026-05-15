@@ -43,31 +43,44 @@ export function LogicHub({ onBack }: { onBack: () => void }) {
   const [activeTab, setActiveTab] = useState<'All' | 'Easy' | 'Medium' | 'Hard'>('All');
   const [search, setSearch] = useState('');
   const [logicXp, setLogicXp] = useState(0);
+  const [userId, setUserId] = useState<string>('default');
 
   useEffect(() => {
-    // Persistence: Load problems from localStorage to maintain completed status
-    const savedProblems = localStorage.getItem('quantum_logic_problems');
-    if (savedProblems) {
-      try {
-        setProblems(JSON.parse(savedProblems));
-      } catch (e) {
-        setProblems(generateProblems());
+    const initializeData = async () => {
+      let uid = 'default';
+      if (supabase) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          uid = session.user.id;
+          setUserId(uid);
+        }
       }
-    } else {
-      const initialProblems = generateProblems();
-      setProblems(initialProblems);
-      localStorage.setItem('quantum_logic_problems', JSON.stringify(initialProblems));
-    }
 
-    const loadXp = async () => {
+      // Persistence: Load problems scoped to userId
+      const savedProblems = localStorage.getItem(`quantum_logic_problems_${uid}`);
+      if (savedProblems) {
+        try {
+          setProblems(JSON.parse(savedProblems));
+        } catch (e) {
+          const initialProblems = generateProblems();
+          setProblems(initialProblems);
+          localStorage.setItem(`quantum_logic_problems_${uid}`, JSON.stringify(initialProblems));
+        }
+      } else {
+        const initialProblems = generateProblems();
+        setProblems(initialProblems);
+        localStorage.setItem(`quantum_logic_problems_${uid}`, JSON.stringify(initialProblems));
+      }
+
       if (supabase) {
         try {
           const { data, error } = await supabase
             .from('logic_xp')
-            .select('xp_gained');
-          if (!error && data) {
-            const totalXp = data.reduce((acc, curr) => acc + curr.xp_gained, 0);
-            if (totalXp > 0) {
+            .select('*');
+          if (!error && data && data.length > 0) {
+            const userXpRecords = data.filter(d => (d as any).user_id === uid);
+            if (userXpRecords.length > 0) {
+              const totalXp = userXpRecords.reduce((acc, curr) => acc + curr.xp_gained, 0);
               setLogicXp(totalXp);
               return;
             }
@@ -77,11 +90,11 @@ export function LogicHub({ onBack }: { onBack: () => void }) {
         }
       }
       // fallback
-      const savedXp = localStorage.getItem('quantum_logic_xp');
+      const savedXp = localStorage.getItem(`quantum_logic_xp_${uid}`);
       if (savedXp) setLogicXp(parseInt(savedXp, 10));
     };
 
-    loadXp();
+    initializeData();
   }, []);
 
   const handleSolve = async (id: number) => {
@@ -91,22 +104,24 @@ export function LogicHub({ onBack }: { onBack: () => void }) {
 
     const updatedProblems = problems.map(p => p.id === id ? { ...p, completed: true } : p);
     setProblems(updatedProblems);
-    localStorage.setItem('quantum_logic_problems', JSON.stringify(updatedProblems));
+    localStorage.setItem(`quantum_logic_problems_${userId}`, JSON.stringify(updatedProblems));
 
     const newXp = logicXp + 5;
     setLogicXp(newXp);
 
-    // Local fallback
-    localStorage.setItem('quantum_logic_xp', newXp.toString());
+    // Local fallback scoped
+    localStorage.setItem(`quantum_logic_xp_${userId}`, newXp.toString());
 
     // Supabase Sync
     if (supabase) {
       try {
-        await supabase.from('logic_xp').insert([{
+        const payload: any = {
           problem_name: problem.title,
           difficulty: problem.difficulty,
           xp_gained: 5
-        }]);
+        };
+        if (userId !== 'default') payload.user_id = userId;
+        await supabase.from('logic_xp').insert([payload]);
       } catch (e) {
         console.error("Failed to sync logic XP", e);
       }

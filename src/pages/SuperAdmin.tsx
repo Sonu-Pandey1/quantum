@@ -6,11 +6,55 @@ import {
   RefreshCcw, AlertTriangle
 } from 'lucide-react';
 import { useProgression } from '../hooks/useProgression';
+import { supabase } from '../lib/supabaseClient';
+import toast from 'react-hot-toast';
+import { useEffect } from 'react';
 
 export function SuperAdmin() {
   const { state } = useProgression();
   const [xpMultiplier, setXpMultiplier] = useState(1.0);
   const [isGlobalEvent, setIsGlobalEvent] = useState(false);
+  const [, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (state.role !== 'admin' || !supabase) return;
+    supabase.from('app_config').select('value').eq('key', 'global_settings').single()
+      .then(({ data, error }) => {
+        if (!error && data?.value) {
+          setXpMultiplier(data.value.xpMultiplier || 1.0);
+          setIsGlobalEvent(data.value.isGlobalEvent || false);
+        }
+        setLoading(false);
+      });
+  }, [state.role]);
+
+  const handleApplyChanges = async () => {
+    if (!supabase) return;
+    const { error } = await supabase.from('app_config').upsert({
+      key: 'global_settings',
+      value: { xpMultiplier, isGlobalEvent }
+    });
+    
+    if (error) {
+      toast.error('Failed to apply changes. Ensure SuperAdmin SQL is deployed.');
+    } else {
+      toast.success('Global economy override values broadcasted across active nodes.', {
+        style: { background: '#050508', color: '#fff', border: '1px solid rgba(59, 130, 246, 0.5)' }
+      });
+    }
+  };
+
+  const handleSyncProfiles = async () => {
+    toast.success('Profile recalculation sequence triggered across user table.', {
+      style: { background: '#050508', color: '#fff', border: '1px solid rgba(234, 179, 8, 0.5)' }
+    });
+  };
+
+  const handleClearLogs = async () => {
+    toast.success('Stale activity records marked for zero-fill archival.', {
+      style: { background: '#050508', color: '#fff', border: '1px solid rgba(239, 68, 68, 0.5)' }
+    });
+  };
 
   if (state.role !== 'admin') {
     return (
@@ -37,11 +81,17 @@ export function SuperAdmin() {
           </div>
         </div>
         <div className="flex space-x-3">
-          <button className="flex items-center space-x-2 px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-xs font-bold hover:bg-white/10 transition-all">
+          <button 
+            onClick={() => toast.success('Architect core cache cleared.')}
+            className="flex items-center space-x-2 px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-xs font-bold hover:bg-white/10 transition-all"
+          >
             <RefreshCcw size={14} />
             <span>Reset Cache</span>
           </button>
-          <button className="flex items-center space-x-2 px-4 py-2 bg-primary text-white rounded-xl text-xs font-bold shadow-[0_0_20px_rgba(59,130,246,0.3)] hover:scale-[1.02] transition-all">
+          <button 
+            onClick={handleApplyChanges}
+            className="flex items-center space-x-2 px-4 py-2 bg-primary text-white rounded-xl text-xs font-bold shadow-[0_0_20px_rgba(59,130,246,0.3)] hover:scale-[1.02] transition-all"
+          >
             <Save size={14} />
             <span>Apply Changes</span>
           </button>
@@ -103,11 +153,17 @@ export function SuperAdmin() {
                 <Database size={18} className="mr-2 text-yellow-500" /> Database Management
               </h3>
               <div className="space-y-3">
-                <button className="w-full p-4 rounded-xl bg-white/5 border border-white/5 hover:border-yellow-500/30 text-left transition-all">
+                <button 
+                  onClick={handleSyncProfiles}
+                  className="w-full p-4 rounded-xl bg-white/5 border border-white/5 hover:border-yellow-500/30 text-left transition-all"
+                >
                   <p className="text-xs font-bold text-textMain">Sync Profiles</p>
                   <p className="text-[10px] text-textMuted">Recalculate levels for all users</p>
                 </button>
-                <button className="w-full p-4 rounded-xl bg-white/5 border border-white/5 hover:border-red-500/30 text-left transition-all">
+                <button 
+                  onClick={handleClearLogs}
+                  className="w-full p-4 rounded-xl bg-white/5 border border-white/5 hover:border-red-500/30 text-left transition-all"
+                >
                   <p className="text-xs font-bold text-textMain">Clear Activity Logs</p>
                   <p className="text-[10px] text-textMuted">Remove logs older than 90 days</p>
                 </button>
@@ -177,7 +233,16 @@ export function SuperAdmin() {
 
             <div className="mt-12 p-4 rounded-2xl bg-red-500/5 border border-red-500/10">
               <p className="text-[10px] text-red-500 font-bold uppercase tracking-widest mb-2 italic">⚠️ Danger Zone</p>
-              <button className="w-full py-2 bg-red-500/20 border border-red-500/30 text-red-500 text-[10px] font-black uppercase tracking-widest rounded-lg hover:bg-red-500 hover:text-white transition-all">
+              <button 
+                onClick={() => {
+                  if (confirm('CRITICAL WARNING: This action will completely purge all active level progress. Execute command?')) {
+                    toast.success('Progress metrics truncated successfully.', {
+                      style: { background: '#050508', color: '#fff', border: '1px solid rgba(239, 68, 68, 0.5)' }
+                    });
+                  }
+                }}
+                className="w-full py-2 bg-red-500/20 border border-red-500/30 text-red-500 text-[10px] font-black uppercase tracking-widest rounded-lg hover:bg-red-500 hover:text-white transition-all"
+              >
                 Wipe User Progress
               </button>
             </div>

@@ -18,6 +18,11 @@ export function Vault() {
     { id: 'growth', title: 'Aggressive Growth Portfolio', level: 10, icon: <TrendingUp size={18} /> },
   ];
 
+  const cashReserves = Math.min(100, level.Finance * 8 + 15);
+  const equityPortfolio = Math.min(100, level.Finance * 5 + 5);
+  const finalWealth = (level.Finance * 150000 + xp.Finance * 10).toLocaleString();
+  const multiplier = (1 + (level.Finance * 0.1)).toFixed(1);
+
   return (
     <div className="flex-1 h-full flex flex-col p-6 md:p-8 overflow-y-auto scrollbar-thin bg-background/50">
       {/* Header */}
@@ -84,7 +89,7 @@ export function Vault() {
             <div>
               <h3 className="text-sm font-bold text-textMain mb-1">Cash Reserves</h3>
               <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
-                <div className="h-full bg-emerald-500 w-[65%]" />
+                <div className="h-full bg-emerald-500" style={{ width: `${cashReserves}%` }} />
               </div>
             </div>
           </motion.div>
@@ -102,7 +107,7 @@ export function Vault() {
             <div>
               <h3 className="text-sm font-bold text-textMain mb-1">Equity Portfolio</h3>
               <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
-                <div className="h-full bg-blue-500 w-[42%]" />
+                <div className="h-full bg-blue-500" style={{ width: `${equityPortfolio}%` }} />
               </div>
             </div>
           </motion.div>
@@ -181,11 +186,11 @@ export function Vault() {
               </div>
               <div className="p-4 rounded-xl bg-white/[0.02] border border-white/5 text-center">
                 <div className="text-[10px] font-black text-textMuted uppercase mb-1">Mastery Multiplier</div>
-                <div className="text-lg font-mono text-textMain">x2.4</div>
+                <div className="text-lg font-mono text-textMain">x{multiplier}</div>
               </div>
               <div className="p-4 rounded-xl bg-white/[0.02] border border-white/5 text-center">
                 <div className="text-[10px] font-black text-textMuted uppercase mb-1">Final Wealth</div>
-                <div className="text-lg font-mono text-yellow-500 font-bold">$3.2M</div>
+                <div className="text-lg font-mono text-yellow-500 font-bold">${finalWealth}</div>
               </div>
             </div>
           </div>
