@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  Clock, Plus, Trash2, Check, Copy, Zap, Trophy, Calendar,
-  Dumbbell, BookOpen, Briefcase, Brain, MoreHorizontal, Star, ChevronDown
+  Plus, Trash2, Check, Copy, Zap, Calendar,
+  Dumbbell, BookOpen, Briefcase, Brain, Star, ChevronDown
 } from 'lucide-react';
 import { useTimetable } from '../hooks/useTimetable';
 import { useProgression } from '../hooks/useProgression';
@@ -46,7 +46,6 @@ const BADGE_LABELS: Record<string, string> = {
 
 export function TimetableHub() {
   const { state, addXp } = useProgression();
-  const userId = state.displayName ? state.displayName : null; // We need actual userId
 
   // Get userId from supabase session via progression context workaround
   const [supaUserId] = useState<string | null>(() => {
@@ -55,7 +54,7 @@ export function TimetableHub() {
   });
 
   const {
-    tasks, completions, badges, loading, todayTasks, todayStats,
+    tasks, completions, badges, loading, todayStats,
     isWeekend, addTask, deleteTask, copyDayToDay, toggleCompletion, claimDayBonus
   } = useTimetable(supaUserId);
 

@@ -50,12 +50,13 @@ export function PatternDojo() {
   const { addXp } = useProgression();
   const [masteredIds, setMasteredIds] = useState<number[]>([]);
 
-  const handleMaster = () => {
+  const handleMaster = async () => {
     if (!selectedPattern || masteredIds.includes(selectedPattern.id)) return;
     
     audio.playSuccess();
     const xpValue = selectedPattern.difficulty === 'Easy' ? 20 : selectedPattern.difficulty === 'Medium' ? 50 : 100;
-    addXp('Study', `Completed Dojo: ${selectedPattern.title}`, xpValue);
+    const awarded = await addXp('Study', `Completed Dojo: ${selectedPattern.title}`, xpValue);
+    console.debug(`[PatternDojo] Awarded ${awarded} XP for ${selectedPattern.title}`);
     setMasteredIds([...masteredIds, selectedPattern.id]);
   };
 

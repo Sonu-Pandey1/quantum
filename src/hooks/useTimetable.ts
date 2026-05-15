@@ -238,10 +238,10 @@ export function useTimetable(userId: string | null) {
 
   // ── Award bonus XP & badges for the day ───────────────────────────────────
   const claimDayBonus = useCallback(async (
-    addXpFn: (pillar: 'Study' | 'Health' | 'Finance' | 'Mind', actionType: string, baseAmount: number) => Promise<void>
+    addXpFn: (pillar: 'Study' | 'Health' | 'Finance' | 'Mind', actionType: string, baseAmount: number) => Promise<number>
   ) => {
     if (!supabase || !userId) return;
-    const { tier, is_weekend, total, done } = todayStats;
+    const { tier, is_weekend, total } = todayStats;
     if (tier === 'none' || total === 0) return;
 
     // Check already claimed
@@ -286,6 +286,7 @@ export function useTimetable(userId: string | null) {
     if (!supabase || !userId) return;
 
     const bump = async (badgeType: string, thresholds = BADGE_THRESHOLDS) => {
+      if (!supabase) return;
       const { data: current } = await supabase
         .from('timetable_badges')
         .select('*')
@@ -297,10 +298,12 @@ export function useTimetable(userId: string | null) {
       const newTier = getBadgeTier(newCount, thresholds) || 'bronze';
 
       if (current) {
+        if (!supabase) return;
         await supabase.from('timetable_badges')
           .update({ count: newCount, tier: newTier })
           .eq('id', current.id);
       } else {
+        if (!supabase) return;
         await supabase.from('timetable_badges')
           .insert({ user_id: userId, badge_type: badgeType, count: newCount, tier: newTier });
       }

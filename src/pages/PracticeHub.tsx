@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   ChevronLeft, BrainCircuit, Search,
-  CheckCircle2, Star, Lock
+  CheckCircle2, Star, Lock, Timer, Zap
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { audio } from '../lib/audio';
@@ -12,40 +12,54 @@ import type { Question } from '../lib/questions';
 import { formatDistanceToNow, parseISO, isAfter, addDays } from 'date-fns';
 import { ListSkeleton } from '../components/Skeleton';
 
-// Inlined validator logic to ensure stability
+const LOCK_DAYS = 7; // 1 week lock after solve
+
+// Validator: Easy = length only, Medium = some effort, Hard = strict
 function validateAnswer(question: Question, input: string): { isValid: boolean; message: string } {
-  const cleanInput = input.trim().toLowerCase();
-  if (!cleanInput || cleanInput.length < 5) {
-    return { isValid: false, message: 'Your solution is too brief. Please provide more detail.' };
+  const cleanInput = input.trim();
+  const lower = cleanInput.toLowerCase();
+
+  // Minimum length gate for all difficulties
+  const minLen = question.difficulty === 'Easy' ? 5 : question.difficulty === 'Medium' ? 15 : 30;
+  if (cleanInput.length < minLen) {
+    return { isValid: false, message: `Answer too short. Minimum ${minLen} characters required.` };
   }
 
-  // Logic & ABAP Technical
+  // Easy questions: length check is sufficient — accept all
+  if (question.difficulty === 'Easy') {
+    return { isValid: true, message: 'Good work! Protocol accepted.' };
+  }
+
+  // Pattern questions (Medium/Hard): must show iteration + output concept
+  if (question.category === 'Pattern') {
+    const hasLoop = /for|while|loop|do|repeat|iterate/i.test(input);
+    const hasOutput = /print|console|write|output|display|\*/i.test(input);
+    if (hasLoop && hasOutput) return { isValid: true, message: 'Pattern logic verified.' };
+    if (cleanInput.length >= 50) return { isValid: true, message: 'Detailed approach accepted.' };
+    return { isValid: false, message: 'Pattern solution should show iteration and output logic.' };
+  }
+
+  // HR questions: check for relevant professional terms OR sufficient length
+  if (question.category === 'HR') {
+    const professionalTerms = ['talk', 'discuss', 'private', 'manager', 'learn', 'feedback', 'team',
+      'communication', 'resolve', 'understand', 'approach', 'professional', 'meeting', 'concern'];
+    const hasTerms = professionalTerms.some(t => lower.includes(t));
+    if (hasTerms && cleanInput.length >= 20) return { isValid: true, message: 'Professional standard met.' };
+    if (cleanInput.length >= 60) return { isValid: true, message: 'Accepted.' };
+    return { isValid: false, message: 'Provide a professional response addressing the scenario.' };
+  }
+
+  // Logic & ABAP: flexible matching
   if (question.category === 'Logic' || question.category === 'ABAP') {
     if (!question.correctAnswer) return { isValid: true, message: 'Accepted.' };
     const target = question.correctAnswer.toLowerCase().trim();
-    if (cleanInput === target) return { isValid: true, message: 'Perfect! Logic is sound.' };
-    const normalizedInput = cleanInput.replace(/[^a-z0-9]/g, '');
-    const normalizedTarget = target.replace(/[^a-z0-9]/g, '');
-    if (normalizedInput === normalizedTarget) return { isValid: true, message: 'Correct formatting.' };
-    if (cleanInput.includes(target) || target.includes(cleanInput)) return { isValid: true, message: 'Core logic identified.' };
-    return { isValid: false, message: 'Logic does not match expected protocol.' };
-  }
-
-  // HR questions
-  if (question.category === 'HR') {
-    if (!question.correctAnswer) return { isValid: true, message: 'Accepted.' };
-    // Simple similarity check
-    const isRelated = cleanInput.length > 20 && (cleanInput.includes('talk') || cleanInput.includes('private') || cleanInput.includes('manager') || cleanInput.includes('learn'));
-    if (isRelated) return { isValid: true, message: 'Professional standard met.' };
-    return { isValid: false, message: 'Response does not align with core principles.' };
-  }
-
-  // Pattern questions
-  if (question.category === 'Pattern') {
-    const hasLoop = /for|while|loop|do|repeat/i.test(input);
-    const hasPrint = /print|console|write|output|\*/i.test(input);
-    if (hasLoop && hasPrint) return { isValid: true, message: 'Pattern logic verified.' };
-    return { isValid: false, message: 'Pattern requires iteration and output.' };
+    const normInput = lower.replace(/[^a-z0-9]/g, '');
+    const normTarget = target.replace(/[^a-z0-9]/g, '');
+    if (normInput === normTarget) return { isValid: true, message: 'Perfect match!' };
+    if (lower.includes(target) || target.includes(lower)) return { isValid: true, message: 'Core logic identified.' };
+    // For Hard: strict; for Medium: generous
+    if (question.difficulty === 'Medium' && cleanInput.length >= 20) return { isValid: true, message: 'Approach accepted.' };
+    return { isValid: false, message: 'Logic does not match. Review the expected protocol.' };
   }
 
   return { isValid: true, message: 'Accepted.' };
@@ -63,12 +77,16 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
   const [search, setSearch] = useState('');
   const [submissions, setSubmissions] = useState<Record<string, Submission>>({});
   const [selectedQuestion, setSelectedQuestion] = useState<Question | null>(null);
+  const selectedQuestionRef = useRef<Question | null>(null);
   const [userAnswer, setUserAnswer] = useState('');
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error', message: string, bonus?: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [startTime, setStartTime] = useState<number | null>(null);
   const [hardStreak, setHardStreak] = useState(0);
+  const [submitting, setSubmitting] = useState(false);
   const { addXp, state } = useProgression();
+  const submissionsRef = useRef<Record<string, Submission>>({});
+  const activeTabRef   = useRef<string>('All');
 
   const [userId, setUserId] = useState<string>('default');
 
@@ -76,6 +94,22 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
     setHardStreak(newStreak);
     localStorage.setItem(`quantum_hard_streak_${userId}`, newStreak.toString());
   };
+
+  // Keep refs in sync with state for use inside closures/setTimeout
+  const setSubmissionsWithRef = useCallback((updater: (prev: Record<string, Submission>) => Record<string, Submission>) => {
+    setSubmissions(prev => {
+      const next = updater(prev);
+      submissionsRef.current = next;
+      return next;
+    });
+  }, []);
+
+  const setSelectedQuestionWithRef = useCallback((q: Question | null) => {
+    selectedQuestionRef.current = q;
+    setSelectedQuestion(q);
+  }, []);
+
+  useEffect(() => { activeTabRef.current = activeTab; }, [activeTab]);
 
   const fetchSubmissions = useCallback(async () => {
     if (!supabase) {
@@ -105,9 +139,26 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
       if (!error && data) {
         const subMap: Record<string, Submission> = {};
         data.forEach(s => {
-          subMap[s.question_id] = s;
+          const existing = subMap[s.question_id];
+          if (!existing || s.solve_count > existing.solve_count) {
+            subMap[s.question_id] = s;
+          }
         });
-        setSubmissions(subMap);
+        // Smart merge: only overwrite an existing entry if the DB entry is newer
+        setSubmissionsWithRef(prev => {
+          const merged: Record<string, Submission> = { ...prev };
+          Object.entries(subMap).forEach(([qId, dbEntry]) => {
+            const cur = merged[qId];
+            if (!cur) {
+              merged[qId] = dbEntry;
+            } else {
+              const curTs = new Date(cur.last_solved_at).getTime();
+              const dbTs  = new Date(dbEntry.last_solved_at).getTime();
+              if (dbTs > curTs) merged[qId] = dbEntry;
+            }
+          });
+          return merged;
+        });
       }
     } catch (e) {
       console.error('Error fetching submissions:', e);
@@ -121,28 +172,28 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
   }, [fetchSubmissions]);
 
   const handleSolve = async () => {
-    if (!selectedQuestion) return;
+    if (!selectedQuestion || submitting) return;
 
     const validation = validateAnswer(selectedQuestion, userAnswer);
     if (!validation.isValid) {
       setFeedback({ type: 'error', message: validation.message });
       audio.playClick();
-      // Log failed attempt for analytics (0 XP)
-      await addXp(selectedQuestion.category === 'HR' ? 'Mind' : 'Study', `FAILED: ${selectedQuestion.title}`, 0);
       return;
     }
 
     const sub = submissions[selectedQuestion.id];
     const now = new Date();
     
-    // Check lock
+    // Enforce 7-day lock on ALL difficulties including Easy
     if (sub) {
-      const lockUntil = addDays(parseISO(sub.last_solved_at), 7);
+      const lockUntil = addDays(parseISO(sub.last_solved_at), LOCK_DAYS);
       if (isAfter(lockUntil, now)) {
-        setFeedback({ type: 'error', message: `Protocol Locked. Available in ${formatDistanceToNow(lockUntil)}.` });
+        setFeedback({ type: 'error', message: `Protocol locked for ${formatDistanceToNow(lockUntil)} more.` });
         return;
       }
     }
+
+    setSubmitting(true);
 
     audio.playSuccess();
     const isRepeat = !!sub;
@@ -164,78 +215,110 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
       saveHardStreak(hardStreak + 1);
     }
 
-    // Sync to DB
+    // Sync to DB — explicit UPDATE/INSERT to avoid duplicate rows
     if (supabase) {
       const { data: { session } } = await supabase.auth.getSession();
       if (session) {
         try {
-          await supabase.from('practice_submissions').upsert({
-            user_id: session.user.id,
-            question_id: selectedQuestion.id,
-            last_solved_at: now.toISOString(),
-            solve_count: (sub?.solve_count || 0) + 1,
-            total_xp_earned: (sub?.solve_count || 0) * selectedQuestion.xpRepeatSolve + selectedQuestion.xpFirstSolve + timeBonus
-          });
+          const uid = session.user.id;
+          const qid = selectedQuestion.id;
+          const newSolveCount = (sub?.solve_count || 0) + 1;
+          const totalXp = xpGained; // actual XP input passed to addXp (addXp multiplies further)
+
+          // Check if a row already exists for this user+question
+          const { data: existing } = await supabase
+            .from('practice_submissions')
+            .select('id')
+            .eq('user_id', uid)
+            .eq('question_id', qid)
+            .limit(1)
+            .maybeSingle();
+
+          if (existing?.id) {
+            await supabase
+              .from('practice_submissions')
+              .update({ last_solved_at: now.toISOString(), solve_count: newSolveCount, total_xp_earned: totalXp })
+              .eq('id', existing.id);
+          } else {
+            await supabase
+              .from('practice_submissions')
+              .insert({ user_id: uid, question_id: qid, last_solved_at: now.toISOString(), solve_count: 1, total_xp_earned: totalXp });
+          }
         } catch (e) {
           console.error('DB Sync failed:', e);
         }
       }
     }
 
-    // Account for global streak multiplier (from useProgression.tsx)
-    const today = new Date().toISOString().split('T')[0];
-    const isFirstActionToday = state?.lastActivityDate !== today;
-    const projectedStreak = isFirstActionToday ? ((state?.streakCount || 0) + 1) : (state?.streakCount || 0);
-    const multiplier = projectedStreak >= 3 ? 1.5 : 1.0;
-    const finalXpWithMultiplier = Math.floor(xpGained * multiplier);
-
-    // --- Velocity Tracking ---
+    // Breakdown for activity log
+    const baseAmount = isRepeat ? selectedQuestion.xpRepeatSolve : selectedQuestion.xpFirstSolve;
     const durationMs = Date.now() - (startTime ?? Date.now());
     const durationSec = Math.floor(durationMs / 1000);
     const durationStr = durationSec < 60 ? `${durationSec}s` : `${Math.floor(durationSec / 60)}m ${durationSec % 60}s`;
 
-    // Construct detailed breakdown for activity log using | delimiter for UI separation
-    const baseAmount = isRepeat ? selectedQuestion.xpRepeatSolve : selectedQuestion.xpFirstSolve;
-    const streakBonus = finalXpWithMultiplier - xpGained;
-    const breakdownStr = `${selectedQuestion.title}|Solved in ${durationStr} (+${baseAmount} Base${timeBonus > 0 ? ` + ${timeBonus} Speed` : ''}${streakBonus > 0 ? ` + ${streakBonus} Consistency` : ''})`;
+    // Award XP — addXp handles ALL multipliers and returns the actual finalAmount awarded
+    const awarded = await addXp(
+      'Study',
+      // Build a concise label; awarded XP recorded by addXp will be the ground truth
+      `${selectedQuestion.title}|Solved in ${durationStr} (+${baseAmount} Base${timeBonus > 0 ? ` +${timeBonus} Speed` : ''})`,
+      xpGained  // base + time bonus, addXp will scale further
+    );
 
-    setFeedback({ 
-      type: 'success', 
-      message: `Protocol Mastered! +${finalXpWithMultiplier} XP Awarded.`,
+    // Now we know the exact XP added — show it accurately in the toast
+    setFeedback({
+      type: 'success',
+      message: `Protocol Mastered! +${awarded} XP awarded.${timeBonus > 0 ? ` (includes +${timeBonus} speed bonus)` : ''}`,
       bonus: timeBonus > 0 ? timeBonus : undefined
     });
     
-    // Award XP via existing progression system
-    await addXp('Study', `Solved: ${breakdownStr}`, xpGained);
-    
-    fetchSubmissions();
+    // Optimistically lock this question immediately — survives fetchSubmissions merge
+    const freshEntry: Submission = {
+      question_id: selectedQuestion.id,
+      last_solved_at: now.toISOString(),
+      solve_count: (sub?.solve_count || 0) + 1,
+    };
+    const solvedId = selectedQuestion.id;
+    setSubmissionsWithRef(prev => ({ ...prev, [solvedId]: freshEntry }));
+
+    await fetchSubmissions();
+
+    // Re-stamp after DB refresh to guarantee the lock is never lost
+    setSubmissionsWithRef(prev => ({ ...prev, [solvedId]: freshEntry }));
+    setSubmitting(false);
+
+    // Auto-navigate — use refs so we read fresh data after the 3s delay
     setTimeout(() => {
-      setSelectedQuestion(null);
+      const latestSubs = submissionsRef.current;
+      const latestTab  = activeTabRef.current;
+      // Re-compute filtered list from scratch using latest tab (no stale closure)
+      const candidateList = latestTab === 'Training' ? QUESTIONS : QUESTIONS.filter(q => {
+        if (latestTab !== 'All' && q.category !== latestTab) return false;
+        return true;
+      });
+      const currentIndex = candidateList.findIndex(q => q.id === solvedId);
+      const nextQ = candidateList.slice(currentIndex + 1).find(q => {
+        const sub = latestSubs[q.id];
+        if (!sub) return true; // never solved — available
+        const lockUntil = addDays(parseISO(sub.last_solved_at), LOCK_DAYS);
+        return !isAfter(lockUntil, new Date());
+      });
+      setSelectedQuestionWithRef(nextQ || null);
       setUserAnswer('');
       setFeedback(null);
-      setStartTime(null);
-    }, 6000); // Extended duration (6 seconds) as requested
-  };
-
-  const getMediumSolveCount = (category: string) => {
-    return Object.keys(submissions).filter(qId => {
-      const q = QUESTIONS.find(q => q.id === qId);
-      return q && q.category === category && q.difficulty === 'Medium';
-    }).length;
+      setStartTime(nextQ ? Date.now() : null);
+    }, 3000);
   };
 
   const getLockInfo = (qId: string) => {
     const sub = submissions[qId];
     if (!sub) return null;
-    const lockUntil = addDays(parseISO(sub.last_solved_at), 7);
+    const lockUntil = addDays(parseISO(sub.last_solved_at), LOCK_DAYS);
     const now = new Date();
     return isAfter(lockUntil, now) ? lockUntil : null;
   };
 
-  const isHardLocked = (q: Question) => {
-    if (q.difficulty !== 'Hard') return false;
-    return getMediumSolveCount(q.category) < 5;
-  };
+  // Hard questions are open to everyone — no prerequisite gate
+  const isHardLocked = (_q: Question) => false;
 
   const getDailyTraining = () => {
     // Pick 1 Easy, 1 Medium, 1 Hard that aren't locked recently
@@ -258,6 +341,23 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
     return true;
   });
 
+  // ── Pillar-level analytics (Study only in Practice Hub) ─────────────
+  const studyXp   = state?.xp?.Study ?? 0;
+  const studyLevel = state?.level?.Study ?? 1;
+  // XP needed for next raw level — same formula as useProgression
+  const xpForLevel = (lvl: number) => Math.pow(lvl - 1, 1.5) * 100;
+  const nextLevelXp = xpForLevel(studyLevel + 1);
+  const prevLevelXp = xpForLevel(studyLevel);
+  const studyProgress = nextLevelXp > prevLevelXp
+    ? Math.min(100, ((studyXp - prevLevelXp) / (nextLevelXp - prevLevelXp)) * 100)
+    : 100;
+
+  const studyRank = studyLevel < 5 ? 'Novice' : studyLevel < 15 ? 'Scholar' : studyLevel < 30 ? 'Expert' : studyLevel < 50 ? 'Sage' : 'Master Mind';
+
+  const solvedByCategory = (cat: string) =>
+    QUESTIONS.filter(q => q.category === cat && !!submissions[q.id]).length;
+  const totalByCategory  = (cat: string) => QUESTIONS.filter(q => q.category === cat).length;
+
 
 
   return (
@@ -267,7 +367,7 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
       exit={{ opacity: 0 }}
       className="flex flex-1 w-full bg-background relative z-10 overflow-hidden"
     >
-      {/* Left List */}
+      {/* Left List — full width on mobile when no question, fixed width on desktop */}
       <div className={`w-full md:w-96 border-r border-border bg-surface/30 backdrop-blur-xl flex flex-col ${selectedQuestion ? 'hidden md:flex' : 'flex'} h-full overflow-hidden`}>
         <div className="p-4 md:p-6 border-b border-border shrink-0">
           <div className="flex items-center justify-between mb-4 md:mb-6">
@@ -282,7 +382,7 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
             {hardStreak > 0 && (
               <div className="flex items-center bg-red-500/10 text-red-500 px-2 py-1 rounded-lg border border-red-500/20">
                 <Star size={12} className="mr-1 fill-current" />
-                <span className="text-[10px] font-black">{hardStreak}</span>
+                <span className="text-[10px] font-black">{hardStreak}🔥</span>
               </div>
             )}
           </div>
@@ -291,7 +391,7 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-textMuted group-focus-within:text-primary transition-colors" size={16} />
             <input 
               type="text" 
-              placeholder="Search..." 
+              placeholder="Search protocols..." 
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full bg-surfaceHighlight/50 border border-border rounded-xl pl-10 pr-4 py-2 text-sm text-textMain focus:outline-none focus:border-primary transition-all"
@@ -305,7 +405,7 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
               key={tab}
               onClick={() => setActiveTab(tab as any)}
               className={`px-4 py-3 text-[10px] font-bold uppercase tracking-widest whitespace-nowrap transition-all relative ${
-                activeTab === tab ? 'text-primary' : 'text-textMuted hover:text-textMain'
+                activeTab === tab ? 'text-primary' : 'text-textMuted hover:text-primary'
               }`}
             >
               {tab === 'Training' ? '🎯 Daily' : tab}
@@ -320,45 +420,63 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
           ) : filtered.map(q => {
             const lockUntil = getLockInfo(q.id);
             const isSolved = !!submissions[q.id];
+            const sub = submissions[q.id];
+            const solveCount = sub?.solve_count || 0;
             return (
               <button
                 key={q.id}
                 onClick={() => {
-                  if (isHardLocked(q)) return;
+                  if (isHardLocked(q) || !!lockUntil) return;
                   setSelectedQuestion(q);
                   setUserAnswer('');
                   setFeedback(null);
                   setStartTime(Date.now());
                 }}
-                disabled={isHardLocked(q)}
-                className={`w-full text-left p-4 rounded-xl transition-all border group relative ${
-                  isHardLocked(q) ? 'opacity-50 cursor-not-allowed bg-black/10' :
+                disabled={isHardLocked(q) || !!lockUntil}
+                className={`w-full text-left p-3.5 rounded-2xl transition-all border group relative overflow-hidden ${
+                  isHardLocked(q) ? 'opacity-40 cursor-not-allowed border-transparent bg-white/[0.02]' :
+                  lockUntil ? 'border-amber-500/20 bg-amber-500/5 cursor-not-allowed' :
                   selectedQuestion?.id === q.id 
-                    ? 'bg-primary/20 border-primary shadow-[0_0_20px_rgba(59,130,246,0.1)]' 
-                    : 'bg-surfaceHighlight/30 border-transparent hover:border-white/10 hover:bg-white/5'
+                    ? 'bg-primary/10 border-primary/40 shadow-[0_0_20px_rgba(59,130,246,0.08)]' 
+                    : 'bg-white/[0.03] border-white/5 hover:border-primary/30 hover:bg-primary/5'
                 }`}
               >
-                {isHardLocked(q) && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-[2px] rounded-xl z-20">
-                    <div className="text-center">
-                      <Lock size={16} className="mx-auto mb-1 text-white/40" />
-                      <div className="text-[8px] font-black text-white/60 uppercase">Locked</div>
+                {/* Difficulty color bar */}
+                <div className={`absolute left-0 top-0 bottom-0 w-[3px] ${
+                  q.difficulty === 'Easy' ? 'bg-emerald-500' :
+                  q.difficulty === 'Medium' ? 'bg-amber-500' : 'bg-red-500'
+                } ${lockUntil ? 'opacity-20' : 'opacity-80'}`} />
+
+                <div className="pl-3">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className={`font-bold text-sm leading-tight ${
+                      lockUntil ? 'text-textMuted/50' :
+                      selectedQuestion?.id === q.id ? 'text-primary' : 'text-textMain'
+                    }`}>{q.title}</span>
+                    <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                      {lockUntil && <Lock size={11} className="text-amber-500" />}
+                      {isSolved && !lockUntil && <CheckCircle2 size={13} className="text-emerald-400" />}
+                      {solveCount > 0 && (
+                        <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${
+                          lockUntil ? 'bg-amber-500/10 text-amber-500' : 'bg-emerald-500/10 text-emerald-400'
+                        }`}>{solveCount}×</span>
+                      )}
                     </div>
                   </div>
-                )}
-                <div className="flex items-center justify-between mb-1">
-                  <div className="flex items-center space-x-2">
-                    <span className={`font-bold text-sm ${selectedQuestion?.id === q.id ? 'text-primary' : 'text-textMain'}`}>{q.title}</span>
-                  </div>
-                  {isSolved && !lockUntil && <CheckCircle2 size={14} className="text-emerald-500" />}
-                </div>
-                <div className="flex items-center justify-between text-[10px]">
-                  <div className="flex items-center space-x-2">
-                    <span className="text-textMuted">{q.category}</span>
-                    <span className={`font-bold ${
-                      q.difficulty === 'Easy' ? 'text-emerald-500' : 
-                      q.difficulty === 'Medium' ? 'text-amber-500' : 'text-red-500'
-                    }`}>{q.difficulty}</span>
+                  <div className="flex items-center justify-between text-[10px]">
+                    <div className="flex items-center gap-2">
+                      <span className="text-textMuted">{q.category}</span>
+                      <span className={`font-black ${
+                        q.difficulty === 'Easy' ? 'text-emerald-500' : 
+                        q.difficulty === 'Medium' ? 'text-amber-500' : 'text-red-500'
+                      }`}>{q.difficulty}</span>
+                      <span className="font-bold text-white/20">+{solveCount > 0 ? q.xpRepeatSolve : q.xpFirstSolve} XP</span>
+                    </div>
+                    {lockUntil && (
+                      <span className="text-[9px] font-black text-amber-500/80 flex items-center gap-1">
+                        <Timer size={9} /> {formatDistanceToNow(lockUntil)}
+                      </span>
+                    )}
                   </div>
                 </div>
               </button>
@@ -367,15 +485,18 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
         </div>
       </div>
 
-      {/* Workspace */}
-      <div className={`flex-1 flex flex-col bg-surface/10 ${!selectedQuestion ? 'hidden md:flex' : 'flex'} h-full md:h-auto overflow-hidden relative`}>
+      {/* Workspace — always visible on desktop, only visible when question selected on mobile */}
+      <div className={`flex-1 flex flex-col bg-surface/10 overflow-hidden ${selectedQuestion ? 'flex' : 'hidden md:!flex'}`}>
+
+        {/* ── Question panel ─────────────────────────────────────────── */}
         <AnimatePresence mode="wait">
-          {selectedQuestion ? (
-            <motion.div 
+          {selectedQuestion && (
+            <motion.div
               key={selectedQuestion.id}
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
+              transition={{ duration: 0.2 }}
               className="flex-1 flex flex-col h-full overflow-y-auto p-4 md:p-12 space-y-6 md:space-y-8 scrollbar-thin pb-32"
             >
               <button onClick={() => setSelectedQuestion(null)} className="md:hidden flex items-center text-textMuted hover:text-primary mb-2 transition-colors uppercase tracking-[0.2em] font-black text-[10px]">
@@ -427,15 +548,15 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
                 <div className="flex flex-col space-y-4 md:space-y-6">
                   <div className="glass-panel p-4 md:p-6 flex-1 flex flex-col min-h-[300px] border-primary/20 bg-primary/[0.01]">
                     <h3 className="text-[10px] font-bold uppercase tracking-widest text-textMuted mb-2 md:mb-4">Input</h3>
-                    <textarea 
+                    <textarea
                       value={userAnswer}
                       onChange={(e) => setUserAnswer(e.target.value)}
                       placeholder={selectedQuestion.category === 'Pattern' ? 'Implement protocol...' : 'Type solution...'}
                       className="flex-1 w-full bg-black/20 border border-white/10 rounded-xl p-3 md:p-4 text-[13px] md:text-sm font-mono text-textMain focus:outline-none focus:border-primary resize-none scrollbar-thin transition-all min-h-[150px] md:min-h-[200px]"
                     />
-                    
+
                     {feedback && (
-                      <motion.div 
+                      <motion.div
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
                         className={`mt-4 p-3 rounded-lg text-xs font-bold ${
@@ -447,39 +568,113 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
                     )}
 
                     <div className="mt-4 md:mt-6">
-                      <button 
+                      <button
                         onClick={handleSolve}
-                        disabled={!!getLockInfo(selectedQuestion.id) || isHardLocked(selectedQuestion)}
-                        className={`w-full py-4 rounded-xl font-black uppercase tracking-widest transition-all ${
+                        disabled={!!getLockInfo(selectedQuestion.id) || isHardLocked(selectedQuestion) || submitting}
+                        className={`w-full py-4 rounded-xl font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${
                           getLockInfo(selectedQuestion.id) || isHardLocked(selectedQuestion)
                             ? 'bg-white/5 text-textMuted cursor-not-allowed border border-white/5'
-                            : 'bg-primary text-white shadow-[0_0_30px_rgba(59,130,246,0.3)] hover:scale-[1.02] active:scale-[0.98]'
+                            : submitting
+                              ? 'bg-primary/60 text-white cursor-not-allowed'
+                              : 'bg-primary text-white shadow-[0_0_30px_rgba(59,130,246,0.3)] hover:scale-[1.02] active:scale-[0.98]'
                         }`}
                       >
-                        {isHardLocked(selectedQuestion) ? 'Locked' : getLockInfo(selectedQuestion.id) ? 'Locked' : 'Execute'}
+                        {submitting ? (
+                          <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Syncing...</>
+                        ) : getLockInfo(selectedQuestion.id) ? (
+                          <><Lock size={14} />Locked — {formatDistanceToNow(getLockInfo(selectedQuestion.id)!)} remaining</>
+                        ) : 'Execute Protocol'}
                       </button>
                     </div>
                   </div>
                 </div>
               </div>
             </motion.div>
-          ) : (
-            <div className="flex-1 flex flex-col items-center justify-center text-textMuted p-12 text-center pb-32">
-              <motion.div 
-                initial={{ opacity: 0, scale: 0.8 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className="w-16 md:w-24 h-16 md:h-24 rounded-full bg-primary/5 flex items-center justify-center mb-6 relative"
-              >
-                <div className="absolute inset-0 rounded-full border border-primary/20 animate-ping opacity-20" />
-                <BrainCircuit size={48} className="opacity-20 text-primary" />
-              </motion.div>
-              <h2 className="text-xl md:text-2xl font-bold text-textMain mb-2 uppercase tracking-tighter">Neural Link Active</h2>
-              <p className="max-w-md text-xs md:text-sm leading-relaxed opacity-60">
-                Select a protocol from the manifest to begin system calibration and XP harvesting.
-              </p>
-            </div>
           )}
         </AnimatePresence>
+
+        {/* ── Empty state — rendered directly, no AnimatePresence ─────── */}
+        {!selectedQuestion && (
+          <div className="flex-1 flex items-center justify-center p-6 md:p-12 overflow-y-auto">
+            {activeTab === 'All' ? (
+              /* Study Pillar Dashboard */
+              <div className="w-full max-w-sm md:max-w-md mx-auto">
+                <div className="text-center mb-6">
+                  <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 mb-4 relative">
+                    <div className="absolute inset-0 rounded-2xl border border-primary/30 animate-ping opacity-10" />
+                    <BrainCircuit size={32} className="text-primary" />
+                  </div>
+                  <div className="text-[10px] font-black uppercase tracking-widest text-primary/70 mb-1">Study Pillar</div>
+                  <h2 className="text-2xl md:text-3xl font-black text-textMain uppercase tracking-tight">{studyRank}</h2>
+                </div>
+
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-bold text-textMuted">Level {studyLevel}</span>
+                  <span className="text-sm font-black text-primary">{studyXp.toLocaleString()} XP</span>
+                </div>
+                <div className="w-full h-2 bg-white/5 rounded-full overflow-hidden mb-1">
+                  <motion.div
+                    className="h-full bg-gradient-to-r from-primary to-blue-400 rounded-full"
+                    initial={{ width: 0 }}
+                    animate={{ width: `${studyProgress}%` }}
+                    transition={{ duration: 1, ease: 'easeOut' }}
+                  />
+                </div>
+                <div className="text-[10px] text-textMuted text-right mb-6">{Math.round(nextLevelXp - studyXp)} XP to Level {studyLevel + 1}</div>
+
+                <div className="grid grid-cols-3 gap-3 mb-4">
+                  <div className="text-center p-3 rounded-2xl bg-white/[0.03] border border-white/5">
+                    <div className="text-xl font-black text-emerald-400">{Object.keys(submissions).length}</div>
+                    <div className="text-[9px] text-textMuted uppercase font-bold mt-1">Solved</div>
+                  </div>
+                  <div className="text-center p-3 rounded-2xl bg-white/[0.03] border border-white/5">
+                    <div className="text-xl font-black text-primary">{QUESTIONS.length - Object.keys(submissions).filter(id => !!getLockInfo(id)).length}</div>
+                    <div className="text-[9px] text-textMuted uppercase font-bold mt-1">Available</div>
+                  </div>
+                  <div className="text-center p-3 rounded-2xl bg-white/[0.03] border border-white/5">
+                    <div className="text-xl font-black text-amber-400">{Object.keys(submissions).filter(id => !!getLockInfo(id)).length}</div>
+                    <div className="text-[9px] text-textMuted uppercase font-bold mt-1">Cooling</div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  {(['Pattern','Logic','HR','ABAP'] as const).map(cat => {
+                    const solved = solvedByCategory(cat);
+                    const total  = totalByCategory(cat);
+                    const pct    = total > 0 ? Math.round((solved / total) * 100) : 0;
+                    return (
+                      <div key={cat} className="p-3 rounded-xl bg-white/[0.03] border border-white/5">
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-[10px] font-black text-textMuted uppercase">{cat}</span>
+                          <span className="text-[10px] font-black text-primary">{solved}/{total}</span>
+                        </div>
+                        <div className="w-full h-1 bg-white/5 rounded-full overflow-hidden">
+                          <div className="h-full bg-primary/60 rounded-full" style={{ width: `${pct}%` }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <p className="text-center text-[11px] text-textMuted opacity-40 mt-6">
+                  Select a protocol from the left panel to begin.
+                </p>
+              </div>
+            ) : (
+              /* Neural Link Active — other tabs */
+              <div className="text-center">
+                <div className="relative inline-flex items-center justify-center w-20 h-20 rounded-full bg-primary/5 border border-primary/10 mb-6">
+                  <div className="absolute inset-0 rounded-full border border-primary/20 animate-ping opacity-10" />
+                  <BrainCircuit size={36} className="text-primary/30" />
+                </div>
+                <h2 className="text-2xl md:text-3xl font-black text-textMain mb-3 uppercase tracking-tight">Neural Link Active</h2>
+                <p className="max-w-xs mx-auto text-sm leading-relaxed text-textMuted opacity-50">
+                  Select a protocol to begin. Solve once for full XP — locks 7 days, then repeat for bonus XP.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </motion.div>
   );

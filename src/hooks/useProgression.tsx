@@ -48,7 +48,7 @@ interface ProgressionState {
 
 interface ProgressionContextType {
   state: ProgressionState;
-  addXp: (pillar: Pillar, actionType: string, baseAmount: number) => Promise<void>;
+  addXp: (pillar: Pillar, actionType: string, baseAmount: number) => Promise<number>;
   addBuff: (buff: Buff) => void;
   setArchetype: (a: Archetype) => Promise<void>;
   updateProfile: (updates: Partial<{ archetype: Archetype; goals: string[]; onboarding_completed: boolean; display_name: string; settings: any }>) => Promise<void>;
@@ -204,14 +204,14 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // ── addXp: reads refs, writes to DB ──────────────────────────────────────
-  const addXp = useCallback(async (pillar: Pillar, actionType: string, baseAmount: number) => {
-    if (!supabase) return;
+  const addXp = useCallback(async (pillar: Pillar, actionType: string, baseAmount: number): Promise<number> => {
+    if (!supabase) return 0;
 
     // FIX: use getSession() — no HTTP call, no 403
     let userId = userIdRef.current;
     if (!userId) {
       const user = await getSessionUser();
-      if (!user) return;
+      if (!user) return 0;
       userId = user.id;
       userIdRef.current = userId;
     }
@@ -253,39 +253,28 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
       newLastActivity = today;
     }
 
-    const multiplier = currentStreak >= 3 ? 1.5 : 1.0;
+    // ── Multipliers (only ever ADD to XP, never reduce) ──────────────────
+    let finalMultiplier = 1.0;
 
-    // --- Advanced Multipliers ---
-    let finalMultiplier = multiplier;
+    // 1. Streak bonus: 3+ consecutive days = 1.5×
+    if (currentStreak >= 3) finalMultiplier *= 1.5;
 
-    // 1. Archetype Boost
+    // 2. Archetype boost: chosen archetype rewards matching pillar
     const currentArchetype = archetypeRef.current;
-    if (currentArchetype === 'Technical Elite' && pillar === 'Study') finalMultiplier *= 1.2;
+    if (currentArchetype === 'Technical Elite'  && pillar === 'Study')   finalMultiplier *= 1.2;
     if (currentArchetype === 'Wealth Architect' && pillar === 'Finance') finalMultiplier *= 1.2;
     if (currentArchetype === 'Vitality Vanguard' && pillar === 'Health') finalMultiplier *= 1.2;
 
-    // 2. Active Buffs
+    // 3. Active buffs (user-activated, always positive)
     const activeBuffs = buffsRef.current.filter(b => b.expiresAt > Date.now() && (b.type === pillar || b.type === 'Global'));
     activeBuffs.forEach(b => { finalMultiplier *= b.multiplier; });
 
-    // 3. Imbalance Tax (System Balance Control)
-    const currentLevels = {
-      Study: calculateLevel(currentPillarXp.Study, baselineLevelRef.current),
-      Health: calculateLevel(currentPillarXp.Health, baselineLevelRef.current),
-      Finance: calculateLevel(currentPillarXp.Finance, baselineLevelRef.current),
-      Mind: calculateLevel(currentPillarXp.Mind, baselineLevelRef.current),
-    };
-    const maxLevel = Math.max(...Object.values(currentLevels));
-    const thisLevel = currentLevels[pillar];
-    if (maxLevel - thisLevel > 5) {
-      // If this pillar is lagging significantly, it gets a "Catch-up" bonus!
-      finalMultiplier *= 1.5;
-    } else if (thisLevel === maxLevel && Object.values(currentLevels).some(l => maxLevel - l > 5)) {
-      // If this pillar is too far ahead, it gets a "Focus Tax"
-      finalMultiplier *= 0.7;
-    }
+    // REMOVED: Imbalance Tax (0.7× Focus Tax) — was silently reducing XP below stated values.
+    // XP will never go below what the action says it's worth.
 
-    const finalAmount = Math.floor(baseAmount * finalMultiplier);
+    const rawAmount  = Math.floor(baseAmount * finalMultiplier);
+    // Guarantee: awarded XP is always AT LEAST the base input (bonuses only add, never subtract)
+    const finalAmount = Math.max(baseAmount, rawAmount);
 
     const newPillarXp = currentPillarXp[pillar] + finalAmount;
     const newTotalXp = currentTotalXp + finalAmount;
@@ -374,6 +363,7 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
         });
     }
 
+    return finalAmount;
   }, []);
 
   const closeLevelUp = useCallback(() => {

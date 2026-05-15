@@ -1,6 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { Trophy, Shield, Star, Crown, Lock, Target, Zap, Heart, DollarSign, Brain, ChevronRight, Sparkles, Check } from 'lucide-react';
+import {
+  Trophy, Shield, Star, Crown, Lock, Target, Zap,
+  Heart, DollarSign, Brain, Sparkles, Check, TrendingUp
+} from 'lucide-react';
 import { useProgression } from '../hooks/useProgression';
 import { supabase } from '../lib/supabaseClient';
 
@@ -13,161 +16,188 @@ interface Reward {
   icon: string;
 }
 
-const BASE_RANKS = [
-  { name: 'Void Walker', level: -500, icon: Target, color: 'text-red-600', bg: 'bg-red-600/10', border: 'border-red-600/20' },
-  { name: 'Abyss Dweller', level: -400, icon: Shield, color: 'text-red-500', bg: 'bg-red-500/10', border: 'border-red-500/20' },
-  { name: 'Shadow Initiate', level: -250, icon: Star, color: 'text-rose-500', bg: 'bg-rose-500/10', border: 'border-rose-500/20' },
-  { name: 'Lost Soul', level: -100, icon: Target, color: 'text-orange-500', bg: 'bg-orange-500/10', border: 'border-orange-500/20' },
-  { name: 'Recovering Spirit', level: -50, icon: Heart, color: 'text-amber-500', bg: 'bg-amber-500/10', border: 'border-amber-500/20' },
-  { name: 'Novice', level: 0, icon: Shield, color: 'text-gray-500', bg: 'bg-gray-500/10', border: 'border-gray-500/20' },
-  { name: 'Initiate', level: 1, icon: Shield, color: 'text-gray-400', bg: 'bg-gray-400/10', border: 'border-gray-400/20' },
-  { name: 'Specialist', level: 5, icon: Star, color: 'text-blue-400', bg: 'bg-blue-400/10', border: 'border-blue-400/20' },
-  { name: 'Commander', level: 15, icon: Target, color: 'text-purple-400', bg: 'bg-purple-400/10', border: 'border-purple-400/20' },
-  { name: 'Elite Vanguard', level: 30, icon: Trophy, color: 'text-emerald-400', bg: 'bg-emerald-400/10', border: 'border-emerald-400/20' },
-  { name: 'Grandmaster', level: 50, icon: Crown, color: 'text-yellow-400', bg: 'bg-yellow-400/10', border: 'border-yellow-400/20' },
-  { name: 'Legend', level: 75, icon: Zap, color: 'text-orange-400', bg: 'bg-orange-400/10', border: 'border-orange-400/20' },
-  { name: 'Mythic', level: 100, icon: Sparkles, color: 'text-pink-400', bg: 'bg-pink-400/10', border: 'border-pink-400/20' },
-  { name: 'Ascendant', level: 150, icon: Crown, color: 'text-cyan-400', bg: 'bg-cyan-400/10', border: 'border-cyan-400/20' },
-  { name: 'Demigod', level: 200, icon: Target, color: 'text-indigo-400', bg: 'bg-indigo-400/10', border: 'border-indigo-400/20' },
-  { name: 'Immortal', level: 300, icon: Shield, color: 'text-fuchsia-400', bg: 'bg-fuchsia-400/10', border: 'border-fuchsia-400/20' },
-  { name: 'Celestial', level: 400, icon: Star, color: 'text-blue-300', bg: 'bg-blue-300/10', border: 'border-blue-300/20' },
-  { name: 'Quantum Sovereign', level: 500, icon: Crown, color: 'text-primary', bg: 'bg-primary/10', border: 'border-primary/20' },
+const ICON_MAP: Record<string, any> = {
+  Sun: Zap, Code: Target, DollarSign, Heart, Brain, Star, Crown, Trophy, Sparkles, Zap, Shield, Target
+};
+
+// Full Ascension Path: negative penalty ranks → positive achievement ranks
+const ASCENSION_RANKS = [
+  { name: 'Void Walker',       level: -500, icon: Target,   color: 'text-red-700',    bg: 'bg-red-700/10',    border: 'border-red-700/20' },
+  { name: 'Abyss Dweller',     level: -400, icon: Shield,   color: 'text-red-600',    bg: 'bg-red-600/10',    border: 'border-red-600/20' },
+  { name: 'Shadow Initiate',   level: -250, icon: Star,     color: 'text-rose-500',   bg: 'bg-rose-500/10',   border: 'border-rose-500/20' },
+  { name: 'Lost Soul',         level: -100, icon: Target,   color: 'text-orange-500', bg: 'bg-orange-500/10', border: 'border-orange-500/20' },
+  { name: 'Recovering Spirit', level:  -50, icon: Heart,    color: 'text-amber-500',  bg: 'bg-amber-500/10',  border: 'border-amber-500/20' },
+  { name: 'Novice',            level:    1, icon: Shield,   color: 'text-gray-400',   bg: 'bg-gray-400/10',   border: 'border-gray-400/20' },
+  { name: 'Apprentice',        level:    5, icon: Star,     color: 'text-sky-400',    bg: 'bg-sky-400/10',    border: 'border-sky-400/20' },
+  { name: 'Specialist',        level:   10, icon: Target,   color: 'text-blue-400',   bg: 'bg-blue-400/10',   border: 'border-blue-400/20' },
+  { name: 'Analyst',           level:   20, icon: TrendingUp,color:'text-violet-400', bg: 'bg-violet-400/10', border: 'border-violet-400/20' },
+  { name: 'Commander',         level:   30, icon: Trophy,   color: 'text-purple-400', bg: 'bg-purple-400/10', border: 'border-purple-400/20' },
+  { name: 'Elite Vanguard',    level:   45, icon: Zap,      color: 'text-emerald-400',bg: 'bg-emerald-400/10',border: 'border-emerald-400/20' },
+  { name: 'Grandmaster',       level:   60, icon: Crown,    color: 'text-amber-400',  bg: 'bg-amber-400/10',  border: 'border-amber-400/20' },
+  { name: 'Legend',            level:   80, icon: Sparkles, color: 'text-orange-400', bg: 'bg-orange-400/10', border: 'border-orange-400/20' },
+  { name: 'Mythic',            level:  100, icon: Star,     color: 'text-pink-400',   bg: 'bg-pink-400/10',   border: 'border-pink-400/20' },
+  { name: 'Ascendant',         level:  150, icon: Crown,    color: 'text-cyan-400',   bg: 'bg-cyan-400/10',   border: 'border-cyan-400/20' },
+  { name: 'Quantum Sovereign', level:  500, icon: Crown,    color: 'text-primary',    bg: 'bg-primary/10',    border: 'border-primary/30' },
 ];
 
-function computeXpReq(targetLevel: number, baselineLevel: number) {
-  const diff = targetLevel - baselineLevel - 1;
-  if (diff <= 0) return 0;
-  return Math.ceil(100 * Math.pow(diff, 1.5));
+// ─── Level formula (must match useProgression.tsx) ────────────────────────────
+function xpForLevel(lvl: number): number {
+  if (lvl <= 1) return 0;
+  return Math.ceil(100 * Math.pow(lvl - 1, 1.5));
+}
+function levelFromXp(xp: number): number {
+  if (xp <= 0) return 1;
+  return Math.floor(Math.pow(xp / 100, 1 / 1.5)) + 1;
 }
 
-const ICONS: Record<string, any> = {
-  Sun: Zap,
-  Code: Target,
-  DollarSign: DollarSign,
-  Heart: Heart,
-  Brain: Brain
-};
+// ─── Title milestones ──────────────────────────────────────────────────────────
+// Titles unlock at these GLOBAL levels (totalLevel)
+const TITLES = [
+  { level: 1,   name: 'Novice',           icon: Shield,   color: 'text-gray-400',   bg: 'bg-gray-400/10',   border: 'border-gray-400/20',   glow: '' },
+  { level: 5,   name: 'Apprentice',       icon: Star,     color: 'text-sky-400',    bg: 'bg-sky-400/10',    border: 'border-sky-400/20',    glow: 'shadow-sky-400/20' },
+  { level: 10,  name: 'Specialist',       icon: Target,   color: 'text-blue-400',   bg: 'bg-blue-400/10',   border: 'border-blue-400/20',   glow: 'shadow-blue-400/20' },
+  { level: 20,  name: 'Analyst',          icon: TrendingUp,color:'text-violet-400', bg: 'bg-violet-400/10', border: 'border-violet-400/20', glow: 'shadow-violet-400/20' },
+  { level: 30,  name: 'Commander',        icon: Trophy,   color: 'text-purple-400', bg: 'bg-purple-400/10', border: 'border-purple-400/20', glow: 'shadow-purple-400/30' },
+  { level: 45,  name: 'Elite Vanguard',   icon: Zap,      color: 'text-emerald-400',bg: 'bg-emerald-400/10',border: 'border-emerald-400/20',glow: 'shadow-emerald-400/30' },
+  { level: 60,  name: 'Grandmaster',      icon: Crown,    color: 'text-amber-400',  bg: 'bg-amber-400/10',  border: 'border-amber-400/20',  glow: 'shadow-amber-400/30' },
+  { level: 80,  name: 'Legend',           icon: Sparkles, color: 'text-orange-400', bg: 'bg-orange-400/10', border: 'border-orange-400/20', glow: 'shadow-orange-400/40' },
+  { level: 100, name: 'Mythic',           icon: Star,     color: 'text-pink-400',   bg: 'bg-pink-400/10',   border: 'border-pink-400/20',   glow: 'shadow-pink-400/40' },
+  { level: 150, name: 'Ascendant',        icon: Crown,    color: 'text-cyan-400',   bg: 'bg-cyan-400/10',   border: 'border-cyan-400/20',   glow: 'shadow-cyan-400/50' },
+  { level: 200, name: 'Quantum Sovereign',icon: Crown,    color: 'text-primary',    bg: 'bg-primary/10',    border: 'border-primary/30',    glow: 'shadow-primary/50' },
+];
+
+function getCurrentTitle(lvl: number) {
+  let result = TITLES[0];
+  for (const t of TITLES) { if (lvl >= t.level) result = t; }
+  return result;
+}
+function getNextTitle(lvl: number) {
+  return TITLES.find(t => t.level > lvl) ?? null;
+}
+
+// ─── Pillar config ─────────────────────────────────────────────────────────────
+const PILLARS = [
+  { key: 'Study'   as const, label: 'Study',   icon: Brain,       color: 'text-primary',     bar: 'from-primary to-blue-400' },
+  { key: 'Health'  as const, label: 'Health',  icon: Heart,       color: 'text-emerald-400', bar: 'from-emerald-500 to-green-400' },
+  { key: 'Finance' as const, label: 'Finance', icon: DollarSign,  color: 'text-amber-400',   bar: 'from-amber-500 to-yellow-400' },
+  { key: 'Mind'    as const, label: 'Mind',    icon: Sparkles,    color: 'text-violet-400',  bar: 'from-violet-500 to-purple-400' },
+];
+
 
 export function RankAndRewards() {
   const { state } = useProgression();
-  const [rewards, setRewards] = useState<Reward[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [rewards, setRewards]   = useState<Reward[]>([]);
+  const [rewardLoad, setRewardLoad] = useState(true);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!supabase) return;
-    
-    async function fetchRewards() {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from('rewards')
-        .select('*')
-        .order('required_level', { ascending: true });
-        
-      if (!error && data) {
-        setRewards(data);
-      }
-      setLoading(false);
-    }
-    
-    fetchRewards();
+    if (!supabase) { setRewardLoad(false); return; }
+    supabase.from('rewards').select('*').order('required_level', { ascending: true })
+      .then(({ data, error }) => {
+        if (!error && data) setRewards(data);
+        setRewardLoad(false);
+      });
   }, []);
 
-  // Rank Calculation
-  const dynamicRanks = BASE_RANKS.map(r => ({
-    ...r,
-    xpReq: computeXpReq(r.level, state.baselineLevel)
-  }));
+  // Scroll active rank node into view
+  useEffect(() => {
+    const t = setTimeout(() => {
+      document.getElementById('rank-active-node')?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+    }, 300);
+    return () => clearTimeout(t);
+  }, [state.totalLevel]);
 
-  let currentRankIndex = 0;
-  for (let i = 0; i < dynamicRanks.length; i++) {
-    if (state.totalLevel >= dynamicRanks[i].level) {
-      currentRankIndex = i;
-    }
-  }
-  
-  const currentRank = dynamicRanks[currentRankIndex];
-  const nextRank = currentRankIndex < dynamicRanks.length - 1 ? dynamicRanks[currentRankIndex + 1] : null;
+  // ── Derived values ────────────────────────────────────────────────────────────
+  const globalLvl  = state.totalLevel;
+  const globalXp   = state.totalXp;
+  const thisTitle  = getCurrentTitle(globalLvl);
+  const nextTitle  = getNextTitle(globalLvl);
 
-  const currentRankXp = currentRank.xpReq;
-  const nextRankXp = nextRank ? nextRank.xpReq : currentRank.xpReq;
-  const progressPercent = nextRank 
-    ? Math.max(0, Math.min(100, ((state.totalXp - currentRankXp) / (nextRankXp - currentRankXp)) * 100))
+  const currentLvlXp = xpForLevel(globalLvl);
+  const nextLvlXp    = xpForLevel(globalLvl + 1);
+  const xpIntoLevel  = globalXp - currentLvlXp;
+  const xpNeeded     = nextLvlXp - currentLvlXp;
+  const lvlProgress  = Math.min(100, Math.max(0, (xpIntoLevel / xpNeeded) * 100));
+
+  const xpToNextTitle = nextTitle ? xpForLevel(nextTitle.level) - globalXp : 0;
+  const titleProgress = nextTitle
+    ? Math.min(100, Math.max(0, ((globalXp - xpForLevel(thisTitle.level)) / (xpForLevel(nextTitle.level) - xpForLevel(thisTitle.level))) * 100))
     : 100;
 
-  useEffect(() => {
-    const timeout = setTimeout(() => {
-      const activeNode = document.getElementById('rank-node-active');
-      if (activeNode) {
-        activeNode.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
-      }
-    }, 100);
-    return () => clearTimeout(timeout);
-  }, [currentRankIndex]);
+  const TitleIcon = thisTitle.icon;
+
 
   return (
-    <div className="w-full max-w-6xl mx-auto space-y-8 pb-20">
-      
-      {/* ─── HERO BANNER ──────────────────────────────────────────────────────── */}
-      <motion.div 
+    <div className="w-full max-w-5xl mx-auto px-4 py-6 space-y-6 pb-24">
+
+      {/* ── HERO: Current Title & Level ─────────────────────────────────────── */}
+      <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="relative rounded-[2rem] overflow-hidden bg-surface border border-border p-8 md:p-12 shadow-2xl"
+        className="relative rounded-3xl overflow-hidden bg-surface border border-border p-6 md:p-10 shadow-2xl"
       >
-        <div className="absolute top-0 right-0 w-96 h-96 bg-primary/10 rounded-full blur-[100px] pointer-events-none -mt-20 -mr-20" />
-        <div className="absolute bottom-0 left-0 w-64 h-64 bg-amber-500/5 rounded-full blur-[80px] pointer-events-none -mb-20 -ml-20" />
-        
-        <div className="relative z-10 flex flex-col md:flex-row items-center md:items-start gap-8 md:gap-12">
-          
-          {/* Big Rank Badge */}
-          <div className={`relative shrink-0 w-40 h-40 md:w-48 md:h-48 rounded-full ${currentRank.bg} border-4 ${currentRank.border} flex items-center justify-center shadow-[0_0_50px_rgba(0,0,0,0.3)]`}>
-            <div className="absolute inset-0 rounded-full border-2 border-white/5 m-2" />
-            <currentRank.icon className={`${currentRank.color} w-20 h-20 md:w-24 md:h-24 drop-shadow-[0_0_15px_currentColor]`} />
-            <div className="absolute -bottom-4 bg-surfaceHighlight border border-border px-4 py-1.5 rounded-full shadow-xl">
-              <span className="text-xs font-black uppercase tracking-widest text-textMain">Lvl {state.totalLevel}</span>
-            </div>
+        {/* Glow bg */}
+        <div className={`absolute inset-0 opacity-10 ${thisTitle.bg} blur-3xl`} />
+        <div className="relative z-10 flex flex-col md:flex-row items-center gap-6 md:gap-10">
+
+          {/* Title badge */}
+          <div className={`shrink-0 w-28 h-28 md:w-36 md:h-36 rounded-full ${thisTitle.bg} border-4 ${thisTitle.border} flex items-center justify-center shadow-[0_0_40px] ${thisTitle.glow}`}>
+            <TitleIcon className={`${thisTitle.color} w-14 h-14 md:w-16 md:h-16`} />
           </div>
 
-          {/* User Info & Progress */}
-          <div className="flex-1 flex flex-col justify-center text-center md:text-left">
-            <h1 className="text-4xl md:text-5xl font-black text-textMain tracking-tight mb-2">
-              {currentRank.name}
-            </h1>
-            <p className="text-textMuted text-lg mb-8 max-w-lg">
-              You are currently ranked as a <span className={`font-bold ${currentRank.color}`}>{currentRank.name}</span>. Keep pushing forward to unlock elite privileges.
+          {/* Info */}
+          <div className="flex-1 text-center md:text-left w-full">
+            <div className="text-[10px] font-black uppercase tracking-widest text-textMuted mb-1">Current Title</div>
+            <h1 className={`text-3xl md:text-4xl font-black tracking-tight mb-1 ${thisTitle.color}`}>{thisTitle.name}</h1>
+            <p className="text-textMuted text-sm mb-4">
+              Global Level <span className="text-textMain font-black text-lg">{globalLvl}</span>
+              &nbsp;·&nbsp;
+              <span className="text-primary font-bold">{globalXp.toLocaleString()} XP</span> total
             </p>
 
-            {nextRank ? (
-              <div className="w-full max-w-xl">
-                <div className="flex justify-between items-end mb-3">
-                  <div>
-                    <p className="text-xs text-textMuted uppercase tracking-widest font-bold mb-1">Progress to {nextRank.name}</p>
-                    <p className="text-2xl font-black text-textMain">{state.totalXp.toLocaleString()} <span className="text-sm font-medium text-textMuted">/ {nextRank.xpReq.toLocaleString()} XP</span></p>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-primary font-black text-xl">{Math.round(progressPercent)}%</span>
-                  </div>
-                </div>
-                
-                <div className="relative h-4 w-full bg-surfaceHighlight rounded-full overflow-hidden border border-white/5 shadow-inner">
-                  <motion.div 
-                    initial={{ width: 0 }}
-                    animate={{ width: `${progressPercent}%` }}
-                    transition={{ duration: 1.5, delay: 0.2, ease: "easeOut" }}
-                    className="absolute top-0 left-0 h-full bg-gradient-to-r from-primary to-blue-400"
-                  >
-                    <div className="absolute top-0 right-0 bottom-0 w-20 bg-gradient-to-r from-transparent to-white/30" />
-                  </motion.div>
-                </div>
-                <p className="text-xs text-textMuted text-right mt-2 font-medium">
-                  Earn <span className="text-primary font-bold">{(nextRank.xpReq - state.totalXp).toLocaleString()} XP</span> to rank up
-                </p>
+            {/* Level progress bar */}
+            <div className="w-full max-w-md">
+              <div className="flex justify-between text-[11px] font-bold text-textMuted mb-1.5">
+                <span>Level {globalLvl} → {globalLvl + 1}</span>
+                <span className="text-primary">{xpIntoLevel.toLocaleString()} / {xpNeeded.toLocaleString()} XP</span>
               </div>
-            ) : (
-              <div className="w-full max-w-xl p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-center gap-4">
-                <Crown className="text-amber-400 shrink-0" size={32} />
-                <div>
-                  <h3 className="text-amber-400 font-bold">Maximum Rank Achieved</h3>
-                  <p className="text-xs text-amber-500/70">You have reached the pinnacle of the system. Maintain your status.</p>
+              <div className="h-3 bg-surfaceHighlight rounded-full overflow-hidden border border-white/5">
+                <motion.div
+                  initial={{ width: 0 }}
+                  animate={{ width: `${lvlProgress}%` }}
+                  transition={{ duration: 1.2, ease: 'easeOut' }}
+                  className="h-full bg-gradient-to-r from-primary to-blue-400 rounded-full"
+                />
+              </div>
+              <div className="text-[10px] text-textMuted mt-1 text-right">
+                <span className="text-primary font-bold">{(xpNeeded - xpIntoLevel).toLocaleString()} XP</span> to Level {globalLvl + 1}
+              </div>
+            </div>
+
+            {/* Title progress bar */}
+            {nextTitle && (
+              <div className="w-full max-w-md mt-4">
+                <div className="flex justify-between text-[11px] font-bold text-textMuted mb-1.5">
+                  <span className="uppercase tracking-widest">Title progress → {nextTitle.name}</span>
+                  <span className={nextTitle.color}>Unlocks at Lvl {nextTitle.level}</span>
+                </div>
+                <div className="h-2 bg-surfaceHighlight rounded-full overflow-hidden border border-white/5">
+                  <motion.div
+                    initial={{ width: 0 }}
+                    animate={{ width: `${titleProgress}%` }}
+                    transition={{ duration: 1.4, ease: 'easeOut', delay: 0.2 }}
+                    className={`h-full bg-gradient-to-r ${
+                      nextTitle.color.includes('amber') ? 'from-amber-500 to-yellow-400' :
+                      nextTitle.color.includes('emerald') ? 'from-emerald-500 to-green-400' :
+                      nextTitle.color.includes('purple') ? 'from-purple-500 to-violet-400' :
+                      nextTitle.color.includes('pink') ? 'from-pink-500 to-rose-400' :
+                      nextTitle.color.includes('cyan') ? 'from-cyan-500 to-sky-400' :
+                      'from-primary to-blue-400'
+                    } rounded-full`}
+                  />
+                </div>
+                <div className="text-[10px] text-textMuted mt-1 text-right">
+                  <span className={`font-bold ${nextTitle.color}`}>{xpToNextTitle.toLocaleString()} XP</span> to earn title
                 </div>
               </div>
             )}
@@ -175,93 +205,118 @@ export function RankAndRewards() {
         </div>
       </motion.div>
 
-
-      {/* ─── RANK TIMELINE ────────────────────────────────────────────────────── */}
-      <motion.div 
+      {/* ── PILLAR LEVELS ───────────────────────────────────────────────────── */}
+      <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
-        className="glass-panel p-8 rounded-3xl"
+        className="grid grid-cols-2 md:grid-cols-4 gap-3"
       >
-        <h2 className="text-xl font-black text-textMain tracking-tight mb-8 flex items-center">
-          <Target className="text-primary mr-3" />
-          The Ascension Path
+        {PILLARS.map(p => {
+          const pXp   = state.xp[p.key] ?? 0;
+          const pLvl  = levelFromXp(pXp);
+          const pCurXp = xpForLevel(pLvl);
+          const pNxtXp = xpForLevel(pLvl + 1);
+          const pProg  = Math.min(100, Math.max(0, ((pXp - pCurXp) / (pNxtXp - pCurXp)) * 100));
+          const PIcon  = p.icon;
+          return (
+            <div key={p.key} className="glass-panel p-4 rounded-2xl flex flex-col gap-2">
+              <div className="flex items-center gap-2">
+                <PIcon size={16} className={p.color} />
+                <span className="text-[10px] font-black uppercase tracking-widest text-textMuted">{p.label}</span>
+              </div>
+              <div className="flex items-end justify-between">
+                <span className={`text-2xl font-black ${p.color}`}>Lv.{pLvl}</span>
+                <span className="text-[10px] text-textMuted">{pXp.toLocaleString()} XP</span>
+              </div>
+              <div className="h-1.5 bg-surfaceHighlight rounded-full overflow-hidden">
+                <motion.div
+                  initial={{ width: 0 }}
+                  animate={{ width: `${pProg}%` }}
+                  transition={{ duration: 1, ease: 'easeOut', delay: 0.3 }}
+                  className={`h-full bg-gradient-to-r ${p.bar} rounded-full`}
+                />
+              </div>
+              <div className="text-[9px] text-textMuted">
+                {(pNxtXp - pXp).toLocaleString()} XP to Lv.{pLvl + 1}
+              </div>
+            </div>
+          );
+        })}
+      </motion.div>
+
+
+
+      {/* ── ASCENSION PATH SCROLLER ─────────────────────────────────────── */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.2 }}
+        className="glass-panel rounded-3xl p-6 md:p-8"
+      >
+        <h2 className="text-base font-black text-textMain uppercase tracking-widest mb-6 flex items-center gap-2">
+          <Target className="text-primary" size={18} /> The Ascension Path
         </h2>
 
-        <div className="overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-surfaceHighlight scrollbar-track-transparent">
-          <div className="relative flex flex-col sm:flex-row gap-8 sm:gap-0 sm:w-max px-4">
-            {/* Background Line for Horizontal Scroll (Desktop) */}
-            <div className="hidden sm:block absolute top-[24px] md:top-[32px] left-[80px] right-[80px] h-1.5 bg-surfaceHighlight/50 rounded-full overflow-hidden">
-              <div 
-                className="h-full bg-primary transition-all duration-1000 shadow-[0_0_10px_rgba(59,130,246,0.5)]"
-                style={{ width: `${(currentRankIndex / (dynamicRanks.length - 1)) * 100}%` }}
-              />
+        <div ref={scrollRef} className="overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-surfaceHighlight scrollbar-track-transparent">
+          <div className="relative flex gap-0 w-max px-4">
+
+            {/* Connecting line */}
+            <div className="absolute top-[28px] left-[60px] right-[60px] h-1 bg-surfaceHighlight/50 rounded-full overflow-hidden">
+              {(() => {
+                const ci = ASCENSION_RANKS.findIndex((_, i) => {
+                  const next = ASCENSION_RANKS[i + 1];
+                  return state.totalLevel >= ASCENSION_RANKS[i].level && (!next || state.totalLevel < next.level);
+                });
+                return <div className="h-full bg-primary transition-all duration-1000" style={{ width: `${(ci / (ASCENSION_RANKS.length - 1)) * 100}%` }} />;
+              })()}
             </div>
 
-            {/* Background Line for Vertical List (Mobile) */}
-            <div className="sm:hidden absolute left-[39px] top-8 bottom-8 w-1.5 bg-surfaceHighlight/50 rounded-full overflow-hidden">
-              <div 
-                className="w-full bg-primary transition-all duration-1000 shadow-[0_0_10px_rgba(59,130,246,0.5)]"
-                style={{ height: `${(currentRankIndex / (dynamicRanks.length - 1)) * 100}%` }}
-              />
-            </div>
-
-            {dynamicRanks.map((rank, i) => {
-              const isPassed = state.totalLevel >= rank.level;
-              const isCurrent = i === currentRankIndex;
-              const isFuture = !isPassed && !isCurrent;
-              
+            {ASCENSION_RANKS.map((rank, i) => {
+              const RIcon = rank.icon;
+              const isPassed  = state.totalLevel >= rank.level;
+              const nextRank  = ASCENSION_RANKS[i + 1];
+              const isCurrent = isPassed && (!nextRank || state.totalLevel < nextRank.level);
+              const isFuture  = !isPassed && !isCurrent;
+              const reqXp     = rank.level > 0 ? xpForLevel(rank.level) : 0;
               return (
-                <div 
-                  key={rank.name} 
-                  id={isCurrent ? 'rank-node-active' : undefined}
-                  className="relative z-10 flex sm:flex-col items-center sm:items-center gap-4 sm:gap-4 w-full sm:w-[160px] shrink-0 sm:text-center text-left"
+                <div
+                  key={rank.name}
+                  id={isCurrent ? 'rank-active-node' : undefined}
+                  className="relative z-10 flex flex-col items-center w-[130px] shrink-0 text-center"
                 >
-                  
                   {/* Node */}
-                  <div className={`relative shrink-0 w-12 h-12 md:w-16 md:h-16 rounded-full flex items-center justify-center border-[3px] transition-all duration-500
-                    ${isPassed && !isCurrent ? `${rank.bg} ${rank.border} shadow-lg` : ''} 
-                    ${isCurrent ? `bg-surface border-primary scale-[1.15] shadow-[0_0_30px_rgba(59,130,246,0.3)]` : ''}
-                    ${isFuture ? 'bg-surface border-surfaceHighlight opacity-40 grayscale' : ''}
+                  <div className={`w-14 h-14 rounded-full flex items-center justify-center border-[3px] transition-all duration-500 mb-3
+                    ${isCurrent ? `bg-surface border-primary scale-110 shadow-[0_0_24px_rgba(59,130,246,0.4)]` : ''}
+                    ${isPassed && !isCurrent ? `${rank.bg} ${rank.border}` : ''}
+                    ${isFuture ? 'bg-surface border-surfaceHighlight opacity-30 grayscale' : ''}
                   `}>
-                    <rank.icon size={isCurrent ? 28 : 24} className={`
-                      ${isPassed && !isCurrent ? rank.color : ''}
+                    <RIcon size={isCurrent ? 26 : 22} className={`
                       ${isCurrent ? 'text-primary animate-pulse' : ''}
+                      ${isPassed && !isCurrent ? rank.color : ''}
                       ${isFuture ? 'text-textMuted' : ''}
                     `} />
-                    
-                    {/* Checkmark for passed ranks */}
                     {isPassed && !isCurrent && (
-                      <div className="absolute -bottom-1 -right-1 bg-emerald-500 rounded-full p-0.5 border-2 border-background shadow-lg">
-                        <Check size={10} className="text-white" />
+                      <div className="absolute -bottom-1 -right-1 bg-emerald-500 rounded-full p-0.5 border-2 border-background">
+                        <Check size={8} className="text-white" />
                       </div>
                     )}
                   </div>
 
-                  {/* Details */}
-                  <div className="flex-1 sm:flex-none flex flex-col sm:items-center w-full">
-                    <h4 className={`font-black whitespace-normal leading-tight mb-1 sm:h-10 text-sm md:text-base transition-colors duration-300
-                      ${isCurrent ? 'text-primary' : isPassed ? 'text-textMain/90' : 'text-textMuted/50'}
-                    `}>
-                      {rank.name}
-                    </h4>
-                    <div className="flex items-center sm:justify-center gap-2 mt-1 flex-wrap">
-                      <span className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded transition-colors
-                        ${isCurrent ? 'bg-primary/20 text-primary' : isPassed ? 'bg-white/10 text-textMuted' : 'bg-surfaceHighlight text-textMuted/40'}
-                      `}>
-                        Lvl {rank.level}
-                      </span>
-                      {isCurrent && (
-                        <span className="text-[10px] font-black uppercase tracking-widest text-primary bg-primary/10 px-2 py-0.5 rounded flex items-center shadow-[0_0_10px_rgba(59,130,246,0.2)]">
-                          <Zap size={10} className="mr-1" /> Active
-                        </span>
-                      )}
-                    </div>
-                    <div className={`mt-2 text-[10px] font-bold uppercase tracking-widest ${isPassed ? 'text-textMuted/40' : 'text-textMuted/80'}`}>
-                      {rank.xpReq.toLocaleString()} XP
-                    </div>
-                  </div>
+                  {/* Name */}
+                  <p className={`text-[10px] font-black leading-tight mb-1 h-8 flex items-center justify-center px-1
+                    ${isCurrent ? 'text-primary' : isPassed ? 'text-textMain/80' : 'text-textMuted/40'}
+                  `}>{rank.name}</p>
 
+                  {/* Level chip */}
+                  <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full
+                    ${isCurrent ? 'bg-primary/20 text-primary' : isPassed ? 'bg-white/10 text-textMuted' : 'bg-surfaceHighlight text-textMuted/30'}
+                  `}>Lv. {rank.level}</span>
+
+                  {/* XP req */}
+                  <span className={`text-[9px] mt-1 ${isPassed ? 'text-textMuted/40' : 'text-textMuted/60'}`}>
+                    {rank.level > 0 ? `${reqXp.toLocaleString()} XP` : 'Penalty'}
+                  </span>
                 </div>
               );
             })}
@@ -269,103 +324,75 @@ export function RankAndRewards() {
         </div>
       </motion.div>
 
-
-      {/* ─── REWARDS GRID ─────────────────────────────────────────────────────── */}
-      <motion.div 
+      {/* ── UNLOCKABLE BADGES ───────────────────────────────────────────────── */}
+      <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.2 }}
-        className="glass-panel p-8 rounded-3xl"
+        transition={{ delay: 0.25 }}
+        className="glass-panel rounded-3xl p-6 md:p-8"
       >
-        <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
-          <h2 className="text-xl font-black text-textMain tracking-tight flex items-center">
-            <Crown className="text-amber-400 mr-3" />
-            Unlockable Badges
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-3">
+          <h2 className="text-base font-black text-textMain uppercase tracking-widest flex items-center gap-2">
+            <Crown className="text-amber-400" size={18} /> Unlockable Badges
           </h2>
           <div className="flex gap-2">
-            <span className="px-3 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-full text-xs font-bold">
+            <span className="px-3 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-full text-[10px] font-black uppercase">
               {rewards.filter(r => state.totalLevel >= r.required_level).length} Unlocked
             </span>
-            <span className="px-3 py-1 bg-surfaceHighlight text-textMuted border border-white/5 rounded-full text-xs font-bold">
+            <span className="px-3 py-1 bg-surfaceHighlight text-textMuted border border-white/5 rounded-full text-[10px] font-black uppercase">
               {rewards.filter(r => state.totalLevel < r.required_level).length} Locked
             </span>
           </div>
         </div>
 
-        {loading ? (
-          <div className="h-48 flex items-center justify-center">
+        {rewardLoad ? (
+          <div className="h-40 flex items-center justify-center">
             <div className="w-8 h-8 border-2 border-primary/20 border-t-primary rounded-full animate-spin" />
           </div>
+        ) : rewards.length === 0 ? (
+          <div className="p-12 flex flex-col items-center text-center bg-surface border border-dashed border-border rounded-2xl">
+            <Target size={40} className="text-textMuted/40 mb-4" />
+            <p className="text-textMuted text-sm">No badges configured yet.</p>
+          </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {rewards.map((reward) => {
-              const isUnlocked = state.totalLevel >= reward.required_level;
-              const Icon = ICONS[reward.icon] || Target;
-              
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {rewards.map(reward => {
+              const unlocked = state.totalLevel >= reward.required_level;
+              const Icon = ICON_MAP[reward.icon] ?? Target;
+              const pct = Math.min(100, Math.max(0, (state.totalLevel / reward.required_level) * 100));
               return (
-                <div 
-                  key={reward.id} 
-                  className={`relative p-5 rounded-2xl border transition-all duration-300 flex flex-col gap-3 group
-                    ${isUnlocked 
-                      ? 'bg-gradient-to-br from-surface to-surfaceHighlight border-white/10 hover:border-primary/30 hover:shadow-[0_0_30px_rgba(59,130,246,0.1)]' 
-                      : 'bg-surface border-border/50 opacity-70 grayscale hover:grayscale-0 hover:opacity-100'
-                    }`}
+                <div key={reward.id} className={`relative p-5 rounded-2xl border transition-all group flex flex-col gap-3
+                  ${unlocked
+                    ? 'bg-gradient-to-br from-surface to-surfaceHighlight border-white/10 hover:border-primary/30'
+                    : 'bg-surface border-border/50 opacity-70 hover:opacity-100'}`}
                 >
                   <div className="flex justify-between items-start">
-                    <div className={`w-12 h-12 shrink-0 rounded-xl flex items-center justify-center border shadow-lg transition-transform group-hover:scale-110
-                      ${isUnlocked ? 'bg-primary/10 border-primary/30' : 'bg-surfaceHighlight border-white/5'}
-                    `}>
-                      {isUnlocked ? (
-                        <Icon className="text-primary" size={24} />
-                      ) : (
-                        <Lock className="text-textMuted" size={20} />
-                      )}
+                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center border shadow-lg transition-transform group-hover:scale-110
+                      ${unlocked ? 'bg-primary/10 border-primary/30' : 'bg-surfaceHighlight border-white/5'}`}>
+                      {unlocked ? <Icon className="text-primary" size={22} /> : <Lock className="text-textMuted" size={18} />}
                     </div>
-                    
-                    <div className="flex flex-col items-end">
-                      <span className={`text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded border
-                        ${isUnlocked ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-surfaceHighlight text-textMuted border-white/5'}
-                      `}>
-                        {isUnlocked ? 'Unlocked' : `Requires Lvl ${reward.required_level}`}
-                      </span>
-                    </div>
+                    <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded border
+                      ${unlocked ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-surfaceHighlight text-textMuted border-white/5'}`}>
+                      {unlocked ? 'Unlocked' : `Lv. ${reward.required_level}`}
+                    </span>
                   </div>
-                  
                   <div>
-                    <h5 className={`font-bold text-lg mb-1 ${isUnlocked ? 'text-textMain' : 'text-textMuted'}`}>
-                      {reward.title}
-                    </h5>
-                    <p className="text-sm text-textMuted leading-relaxed">
-                      {reward.description}
-                    </p>
+                    <h5 className={`font-bold mb-1 ${unlocked ? 'text-textMain' : 'text-textMuted'}`}>{reward.title}</h5>
+                    <p className="text-xs text-textMuted leading-relaxed">{reward.description}</p>
                   </div>
-                  
-                  {/* Progress bar for locked items */}
-                  {!isUnlocked && (
-                    <div className="mt-auto pt-4">
-                      <div className="flex justify-between text-[10px] font-bold text-textMuted mb-1.5 uppercase tracking-wider">
-                        <span>Progress</span>
-                        <span>{Math.max(0, Math.round(((state.totalLevel - Math.min(0, state.baselineLevel)) / (reward.required_level - Math.min(0, state.baselineLevel))) * 100))}%</span>
+                  {!unlocked && (
+                    <div className="mt-auto pt-2">
+                      <div className="flex justify-between text-[9px] font-bold text-textMuted mb-1 uppercase tracking-wider">
+                        <span>Progress</span><span>{Math.round(pct)}%</span>
                       </div>
-                      <div className="h-1.5 w-full bg-surfaceHighlight rounded-full overflow-hidden">
-                        <div 
-                          className="h-full bg-textMuted/30 transition-all"
-                          style={{ width: `${Math.max(0, Math.min(100, ((state.totalLevel - Math.min(0, state.baselineLevel)) / (reward.required_level - Math.min(0, state.baselineLevel))) * 100))}%` }}
-                        />
+                      <div className="h-1.5 bg-surfaceHighlight rounded-full overflow-hidden">
+                        <div className="h-full bg-textMuted/30 transition-all" style={{ width: `${pct}%` }} />
                       </div>
                     </div>
                   )}
                 </div>
               );
             })}
-            
-            {rewards.length === 0 && (
-              <div className="col-span-full p-12 flex flex-col items-center justify-center text-center bg-surface border border-dashed border-border rounded-2xl">
-                <Target size={48} className="text-textMuted/50 mb-4" />
-                <h3 className="text-lg font-bold text-textMain mb-2">No Badges Configured</h3>
-                <p className="text-textMuted max-w-md">The SuperAdmin has not added any unlockable badges to the database yet.</p>
-              </div>
-            )}
           </div>
         )}
       </motion.div>
