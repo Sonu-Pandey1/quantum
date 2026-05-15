@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Cpu, DatabaseBackup, Check, Target, LogOut, Settings, User, Eye, EyeOff, Briefcase, Activity, ShieldAlert, Zap, BrainCircuit, Menu } from 'lucide-react';
+import { Cpu, DatabaseBackup, Check, Target, LogOut, Settings, User, Eye, EyeOff, Briefcase, Activity, ShieldAlert, Zap, BrainCircuit, Menu, X } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { audio } from '../lib/audio';
@@ -303,14 +303,14 @@ export function Sidebar({ currentView, onViewChange, isPortfolioMode, onTogglePo
       <motion.aside
         className={cn(
           'fixed z-[100] transition-all duration-500 ease-in-out',
-          'bottom-0 left-0 right-0 h-[72px] md:h-auto md:top-4 md:bottom-4 md:left-4 md:w-20',
-          'bg-[#0a0a0c]/80 backdrop-blur-3xl border-t md:border border-white/10 md:rounded-[24px] shadow-[0_-10px_40px_rgba(0,0,0,0.4)] md:shadow-2xl px-2 md:px-0 md:py-6',
-          'md:flex md:flex-col md:items-center'
+          'bottom-4 left-4 right-4 h-[72px] md:h-auto md:top-4 md:bottom-4 md:left-4 md:w-16',
+          'bg-[#0a0a0c]/80 backdrop-blur-3xl border border-white/10 rounded-[28px] md:rounded-[24px] shadow-2xl px-2 md:px-0 md:py-8',
+          'flex md:flex-col items-center shadow-[0_20px_50px_rgba(0,0,0,0.5)]'
         )}
       >
         <nav className="flex md:flex-col items-center justify-around md:justify-start w-full flex-1 md:space-y-2 md:overflow-y-auto md:scrollbar-none">
           {/* Main Navigation (Desktop) */}
-          <div className="hidden md:flex flex-col items-center space-y-2 w-full">
+          <div className="hidden md:flex flex-col items-center space-y-4 w-full px-2">
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive = currentView === item.id;
@@ -319,21 +319,28 @@ export function Sidebar({ currentView, onViewChange, isPortfolioMode, onTogglePo
                   key={item.id}
                   onClick={() => { audio.playClick(); onViewChange(item.id); }}
                   className={cn(
-                    'relative flex items-center justify-center transition-all duration-300 rounded-xl w-14 h-14 group',
-                    isActive ? 'text-primary' : 'text-textMuted hover:text-textMain'
+                    'relative flex items-center justify-center transition-all duration-300 rounded-2xl w-14 h-14 group overflow-hidden',
+                    isActive ? 'text-primary' : 'text-textMuted hover:text-textMain hover:bg-white/5'
                   )}
                 >
-                  <Icon size={isActive ? 24 : 22} className={cn('relative z-10 transition-all duration-300', isActive && 'drop-shadow-[0_0_8px_rgba(59,130,246,0.5)]')} />
                   {isActive && (
-                    <motion.div layoutId="sidebar-active" className="absolute inset-0 bg-primary/10 rounded-xl border border-primary/20 z-0" />
+                    <motion.div 
+                      layoutId="sidebar-active" 
+                      className="absolute inset-0 bg-primary/10 border border-primary/30 rounded-2xl shadow-[inset_0_0_20px_rgba(59,130,246,0.1)]"
+                      transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }}
+                    />
                   )}
-                  <div className="absolute left-full ml-4 px-3 py-1.5 bg-[#0f111a] border border-white/10 rounded-lg text-[10px] font-bold uppercase tracking-widest text-white opacity-0 group-hover:opacity-100 pointer-events-none translate-x-[-10px] group-hover:translate-x-0 transition-all duration-300 shadow-2xl whitespace-nowrap z-[110]">
+                  <Icon size={isActive ? 24 : 22} className={cn('relative z-10 transition-all duration-300', isActive && 'drop-shadow-[0_0_12px_rgba(59,130,246,0.6)]')} />
+                  
+                  {/* Tooltip */}
+                  <div className="absolute left-full ml-4 px-3 py-2 bg-surfaceHighlight border border-white/10 rounded-xl text-[10px] font-black uppercase tracking-widest text-textMain opacity-0 group-hover:opacity-100 pointer-events-none translate-x-[-10px] group-hover:translate-x-0 transition-all duration-300 shadow-2xl whitespace-nowrap z-[110] backdrop-blur-xl">
                     {item.label}
                   </div>
                 </button>
               );
             })}
-          </div>          {/* Mobile Navigation (Bottom Bar) */}
+          </div>
+          {/* Mobile Navigation (Bottom Bar) */}
           <div className="flex md:hidden w-full items-center h-full overflow-hidden">
             <div className="flex-1 flex items-center px-4 h-full overflow-x-auto no-scrollbar space-x-1 scroll-smooth">
               {navItems.map((item) => {
@@ -360,16 +367,15 @@ export function Sidebar({ currentView, onViewChange, isPortfolioMode, onTogglePo
             </div>
 
             {/* Fixed Menu Button on Right */}
-            <div className="shrink-0 h-full flex items-center px-3 bg-[#0a0a0c]/40 backdrop-blur-md border-l border-white/5 shadow-[-10px_0_20px_rgba(0,0,0,0.2)]">
+            <div className="shrink-0 h-full flex items-center px-4 bg-white/5 backdrop-blur-xl border-l border-white/10 rounded-r-[28px]">
               <button
                 onClick={() => { audio.playClick(); setIsMobileMenuOpen(true); }}
-                className="relative flex flex-col items-center justify-center min-w-[65px] h-14"
+                className="relative flex flex-col items-center justify-center min-w-[60px] h-12"
               >
-                <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center border border-primary/20 mb-0.5">
+                <div className="w-10 h-10 rounded-2xl bg-primary/20 flex items-center justify-center border border-primary/30 shadow-[0_0_20px_rgba(59,130,246,0.2)]">
                   <Menu size={20} className="text-primary" />
                 </div>
-                <span className="text-[9px] uppercase tracking-tighter font-black text-textMuted">Menu</span>
-                <div className="absolute top-3 right-4 w-2 h-2 rounded-full bg-emerald-500 border border-[#0a0a0c]" />
+                <div className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-[#0a0a0c] shadow-lg shadow-emerald-500/20" />
               </button>
             </div>
           </div>
@@ -393,6 +399,7 @@ export function Sidebar({ currentView, onViewChange, isPortfolioMode, onTogglePo
         {isMobileMenuOpen && (
           <>
             <motion.div
+              key="sidebar-backdrop"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
@@ -400,81 +407,120 @@ export function Sidebar({ currentView, onViewChange, isPortfolioMode, onTogglePo
               className="fixed inset-0 bg-black/60 backdrop-blur-md z-[90] md:hidden"
             />
             <motion.div
+              key="sidebar-drawer"
               initial={{ x: '100%' }}
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-              className="fixed right-0 top-0 bottom-0 w-[280px] bg-[#0a0a0c] border-l border-white/10 z-[95] md:hidden flex flex-col p-6 pt-24"
+              className="fixed right-0 top-0 bottom-0 w-[300px] bg-[#0a0a0c] border-l border-white/10 z-[95] md:hidden flex flex-col overflow-hidden"
             >
-              <div className="flex items-center space-x-4 mb-8 pb-6 border-b border-white/10">
-                <div className="w-14 h-14 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center">
-                  <span className="text-xl font-black text-primary">{userData.initials}</span>
-                </div>
-                <div>
-                  <h3 className="font-bold text-textMain">{userData.name}</h3>
-                  <p className="text-[10px] text-textMuted uppercase tracking-widest">Protocol Commander</p>
-                </div>
-              </div>
-
-              <div className="space-y-2 mb-8">
-                <p className="text-[10px] text-textMuted uppercase tracking-widest font-bold mb-4 opacity-50">Profile Settings</p>
-                <button
-                  onClick={() => { audio.playClick(); onViewChange('engagement'); setIsMobileMenuOpen(false); }}
-                  className="w-full flex items-center space-x-4 p-4 rounded-2xl bg-white/5 border border-white/5 text-textMain"
-                >
-                  <User size={18} className="text-blue-400" />
-                  <span className="font-bold text-sm">Profile Overview</span>
-                </button>
-                <button
-                  onClick={() => { audio.playClick(); onTogglePortfolio(); setIsMobileMenuOpen(false); }}
-                  className="w-full flex items-center space-x-4 p-4 rounded-2xl bg-white/5 border border-white/5 text-textMain"
-                >
-                  {isPortfolioMode ? <EyeOff size={18} className="text-purple-400" /> : <Eye size={18} className="text-emerald-400" />}
-                  <span className="font-bold text-sm">{isPortfolioMode ? 'Exit Portfolio' : 'Portfolio Mode'}</span>
-                </button>
-              </div>
-
-              <div className="space-y-2 flex-1 overflow-y-auto">
-                <p className="text-[10px] text-textMuted uppercase tracking-widest font-bold mb-4 opacity-50">Operational Hub</p>
-                {navItems.map((item) => {
-                  const Icon = item.icon;
-                  const isActive = currentView === item.id;
-                  return (
-                    <button
-                      key={item.id}
-                      onClick={() => { audio.playClick(); onViewChange(item.id); setIsMobileMenuOpen(false); }}
-                      className={cn(
-                        'w-full flex items-center space-x-4 p-4 rounded-2xl transition-all border',
-                        isActive 
-                          ? 'bg-primary/10 border-primary/30 text-primary' 
-                          : 'bg-white/5 border-transparent text-textMuted'
-                      )}
-                    >
-                      <Icon size={18} />
-                      <span className="font-bold text-sm">{item.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-
-              <div className="mt-auto space-y-3 pt-6 border-t border-white/10">
-                <button 
-                  onClick={() => { audio.playClick(); handleBackup(); }}
-                  className="w-full flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/10 text-textMuted text-xs font-bold"
-                >
-                  <div className="flex items-center space-x-3">
-                    <DatabaseBackup size={16} />
-                    <span>Export Protocol Data</span>
+              {/* Drawer Header */}
+              <div className="p-6 pt-12 flex items-center justify-between border-b border-white/10 shrink-0">
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
+                    <span className="text-sm font-black text-primary">{userData.initials}</span>
                   </div>
-                  {backupStatus === 'done' && <Check size={14} className="text-emerald-400" />}
-                </button>
+                  <div>
+                    <h3 className="text-sm font-bold text-textMain leading-tight">{userData.name}</h3>
+                    <p className="text-[9px] text-textMuted uppercase tracking-widest font-black opacity-60">System Admin</p>
+                  </div>
+                </div>
                 <button 
-                  onClick={async () => { if (supabase) await supabase.auth.signOut(); window.location.reload(); }}
-                  className="w-full flex items-center space-x-3 p-4 bg-red-500/10 rounded-2xl border border-red-500/20 text-red-400 text-xs font-bold"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="p-2 rounded-xl bg-white/5 border border-white/10 text-textMuted hover:text-primary transition-all"
                 >
-                  <LogOut size={16} />
-                  <span>Disconnect Link</span>
+                  <X size={18} />
                 </button>
+              </div>
+
+              {/* Scrollable Content */}
+              <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-3 pb-40 md:pb-24 scrollbar-default">
+                {/* Account Section */}
+                <div className="space-y-3">
+                  <p className="text-[10px] text-textMuted uppercase tracking-widest font-black mb-1 opacity-40">Command & Control</p>
+                  <motion.button
+                    key="btn-neural"
+                    initial={{ opacity: 0, x: 10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: 0.1 }}
+                    onClick={() => { audio.playClick(); onViewChange('engagement'); setIsMobileMenuOpen(false); }}
+                    className="w-full flex items-center space-x-4 p-4 rounded-2xl bg-white/[0.03] border border-white/5 text-textMain hover:border-primary/30 hover:bg-primary/5 transition-all"
+                  >
+                    <div className="w-9 h-9 rounded-xl bg-blue-500/10 flex items-center justify-center">
+                      <User size={18} className="text-blue-400" />
+                    </div>
+                    <span className="font-bold text-sm">Neural Overview</span>
+                  </motion.button>
+                  <motion.button
+                    initial={{ opacity: 0, x: 10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: 0.15 }}
+                    onClick={() => { audio.playClick(); onTogglePortfolio(); setIsMobileMenuOpen(false); }}
+                    className="w-full flex items-center space-x-4 p-4 rounded-2xl bg-white/[0.03] border border-white/5 text-textMain hover:border-primary/30 hover:bg-primary/5 transition-all"
+                  >
+                    <div className={cn("w-9 h-9 rounded-xl flex items-center justify-center", isPortfolioMode ? 'bg-purple-500/10' : 'bg-emerald-500/10')}>
+                      {isPortfolioMode ? <EyeOff size={18} className="text-purple-400" /> : <Eye size={18} className="text-emerald-400" />}
+                    </div>
+                    <span className="font-bold text-sm">{isPortfolioMode ? 'Exit Portfolio' : 'Portfolio Interface'}</span>
+                  </motion.button>
+                </div>
+
+                {/* Navigation Section */}
+                <div className="space-y-3">
+                  <p className="text-[10px] text-textMuted uppercase tracking-widest font-black mb-1 opacity-40">Protocols</p>
+                  {navItems.map((item, idx) => {
+                    const Icon = item.icon;
+                    const isActive = currentView === item.id;
+                    return (
+                      <motion.button
+                        initial={{ opacity: 0, x: 10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: 0.2 + idx * 0.05 }}
+                        key={item.id}
+                        onClick={() => { audio.playClick(); onViewChange(item.id); setIsMobileMenuOpen(false); }}
+                        className={cn(
+                          'w-full flex items-center space-x-4 p-4 rounded-2xl transition-all border',
+                          isActive 
+                            ? 'bg-primary/10 border-primary/30 text-primary' 
+                            : 'bg-white/[0.03] border-white/5 text-textMuted hover:border-primary/20 hover:text-textMain'
+                        )}
+                      >
+                        <div className={cn("w-9 h-9 rounded-xl flex items-center justify-center", isActive ? 'bg-primary/20' : 'bg-white/5')}>
+                          <Icon size={18} />
+                        </div>
+                        <span className="font-bold text-sm">{item.label}</span>
+                      </motion.button>
+                    );
+                  })}
+                </div>
+
+                {/* System Section */}
+                <div className="space-y-3 pt-6 border-t border-white/10">
+                  <p className="text-[10px] text-textMuted uppercase tracking-widest font-black mb-1 opacity-40">Emergency Protocol</p>
+                  <motion.button 
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.5 }}
+                    onClick={() => { audio.playClick(); handleBackup(); }}
+                    className="w-full flex items-center justify-between p-4 bg-white/[0.03] border border-white/5 rounded-2xl text-textMuted text-xs font-bold hover:border-white/20 transition-all"
+                  >
+                    <div className="flex items-center space-x-3">
+                      <DatabaseBackup size={16} />
+                      <span>Sync Data Cloud</span>
+                    </div>
+                    {backupStatus === 'done' && <Check size={14} className="text-emerald-400" />}
+                  </motion.button>
+                  <motion.button 
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.55 }}
+                    onClick={async () => { if (supabase) await supabase.auth.signOut(); window.location.reload(); }}
+                    className="w-full flex items-center space-x-3 p-4 bg-red-500/10 rounded-2xl border border-red-500/20 text-red-400 text-xs font-black uppercase tracking-widest hover:bg-red-500/20 transition-all"
+                  >
+                    <LogOut size={16} />
+                    <span>Terminate Link</span>
+                  </motion.button>
+                </div>
               </div>
             </motion.div>
           </>

@@ -17,6 +17,8 @@ export interface TimetableTask {
   day_of_week: DayOfWeek;
   is_weekend: boolean;   // true for Sat/Sun — optional bonus days
   order_index: number;
+  task_target?: string; // High, Medium, Low
+  start_time?: string;  // HH:MM
   created_at: string;
 }
 
@@ -241,7 +243,7 @@ export function useTimetable(userId: string | null) {
     addXpFn: (pillar: 'Study' | 'Health' | 'Finance' | 'Mind', actionType: string, baseAmount: number) => Promise<number>
   ) => {
     if (!supabase || !userId) return;
-    const { tier, is_weekend, total } = todayStats;
+    const { tier, total } = todayStats;
     if (tier === 'none' || total === 0) return;
 
     // Check already claimed
@@ -262,12 +264,17 @@ export function useTimetable(userId: string | null) {
     const pillarMap: Record<string, number> = {};
     completedTasks.forEach(t => {
       const pillar = t.pillar;
-      pillarMap[pillar] = (pillarMap[pillar] || 0) + (t.duration_minutes || 30);
+      // XP based on target/priority
+      let xpForTask = 30;
+      if (t.task_target === 'High') xpForTask = 100;
+      else if (t.task_target === 'Medium') xpForTask = 60;
+      else if (t.task_target === 'Low') xpForTask = 40;
+
+      pillarMap[pillar] = (pillarMap[pillar] || 0) + xpForTask;
     });
 
-    const bonusPromises = Object.entries(pillarMap).map(([pillar, minutes]) => {
-      const baseXP = Math.round(minutes * 0.5); // 0.5 XP per minute base
-      const bonus  = Math.round(baseXP * multiplier);
+    const bonusPromises = Object.entries(pillarMap).map(([pillar, xpAmount]) => {
+      const bonus = Math.round(xpAmount * multiplier);
       return addXpFn(pillar as any, `timetable_${tier}`, bonus);
     });
     await Promise.all(bonusPromises);
@@ -298,46 +305,31 @@ export function useTimetable(userId: string | null) {
       const newTier = getBadgeTier(newCount, thresholds) || 'bronze';
 
       if (current) {
-        if (!supabase) return;
         await supabase.from('timetable_badges')
           .update({ count: newCount, tier: newTier })
           .eq('id', current.id);
       } else {
-        if (!supabase) return;
         await supabase.from('timetable_badges')
           .insert({ user_id: userId, badge_type: badgeType, count: newCount, tier: newTier });
       }
     };
 
-    // Disciplined / Perfect day counts
-    if (tier === 'disciplined' || tier === 'perfect') await bump('disciplined');
-    if (tier === 'perfect') await bump('perfectionist');
-    if (is_weekend && (tier === 'disciplined' || tier === 'perfect')) await bump('weekend_warrior');
+    // Overall Consistency
+    if (tier === 'perfect' || tier === 'disciplined') await bump('consistency');
+    
+    // Category specific
+    const gymCount = completedTasks.filter(t => t.category === 'gym').length;
+    if (gymCount >= 1) await bump('gym_mastery', SPECIAL_CATEGORY_THRESHOLDS);
 
-    // Category-specific badges
-    const cats = completedTasks.map(t => t.category);
-    if (cats.includes('gym'))   await bump('gym_beast', SPECIAL_CATEGORY_THRESHOLDS);
-    if (cats.includes('study')) await bump('scholar', SPECIAL_CATEGORY_THRESHOLDS);
-    if (cats.includes('work'))  await bump('work_titan', SPECIAL_CATEGORY_THRESHOLDS);
-    if (cats.includes('mind'))  await bump('mindful', SPECIAL_CATEGORY_THRESHOLDS);
+    const studyCount = completedTasks.filter(t => t.category === 'study').length;
+    if (studyCount >= 1) await bump('scholar_rank', SPECIAL_CATEGORY_THRESHOLDS);
 
-    await loadBadges();
-  }, [userId, loadBadges]);
+    const workCount = completedTasks.filter(t => t.category === 'work').length;
+    if (workCount >= 1) await bump('executor_prime', SPECIAL_CATEGORY_THRESHOLDS);
+  }, [userId]);
 
   return {
-    tasks,
-    completions,
-    badges,
-    loading,
-    todayTasks,
-    todayStats,
-    isWeekend,
-    addTask,
-    updateTask,
-    deleteTask,
-    copyDayToDay,
-    toggleCompletion,
-    claimDayBonus,
-    reload: () => Promise.all([loadTasks(), loadTodayCompletions(), loadBadges()]),
+    tasks, completions, badges, loading, todayStats, todayTasks,
+    isWeekend, addTask, updateTask, deleteTask, copyDayToDay, toggleCompletion, claimDayBonus
   };
 }

@@ -68,8 +68,12 @@ function AppContent({ currentView, setCurrentView, isPortfolioMode, setIsPortfol
         isAdmin={isAdmin}
       />
 
-      <main className="flex-1 flex flex-col h-full relative z-0 md:ml-20 pb-[80px] md:pb-0 overflow-hidden">
-        <Header hideVow={currentView !== 'dashboard'} onNavigateToRank={() => setCurrentView('rank')} />
+      <main className="flex-1 flex flex-col h-full relative z-0 md:ml-[88px] pb-[80px] md:pb-0 overflow-hidden">
+        <Header 
+          hideVow={currentView !== 'dashboard'} 
+          onNavigateToRank={() => setCurrentView('rank')} 
+          onNavigateToDashboard={() => setCurrentView('dashboard')}
+        />
         <AnimatePresence mode="wait">
           {currentView === 'dashboard' ? (
             <motion.div 

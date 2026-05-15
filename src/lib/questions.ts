@@ -627,5 +627,105 @@ export const QUESTIONS: Question[] = [
     logic: 'evaluate both options against business goals, run a small proof-of-concept (POC), and choose the one with better long-term support and flexibility.',
     hint: 'Use data-driven decisions to break the deadlock.',
     xpFirstSolve: 45, xpRepeatSolve: 15
+  },
+  {
+    id: 'abap-016',
+    category: 'ABAP',
+    difficulty: 'Hard',
+    title: 'RAP Managed Early Numbering',
+    description: 'Implement the early numbering logic in a RAP managed implementation for field "UUID".',
+    logic: 'mapped-entity = value #( ( %cid = entity-%cid uuid = cl_system_uuid=>create_uuid_x16_static( ) ) ).',
+    hint: 'Use CL_SYSTEM_UUID in the ADJUST_NUMBERS or early numbering block.',
+    xpFirstSolve: 50, xpRepeatSolve: 15
+  },
+  {
+    id: 'abap-017',
+    category: 'ABAP',
+    difficulty: 'Medium',
+    title: 'New Select with Union',
+    description: 'Write an ABAP 7.50+ SELECT statement that combines results from two tables using UNION.',
+    logic: 'select a from tab1 union select a from tab2 into table @lt_res.',
+    hint: 'UNION was introduced in modern OpenSQL.',
+    xpFirstSolve: 30, xpRepeatSolve: 6
+  },
+  {
+    id: 'logic-016',
+    category: 'Logic',
+    difficulty: 'Hard',
+    title: 'Knapsack 0/1 Logic',
+    description: 'Explain the core logic of the 0/1 Knapsack problem using dynamic programming.',
+    logic: 'build a 2D table where dp[i][w] = max(dp[i-1][w], val[i] + dp[i-1][w-wt[i]]).',
+    hint: 'Consider whether to include or exclude each item based on capacity.',
+    xpFirstSolve: 55, xpRepeatSolve: 20
+  },
+  {
+    id: 'logic-017',
+    category: 'Logic',
+    difficulty: 'Medium',
+    title: 'Circular Linked List Loop',
+    description: 'What algorithm is used to detect a loop in a linked list?',
+    logic: 'floyd\'s cycle-finding algorithm using a slow and a fast pointer.',
+    hint: 'If they meet, there is a cycle.',
+    xpFirstSolve: 35, xpRepeatSolve: 8
+  },
+  {
+    id: 'pattern-016',
+    category: 'Pattern',
+    difficulty: 'Hard',
+    title: 'Flyweight Pattern Logic',
+    description: 'How does the Flyweight pattern reduce memory usage in applications with many similar objects?',
+    logic: 'sharing as much data as possible with other similar objects (extrinsic vs intrinsic state).',
+    hint: 'Store shared state externally.',
+    xpFirstSolve: 50, xpRepeatSolve: 15
+  },
+  {
+    id: 'pattern-017',
+    category: 'Pattern',
+    difficulty: 'Medium',
+    title: 'Bridge Pattern Intent',
+    description: 'What is the primary intent of the Bridge design pattern?',
+    logic: 'decouple an abstraction from its implementation so that the two can vary independently.',
+    hint: 'Go beyond just interfaces; think about hierarchies.',
+    xpFirstSolve: 35, xpRepeatSolve: 8
+  },
+  {
+    id: 'hr-016',
+    category: 'HR',
+    difficulty: 'Medium',
+    title: 'Handling Negative Feedback',
+    description: 'How should you react when receiving significant negative feedback on a code review?',
+    logic: 'stay objective, don\'t take it personally, ask clarifying questions, and use it as a learning opportunity.',
+    hint: 'Professionalism and growth mindset are key.',
+    xpFirstSolve: 25, xpRepeatSolve: 5
+  },
+  {
+    id: 'hr-017',
+    category: 'HR',
+    difficulty: 'Easy',
+    title: 'Meeting Protocol (ELITE)',
+    description: 'What is the most important component of a productive technical meeting?',
+    logic: 'a clear agenda, defined goals, and actionable follow-up items.',
+    hint: 'Preparation prevents poor performance.',
+    xpFirstSolve: 15, xpRepeatSolve: 3
+  },
+  {
+    id: 'abap-018',
+    category: 'ABAP',
+    difficulty: 'Hard',
+    title: 'Cloud Optimized SQL',
+    description: 'Which addition in the SELECT statement is used to restrict the number of rows in ABAP Cloud (Steampunk)?',
+    logic: 'order by ... subtotal ... count( * ) ... fields ... limit 100.',
+    hint: 'Use the LIMIT and OFFSET clauses.',
+    xpFirstSolve: 40, xpRepeatSolve: 10
+  },
+  {
+    id: 'logic-018',
+    category: 'Logic',
+    difficulty: 'Easy',
+    title: 'String Length Calculation',
+    description: 'Implement the logic to find the length of a string without using built-in length functions.',
+    logic: 'iterate through characters with a counter until a null terminator or end of sequence is reached.',
+    hint: 'Use a simple loop.',
+    xpFirstSolve: 15, xpRepeatSolve: 3
   }
 ];

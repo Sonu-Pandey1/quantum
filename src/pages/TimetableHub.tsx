@@ -67,6 +67,8 @@ export function TimetableHub() {
   const [newName, setNewName]           = useState('');
   const [newCategory, setNewCategory]   = useState<TaskCategory>('study');
   const [newDuration, setNewDuration]   = useState(30);
+  const [newStartTime, setNewStartTime] = useState('09:00');
+  const [newTarget, setNewTarget]       = useState<'High' | 'Medium' | 'Low'>('Medium');
 
   const dayTasks = tasks.filter(t => t.day_of_week === activeDay);
   const isToday  = activeDay === (new Date().getDay() as DayOfWeek);
@@ -83,6 +85,8 @@ export function TimetableHub() {
       duration_minutes: newDuration,
       day_of_week: activeDay,
       is_weekend: isActiveWeekend,
+      task_target: newTarget,
+      start_time: newStartTime,
       order_index: dayTasks.length,
     });
     setNewName(''); setShowAddForm(false);
@@ -246,7 +250,37 @@ export function TimetableHub() {
                       ))}
                     </div>
                     <div className="flex items-center gap-3">
-                      <label className="text-[10px] font-bold text-textMuted uppercase tracking-widest shrink-0">Duration</label>
+                      <label className="text-[10px] font-bold text-textMuted uppercase tracking-widest shrink-0">Priority</label>
+                      <div className="flex gap-2">
+                        {[
+                          { id: 'High', label: 'Most Important (100xp)', color: 'text-red-400', bg: 'bg-red-500/10', border: 'border-red-500/20' },
+                          { id: 'Medium', label: 'Important (60xp)', color: 'text-amber-400', bg: 'bg-amber-500/10', border: 'border-amber-500/20' },
+                          { id: 'Low', label: 'Other (40xp)', color: 'text-blue-400', bg: 'bg-blue-500/10', border: 'border-blue-500/20' },
+                        ].map(t => (
+                          <button
+                            key={t.id}
+                            onClick={() => setNewTarget(t.id as any)}
+                            className={`px-3 py-1.5 rounded-xl border text-[9px] font-black uppercase tracking-widest transition-all ${
+                              newTarget === t.id
+                                ? `${t.bg} ${t.border} ${t.color}`
+                                : 'bg-surfaceHighlight border-white/10 text-textMuted hover:border-white/20'
+                            }`}
+                          >
+                            {t.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <label className="text-[10px] font-bold text-textMuted uppercase tracking-widest shrink-0">Start Time</label>
+                      <input
+                        type="time"
+                        value={newStartTime}
+                        onChange={e => setNewStartTime(e.target.value)}
+                        className="bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-1.5 text-xs text-textMain outline-none focus:border-primary"
+                      />
+                      <label className="text-[10px] font-bold text-textMuted uppercase tracking-widest shrink-0 ml-4">Duration</label>
                       <input
                         type="range" min="5" max="180" step="5"
                         value={newDuration}
@@ -307,11 +341,15 @@ export function TimetableHub() {
                         <p className={`text-sm font-bold truncate ${isCompleted ? 'line-through text-textMuted' : 'text-textMain'}`}>
                           {task.name}
                         </p>
-                        <p className="text-[10px] text-textMuted">{cat.label} · {task.duration_minutes} min · {task.pillar}</p>
+                        <p className="text-[10px] text-textMuted">{task.start_time || '--:--'} · {cat.label} · {task.duration_minutes} min · {task.pillar}</p>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
-                        <span className="text-[10px] font-bold text-textMuted hidden sm:block">
-                          ~{Math.round(task.duration_minutes * 0.5)} XP base
+                        <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded border ${
+                          task.task_target === 'High' ? 'text-red-400 border-red-500/20 bg-red-500/5' :
+                          task.task_target === 'Medium' ? 'text-amber-400 border-amber-500/20 bg-amber-500/5' :
+                          'text-blue-400 border-blue-500/20 bg-blue-500/5'
+                        }`}>
+                          {task.task_target === 'High' ? '100 XP' : task.task_target === 'Medium' ? '60 XP' : '40 XP'}
                         </span>
                         <button
                           onClick={() => deleteTask(task.id)}

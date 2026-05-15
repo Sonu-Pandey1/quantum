@@ -365,10 +365,10 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="flex flex-col md:flex-row flex-1 w-full bg-background relative z-10 overflow-hidden"
+      className="flex flex-col md:flex-row flex-1 w-full h-full bg-background relative z-10 overflow-hidden"
     >
       {/* Left List — full width on mobile when no question, fixed width on desktop */}
-      <div className={`w-full md:w-96 border-r border-border bg-surface/30 backdrop-blur-xl flex flex-col ${selectedQuestion ? 'hidden md:flex' : 'flex'} flex-1 md:h-full overflow-hidden`}>
+      <div className={`w-full md:w-96 border-r border-border bg-surface/30 backdrop-blur-xl flex flex-col ${selectedQuestion ? 'hidden md:flex' : 'flex'} h-full overflow-hidden shrink-0`}>
         <div className="p-4 md:p-6 border-b border-border shrink-0">
           <div className="flex items-center justify-between mb-4 md:mb-6">
             <div className="flex items-center space-x-2">
@@ -414,7 +414,7 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
           ))}
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-3 pb-40 md:pb-24 scrollbar-none">
+        <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-3 pb-40 md:pb-24 scrollbar-default">
           {loading ? (
             <ListSkeleton count={8} />
           ) : filtered.map(q => {
@@ -492,11 +492,11 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
         <AnimatePresence mode="wait">
           {selectedQuestion && (
             <motion.div
-              key={selectedQuestion.id}
-              initial={{ x: 20, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              exit={{ x: -20, opacity: 0 }}
-              className="flex-1 flex flex-col h-full overflow-y-auto p-4 md:p-12 space-y-6 md:space-y-8 pb-40 scrollbar-none"
+              key="detail"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 20 }}
+              className="flex-1 p-4 md:p-12 overflow-y-auto h-full scrollbar-default pb-40 md:pb-12"
             >
               <button onClick={() => setSelectedQuestion(null)} className="md:hidden flex items-center text-textMuted hover:text-primary mb-2 transition-colors uppercase tracking-[0.2em] font-black text-[10px]">
                 <ChevronLeft size={16} className="mr-1" /> Back to Protocols

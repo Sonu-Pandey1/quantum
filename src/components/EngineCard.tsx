@@ -41,6 +41,12 @@ function parseTime(timeStr: string): Date {
   return date;
 }
 
+function calculateEndTime(startTime: string, durationMinutes: number): string {
+  const date = parseTime(startTime);
+  date.setMinutes(date.getMinutes() + durationMinutes);
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
+
 export function EngineCard() {
   const { addXp } = useProgression();
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -60,7 +66,7 @@ export function EngineCard() {
   // Executed tasks for today (store IDs)
   const [executedTaskIds, setExecutedTaskIds] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
-  const [sundayRest, setSundayRest] = useState(true);
+  const [sundayRest] = useState(true);
   const [userId, setUserId] = useState<string>('default');
 
   const [schedule, setSchedule] = useState<Task[]>(SCHEDULE);
@@ -77,26 +83,39 @@ export function EngineCard() {
           uid = session.user.id;
           setUserId(uid);
           
-          // Try to get timetable from DB settings first
+          // Try to get timetable from timetable_tasks table first
           try {
-            const { data } = await supabase.from('profiles').select('settings').eq('id', uid).single();
-            if (data && data.settings && data.settings.timetable) {
-              setSchedule(data.settings.timetable);
-              if (data.settings.sundayRest !== undefined) setSundayRest(data.settings.sundayRest);
-              localStorage.setItem(`quantum_timetable_${uid}`, JSON.stringify(data.settings.timetable));
-              if (data.settings.sundayRest !== undefined) {
-                localStorage.setItem(`quantum_sunday_rest_${uid}`, data.settings.sundayRest.toString());
-              }
+            const todayDow = new Date().getDay();
+            const { data: dbTasks } = await supabase
+              .from('timetable_tasks')
+              .select('*')
+              .eq('user_id', uid)
+              .eq('day_of_week', todayDow)
+              .order('order_index');
+
+            if (dbTasks && dbTasks.length > 0) {
+              const mappedTasks: Task[] = dbTasks.map((t: any) => ({
+                id: t.id,
+                start: t.start_time || '00:00',
+                end: calculateEndTime(t.start_time || '00:00', t.duration_minutes || 30),
+                title: t.name,
+                statusMsg: t.task_target ? `${t.task_target} Priority Protocol` : 'Executing Protocol...',
+                task_target: t.task_target,
+                pillar: t.pillar
+              }));
+              setSchedule(mappedTasks);
             } else {
-              const customTimetable = localStorage.getItem(`quantum_timetable_${uid}`);
-              if (customTimetable && customTimetable !== "undefined") setSchedule(JSON.parse(customTimetable));
-              
-              const customRest = localStorage.getItem(`quantum_sunday_rest_${uid}`);
-              if (customRest && customRest !== "undefined") setSundayRest(customRest !== 'false');
+              // Fallback to profile settings or local
+              const { data } = await supabase.from('profiles').select('settings').eq('id', uid).single();
+              if (data?.settings?.timetable) {
+                setSchedule(data.settings.timetable);
+              } else {
+                const customTimetable = localStorage.getItem(`quantum_timetable_${uid}`);
+                if (customTimetable && customTimetable !== "undefined") setSchedule(JSON.parse(customTimetable));
+              }
             }
           } catch (e) {
-            const customTimetable = localStorage.getItem(`quantum_timetable_${uid}`);
-            if (customTimetable && customTimetable !== "undefined") setSchedule(JSON.parse(customTimetable));
+            console.error("Failed to load timetable from DB", e);
           }
         }
         
@@ -233,7 +252,14 @@ export function EngineCard() {
     audio.playSuccess();
     if (!activeTask) return;
 
-    addXp('Mind', `Routine Task: ${activeTask.title}`, 5);
+    let xpAmount = 5; // Fallback
+    const tTarget = (activeTask as any).task_target;
+    if (tTarget === 'High') xpAmount = 100;
+    else if (tTarget === 'Medium') xpAmount = 60;
+    else if (tTarget === 'Low') xpAmount = 40;
+    else xpAmount = 30;
+
+    addXp((activeTask as any).pillar || 'Mind', `Routine Task: ${activeTask.title}`, xpAmount);
 
     const todayStr = getTodayString();
     const updated = [...executedTaskIds, activeTask.id];
