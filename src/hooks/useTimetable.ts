@@ -255,7 +255,7 @@ export function useTimetable(userId: string | null) {
       .maybeSingle();
     if (existing) return; // Already claimed today
 
-    const multiplier = TIER_BONUS[tier][is_weekend ? 'weekend' : 'weekday'];
+    const multiplier = TIER_BONUS[tier][isWeekend ? 'weekend' : 'weekday'];
 
     // Group completed tasks by pillar and award XP
     const completedTasks = todayTasks.filter(t =>
@@ -283,13 +283,13 @@ export function useTimetable(userId: string | null) {
     await supabase.from('daily_bonus_log').insert({ user_id: userId, date: today, tier, bonus_multiplier: multiplier });
 
     // ── Badge checks ────────────────────────────────────────────────────────
-    await updateBadgeCounts({ tier, completedTasks, is_weekend });
+    await updateBadgeCounts({ tier, completedTasks });
 
   }, [userId, today, todayStats, todayTasks, completions]);
 
   const updateBadgeCounts = useCallback(async ({
-    tier, completedTasks, is_weekend
-  }: { tier: string; completedTasks: TimetableTask[]; is_weekend: boolean }) => {
+    tier, completedTasks
+  }: { tier: string; completedTasks: TimetableTask[] }) => {
     if (!supabase || !userId) return;
 
     const bump = async (badgeType: string, thresholds = BADGE_THRESHOLDS) => {
