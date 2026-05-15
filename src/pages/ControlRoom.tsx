@@ -12,6 +12,9 @@ interface TimetableTask {
   end: string;
   icon?: string;
   statusMsg?: string;
+  dayOfWeek?: number;   // 0=Sun … 6=Sat (undefined = applies to all days)
+  category?: string;   // 'gym' | 'study' | 'work' | 'mind' | 'other'
+  isWeekend?: boolean; // marks as optional weekend bonus task
 }
 
 interface HabitTask {
@@ -49,14 +52,15 @@ const defaultRoadmap: RoadmapPhase[] = [
 ];
 
 export function ControlRoom() {
-  const [tasks, setTasks] = useState<TimetableTask[]>(defaultTasks);
-  const [habits, setHabits] = useState<HabitTask[]>(defaultHabits);
-  const [roadmap, setRoadmap] = useState<RoadmapPhase[]>(defaultRoadmap);
+  const [tasks, setTasks]         = useState<TimetableTask[]>(defaultTasks);
+  const [habits, setHabits]       = useState<HabitTask[]>(defaultHabits);
+  const [roadmap, setRoadmap]     = useState<RoadmapPhase[]>(defaultRoadmap);
   const [weightGoal, setWeightGoal] = useState('70');
   const [sapTarget, setSapTarget] = useState('Master Core Skills');
   const [sundayRest, setSundayRest] = useState(true);
   const [savedMessage, setSavedMessage] = useState('');
-  const [userId, setUserId] = useState<string | null>(null);
+  const [userId, setUserId]       = useState<string | null>(null);
+  const [activeDay, setActiveDay] = useState<number>(new Date().getDay()); // 0=Sun…6=Sat
 
   useEffect(() => {
     async function loadUserConfig() {
@@ -176,13 +180,17 @@ export function ControlRoom() {
     }
   };
 
-  const handleTaskChange = (id: number, field: keyof TimetableTask, value: string) => {
+  const handleTaskChange = (id: number, field: keyof TimetableTask, value: string | number | boolean) => {
     setTasks(tasks.map(t => t.id === id ? { ...t, [field]: value } : t));
   };
 
   const addTask = () => {
     const newId = tasks.length > 0 ? Math.max(...tasks.map(t => t.id)) + 1 : 1;
-    setTasks([...tasks, { id: newId, title: 'New Protocol', start: '12:00', end: '13:00' }]);
+    const isWknd = activeDay === 0 || activeDay === 6;
+    setTasks([...tasks, {
+      id: newId, title: 'New Protocol', start: '12:00', end: '13:00',
+      dayOfWeek: activeDay, category: 'other', isWeekend: isWknd
+    }]);
   };
 
   const removeTask = (id: number) => {
@@ -260,34 +268,82 @@ export function ControlRoom() {
             </button>
           </div>
           <p className="text-xs text-textMuted">Modify the exact execution blocks that drive The Engine.</p>
+
+          {/* Day tabs */}
+          <div className="flex gap-1 overflow-x-auto pb-1 scrollbar-none">
+            {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((d, i) => {
+              const isWknd = i === 0 || i === 6;
+              const count = tasks.filter(t => t.dayOfWeek === i || t.dayOfWeek === undefined).length;
+              return (
+                <button
+                  key={i}
+                  onClick={() => setActiveDay(i)}
+                  className={`shrink-0 flex flex-col items-center px-3 py-2 rounded-xl border text-[10px] font-black uppercase tracking-widest transition-all ${
+                    activeDay === i
+                      ? 'bg-primary/20 border-primary text-primary'
+                      : 'bg-surfaceHighlight border-border text-textMuted hover:border-white/20'
+                  } ${isWknd ? 'ring-1 ring-amber-500/20' : ''}`}
+                >
+                  <span>{d}</span>
+                  {count > 0 && <span className="text-[8px] mt-0.5 opacity-60">{count}</span>}
+                  {isWknd && <span className="text-[8px] text-amber-400">2×</span>}
+                </button>
+              );
+            })}
+          </div>
+          {(activeDay === 0 || activeDay === 6) && (
+            <p className="text-[10px] text-amber-400 bg-amber-500/5 border border-amber-500/20 rounded-lg px-3 py-1.5">
+              ⚡ Weekend — optional bonus day. Tasks completed earn 2× XP.
+            </p>
+          )}
           
           <div className="flex-1 overflow-y-auto pr-2 space-y-3 scrollbar-thin scrollbar-thumb-surfaceHighlight scrollbar-track-transparent">
             <AnimatePresence>
-              {tasks.map((task) => (
+              {tasks
+                .filter(t => t.dayOfWeek === activeDay || t.dayOfWeek === undefined)
+                .map((task) => (
                 <motion.div 
                   key={task.id}
                   initial={{ opacity: 0, x: -10 }}
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0, scale: 0.95 }}
-                  className="bg-surfaceHighlight/50 border border-border p-4 rounded-xl flex flex-col sm:flex-row gap-3 items-start sm:items-center relative group"
+                  className="bg-surfaceHighlight/50 border border-border p-4 rounded-xl flex flex-col gap-3 relative group"
                 >
-                  <div className="flex-1 w-full">
-                    <label className="text-[10px] text-textMuted font-bold uppercase tracking-wider mb-1 block">Task Title</label>
-                    <input 
-                      type="text" 
-                      value={task.title}
-                      onChange={(e) => handleTaskChange(task.id, 'title', e.target.value)}
-                      className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-textMain outline-none focus:border-primary"
-                    />
+                  {/* Row 1: Title + Category */}
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <div className="flex-1">
+                      <label className="text-[10px] text-textMuted font-bold uppercase tracking-wider mb-1 block">Task Title</label>
+                      <input 
+                        type="text" 
+                        value={task.title}
+                        onChange={(e) => handleTaskChange(task.id, 'title', e.target.value)}
+                        className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-textMain outline-none focus:border-primary"
+                      />
+                    </div>
+                    <div className="sm:w-36">
+                      <label className="text-[10px] text-textMuted font-bold uppercase tracking-wider mb-1 block">Category</label>
+                      <select
+                        value={task.category || 'other'}
+                        onChange={(e) => handleTaskChange(task.id, 'category', e.target.value)}
+                        className="w-full bg-background border border-border rounded-lg px-2 py-2 text-sm text-textMain outline-none focus:border-primary"
+                      >
+                        <option value="gym">💪 Gym</option>
+                        <option value="study">📚 Study</option>
+                        <option value="work">💼 Work</option>
+                        <option value="mind">🧘 Mind</option>
+                        <option value="other">⚙️ Other</option>
+                      </select>
+                    </div>
                   </div>
-                  <div className="flex gap-2 w-full sm:w-auto">
+                  {/* Row 2: Times + Weekend + Delete */}
+                  <div className="flex flex-wrap gap-2 items-end">
                     <div>
                       <label className="text-[10px] text-textMuted font-bold uppercase tracking-wider mb-1 block">Start</label>
                       <input 
                         type="time" 
                         value={task.start}
                         onChange={(e) => handleTaskChange(task.id, 'start', e.target.value)}
-                        className="bg-background border border-border rounded-lg px-2 py-2 text-sm text-textMain outline-none focus:border-primary w-[90px]"
+                        className="bg-background border border-border rounded-lg px-2 py-2 text-sm text-textMain outline-none focus:border-primary w-[100px]"
                       />
                     </div>
                     <div>
@@ -296,22 +352,35 @@ export function ControlRoom() {
                         type="time" 
                         value={task.end}
                         onChange={(e) => handleTaskChange(task.id, 'end', e.target.value)}
-                        className="bg-background border border-border rounded-lg px-2 py-2 text-sm text-textMain outline-none focus:border-primary w-[90px]"
+                        className="bg-background border border-border rounded-lg px-2 py-2 text-sm text-textMain outline-none focus:border-primary w-[100px]"
                       />
                     </div>
+                    <div className="flex items-center gap-2 ml-auto">
+                      <button
+                        onClick={() => handleTaskChange(task.id, 'isWeekend', !(task.isWeekend))}
+                        className={`text-[9px] font-black uppercase px-2 py-1 rounded border transition-all ${
+                          task.isWeekend
+                            ? 'bg-amber-500/20 border-amber-500/50 text-amber-400'
+                            : 'bg-surfaceHighlight border-border text-textMuted hover:border-white/20'
+                        }`}
+                        title="Mark as weekend bonus task"
+                      >
+                        {task.isWeekend ? '⚡ 2× Wknd' : 'Wknd?'}
+                      </button>
+                      <button 
+                        onClick={() => removeTask(task.id)}
+                        className="p-2 text-textMuted hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
                   </div>
-                  <button 
-                    onClick={() => removeTask(task.id)}
-                    className="absolute top-2 right-2 sm:static sm:mt-5 p-2 text-textMuted hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
-                  >
-                    <Trash2 size={16} />
-                  </button>
                 </motion.div>
               ))}
             </AnimatePresence>
-            {tasks.length === 0 && (
+            {tasks.filter(t => t.dayOfWeek === activeDay || t.dayOfWeek === undefined).length === 0 && (
               <div className="text-center p-8 text-textMuted text-sm border border-dashed border-border rounded-xl">
-                No active protocols. Add a block to begin.
+                No protocols for this day. Click "Add Block" to create one.
               </div>
             )}
           </div>

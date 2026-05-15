@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Cpu, DatabaseBackup, Check, Target, LogOut, Settings, User, Eye, EyeOff, Briefcase, Activity, ShieldAlert, Zap, BrainCircuit, Menu } from 'lucide-react';
+import { Cpu, DatabaseBackup, Check, Target, LogOut, Settings, User, Eye, EyeOff, Briefcase, Activity, ShieldAlert, Zap, BrainCircuit, Menu, CalendarDays } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { audio } from '../lib/audio';
@@ -286,13 +286,13 @@ export function Sidebar({ currentView, onViewChange, isPortfolioMode, onTogglePo
   };
 
   const navItems = [
-    { id: 'dashboard', icon: Cpu, label: 'Command' },
-    { id: 'strategic_control', icon: Target, label: 'Strategy' },
-    { id: 'practice', icon: BrainCircuit, label: 'Practice' },
-    { id: 'vault', icon: Briefcase, label: 'Vault' },
-    { id: 'lab', icon: Activity, label: 'The Lab' },
-    { id: 'engagement', icon: Zap, label: 'Hub' },
-    { id: 'control_room', icon: Settings, label: 'System' },
+    { id: 'dashboard',        icon: Cpu,          label: 'Command'   },
+    { id: 'strategic_control',icon: Target,        label: 'Strategy'  },
+    { id: 'practice',         icon: BrainCircuit,  label: 'Practice'  },
+    { id: 'vault',            icon: Briefcase,     label: 'Vault'     },
+    { id: 'lab',              icon: Activity,      label: 'The Lab'   },
+    { id: 'engagement',       icon: Zap,           label: 'Hub'       },
+    { id: 'control_room',     icon: Settings,      label: 'System'    },
   ];
 
   if (isAdmin) navItems.push({ id: 'admin', icon: ShieldAlert, label: 'Admin' });
