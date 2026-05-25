@@ -16,6 +16,7 @@ import { EngagementHub } from './pages/EngagementHub';
 import { Onboarding } from './pages/Onboarding';
 import { SuperAdmin } from './pages/SuperAdmin';
 import { StrategicControl } from './pages/StrategicControl';
+import { AiCounsel } from './pages/AiCounsel';
 import { supabase } from './lib/supabaseClient';
 import { recordLoginToday } from './hooks/useEngagement';
 import type { Session } from '@supabase/supabase-js';
@@ -100,6 +101,17 @@ function AppContent({ currentView, setCurrentView, isPortfolioMode, setIsPortfol
               className="flex-1 h-full overflow-hidden"
             >
               <PracticeHub onBack={() => setCurrentView('dashboard')} />
+            </motion.div>
+          ) : currentView === 'ai_counsel' ? (
+            <motion.div 
+              key="ai_counsel"
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.98 }}
+              transition={{ duration: 0.3 }}
+              className="flex-1 h-full overflow-hidden bg-background"
+            >
+              <AiCounsel />
             </motion.div>
           ) : currentView === 'control_room' ? (
             <motion.div 
@@ -238,7 +250,7 @@ function AppContainer() {
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.replace('#', '');
-      const validViews = ['dashboard', 'practice', 'control_room', 'dojo', 'analytics', 'engagement', 'admin', 'vault', 'lab', 'super_admin', 'strategic_control'];
+      const validViews = ['dashboard', 'practice', 'control_room', 'dojo', 'analytics', 'engagement', 'admin', 'vault', 'lab', 'super_admin', 'strategic_control', 'ai_counsel'];
       if (hash && (validViews.includes(hash) || hash === 'logic')) {
         setCurrentView(hash === 'logic' || hash === 'dojo' ? 'practice' : hash);
       }

@@ -1,20 +1,138 @@
-import { useState } from 'react';
-import { motion } from 'framer-motion';
+import { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Activity, HeartPulse, Dna, Zap, 
   Brain, Moon, Flame, Timer, 
   CheckCircle2, AlertCircle, 
-  ChevronRight, Thermometer
+  ChevronRight, Thermometer,
+  Plus, Trash2, Sparkles, RefreshCw, Check
 } from 'lucide-react';
 import { useProgression } from '../hooks/useProgression';
+import { generateBioMissions, isApiKeyConfigured } from '../lib/aiService';
+import { audio } from '../lib/audio';
+import toast from 'react-hot-toast';
+
+interface BioMission {
+  id: string;
+  title: string;
+  xp: number;
+  time: string;
+  difficulty: 'Easy' | 'Medium' | 'Hard';
+  completed?: boolean;
+}
 
 export function TheLab() {
-  const { state: { xp, level } } = useProgression();
-  const [missions] = useState([
-    { id: 1, title: 'Cold Exposure Protocol', xp: 50, time: '3 min', difficulty: 'Hard' },
-    { id: 2, title: 'Deep Work Focus Block', xp: 30, time: '90 min', difficulty: 'Medium' },
-    { id: 3, title: 'Sunlight Saturation', xp: 15, time: '15 min', difficulty: 'Easy' },
-  ]);
+  const { state, addXp } = useProgression();
+  const { xp, level, archetype, goals, displayName } = state;
+
+  // Local storage key scoped to current session user
+  const storageKey = `quantum_bio_missions_${displayName || 'Agent'}`;
+
+  const [missions, setMissions] = useState<BioMission[]>(() => {
+    const saved = localStorage.getItem(storageKey);
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {}
+    }
+    return [
+      { id: '1', title: 'Cold Exposure Protocol', xp: 50, time: '3 min', difficulty: 'Hard', completed: false },
+      { id: '2', title: 'Deep Work Focus Block', xp: 30, time: '90 min', difficulty: 'Medium', completed: false },
+      { id: '3', title: 'Sunlight Saturation', xp: 15, time: '15 min', difficulty: 'Easy', completed: false },
+    ];
+  });
+
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [customTitle, setCustomTitle] = useState('');
+  const [customDifficulty, setCustomDifficulty] = useState<'Easy' | 'Medium' | 'Hard'>('Easy');
+  const [customDuration, setCustomDuration] = useState('15 min');
+  const [generating, setGenerating] = useState(false);
+
+  // Sync back to local storage
+  useEffect(() => {
+    localStorage.setItem(storageKey, JSON.stringify(missions));
+  }, [missions, storageKey]);
+
+  // Actions
+  const handleAddCustom = () => {
+    if (!customTitle.trim()) return;
+    audio.playClick();
+
+    const xpMap = { Easy: 15, Medium: 30, Hard: 50 };
+    const newMission: BioMission = {
+      id: `custom-${Date.now()}`,
+      title: customTitle.trim(),
+      xp: xpMap[customDifficulty],
+      time: customDuration,
+      difficulty: customDifficulty,
+      completed: false
+    };
+
+    setMissions(prev => [...prev, newMission]);
+    setCustomTitle('');
+    setShowAddForm(false);
+    toast.success("Custom protocol added to bio-log!");
+  };
+
+  const handleDelete = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    audio.playClick();
+    setMissions(prev => prev.filter(m => m.id !== id));
+    toast.success("Protocol removed from bio-log.");
+  };
+
+  const handleComplete = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const mission = missions.find(m => m.id === id);
+    if (!mission || mission.completed) return;
+
+    audio.playSuccess();
+    
+    // Optimistic UI Update
+    setMissions(prev => prev.map(m => m.id === id ? { ...m, completed: true } : m));
+
+    // Award XP (Health Pillar)
+    const label = `Lab: completed ${mission.title}`;
+    const awarded = await addXp('Health', label, mission.xp);
+
+    toast.success(`🎉 Bio-Protocol Mastered! +${awarded} Health XP`);
+  };
+
+  const handleGenerateAI = async () => {
+    if (!isApiKeyConfigured()) {
+      toast.error("Gemini API Key missing. Configure in Neural Strategy settings.");
+      return;
+    }
+
+    setGenerating(true);
+    audio.playClick();
+
+    try {
+      const generated = await generateBioMissions(
+        archetype || 'None',
+        level.Health || 1,
+        Array.isArray(goals) ? goals.join(', ') : (goals || '')
+      );
+
+      const parsedMissions: BioMission[] = generated.map((m, idx) => ({
+        id: `ai-${Date.now()}-${idx}`,
+        title: m.title,
+        xp: m.xpAward,
+        time: m.timeRequired,
+        difficulty: m.difficulty,
+        completed: false
+      }));
+
+      setMissions(parsedMissions);
+      toast.success("Bespoke AI Bio-Missions Calibrated!");
+      audio.playSuccess();
+    } catch (e: any) {
+      console.error(e);
+      toast.error(e.message || "Failed to generate dynamic bio-hacking protocols.");
+    } finally {
+      setGenerating(false);
+    }
+  };
 
   return (
     <div className="flex-1 h-full flex flex-col p-6 md:p-8 overflow-y-auto scrollbar-thin bg-background/50">
@@ -137,44 +255,155 @@ export function TheLab() {
 
         {/* Bio-Mission Engine */}
         <div className="lg:col-span-2">
-          <div className="glass-panel p-8 border border-white/5 bg-black/40 rounded-3xl h-full">
-            <div className="flex items-center justify-between mb-8">
+          <div className="glass-panel p-6 md:p-8 border border-white/5 bg-black/40 rounded-3xl h-full">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
               <div>
                 <h3 className="text-xl font-black text-textMain flex items-center uppercase tracking-tighter">
                   <Timer size={20} className="mr-2 text-red-500" /> Bio-Mission Engine
                 </h3>
                 <p className="text-xs text-textMuted mt-1 uppercase tracking-widest">Daily protocols for biological optimization</p>
               </div>
-              <span className="text-[10px] font-black text-textMuted uppercase px-3 py-1 bg-white/5 rounded-full">Reset in 12h 45m</span>
+              
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleGenerateAI}
+                  disabled={generating}
+                  className="py-2 px-3 bg-red-500/10 hover:bg-red-500/20 border border-red-500/25 hover:border-red-500/40 text-red-400 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 transition-all disabled:opacity-50 cursor-pointer shadow-md"
+                >
+                  {generating ? <RefreshCw size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                  <span>{generating ? "Calibrating..." : "Calibrate AI"}</span>
+                </button>
+                
+                <button
+                  onClick={() => { audio.playClick(); setShowAddForm(!showAddForm); }}
+                  className="py-2 px-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
+                >
+                  <Plus size={12} />
+                  <span>Custom</span>
+                </button>
+              </div>
             </div>
 
-            <div className="space-y-4">
-              {missions.map((m) => (
-                <div key={m.id} className="p-4 rounded-2xl bg-white/[0.03] border border-white/5 flex items-center justify-between group hover:border-red-500/30 transition-all cursor-pointer">
-                  <div className="flex items-center space-x-4">
-                    <div className="w-10 h-10 rounded-xl bg-black/40 flex items-center justify-center text-textMuted group-hover:text-red-500 transition-colors">
-                      <Flame size={18} />
-                    </div>
+            {/* Custom Mission Form */}
+            <AnimatePresence>
+              {showAddForm && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="overflow-hidden mb-6"
+                >
+                  <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/5 space-y-4">
                     <div>
-                      <h4 className="text-sm font-bold text-textMain">{m.title}</h4>
-                      <div className="flex items-center space-x-2 text-[10px] uppercase font-bold text-textMuted">
-                        <span>{m.time}</span>
-                        <span>•</span>
-                        <span className={m.difficulty === 'Hard' ? 'text-red-500' : m.difficulty === 'Medium' ? 'text-amber-500' : 'text-emerald-500'}>{m.difficulty}</span>
+                      <label className="text-[9px] font-black text-textMuted uppercase tracking-widest block mb-1">Protocol Title</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. 10min Box Breathing, Fasting Block..."
+                        value={customTitle}
+                        onChange={e => setCustomTitle(e.target.value)}
+                        className="w-full bg-black/20 border border-white/10 rounded-xl px-3 py-2 text-xs text-textMain focus:border-red-500 outline-none"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[9px] font-black text-textMuted uppercase tracking-widest block mb-1">Difficulty</label>
+                        <select
+                          value={customDifficulty}
+                          onChange={e => setCustomDifficulty(e.target.value as any)}
+                          className="w-full bg-black/20 border border-white/10 rounded-xl px-3 py-2 text-xs text-textMain focus:border-red-500 outline-none"
+                        >
+                          <option value="Easy" className="bg-surface">Easy (+15 XP)</option>
+                          <option value="Medium" className="bg-surface">Medium (+30 XP)</option>
+                          <option value="Hard" className="bg-surface">Hard (+50 XP)</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[9px] font-black text-textMuted uppercase tracking-widest block mb-1">Duration</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. 15 min, 45 min..."
+                          value={customDuration}
+                          onChange={e => setCustomDuration(e.target.value)}
+                          className="w-full bg-black/20 border border-white/10 rounded-xl px-3 py-2 text-xs text-textMain focus:border-red-500 outline-none"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex gap-2 justify-end pt-2">
+                      <button onClick={() => setShowAddForm(false)} className="px-3 py-1.5 text-[9px] font-black uppercase text-textMuted hover:text-textMain">Cancel</button>
+                      <button onClick={handleAddCustom} className="px-4 py-1.5 bg-red-500 hover:bg-red-600 text-white rounded-xl text-[9px] font-black uppercase tracking-widest">Install Protocol</button>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Missions List */}
+            <div className="space-y-4">
+              {missions.length === 0 ? (
+                <div className="text-center py-12 text-textMuted border border-dashed border-white/5 rounded-2xl">
+                  <Activity size={32} className="mx-auto mb-3 opacity-20" />
+                  <p className="text-xs font-bold uppercase tracking-widest">No protocols Active</p>
+                  <p className="text-[10px] opacity-60 mt-1">Click "Calibrate AI" or "Custom" to install bio-protocols!</p>
+                </div>
+              ) : (
+                missions.map((m) => (
+                  <div 
+                    key={m.id} 
+                    className={`p-4 rounded-2xl border transition-all flex items-center justify-between group relative overflow-hidden ${
+                      m.completed 
+                        ? 'bg-emerald-500/5 border-emerald-500/20' 
+                        : 'bg-white/[0.03] border-white/5 hover:border-red-500/30'
+                    }`}
+                  >
+                    <div className="flex items-center space-x-4">
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${
+                        m.completed 
+                          ? 'bg-emerald-500/10 text-emerald-400' 
+                          : 'bg-black/40 text-textMuted group-hover:text-red-500'
+                      }`}>
+                        {m.completed ? <Check size={18} /> : <Flame size={18} />}
+                      </div>
+                      <div>
+                        <h4 className={`text-sm font-bold truncate transition-all ${
+                          m.completed ? 'line-through text-textMuted font-medium' : 'text-textMain'
+                        }`}>{m.title}</h4>
+                        <div className="flex items-center space-x-2 text-[10px] uppercase font-bold text-textMuted">
+                          <span>{m.time}</span>
+                          <span>•</span>
+                          <span className={m.difficulty === 'Hard' ? 'text-red-500' : m.difficulty === 'Medium' ? 'text-amber-500' : 'text-emerald-500'}>{m.difficulty}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-4 relative z-10">
+                      <div className="text-right">
+                        <p className={`text-xs font-black transition-colors ${m.completed ? 'text-emerald-400' : 'text-textMain'}`}>
+                          +{m.xp} XP
+                        </p>
+                        <p className="text-[8px] text-textMuted font-bold uppercase tracking-widest">Health Pillar</p>
+                      </div>
+                      
+                      <div className="flex items-center gap-1.5">
+                        {!m.completed && (
+                          <button 
+                            onClick={(e) => handleComplete(m.id, e)}
+                            className="p-2 rounded-lg bg-white/5 hover:bg-emerald-500/20 hover:text-emerald-500 transition-all cursor-pointer"
+                            title="Complete protocol"
+                          >
+                            <CheckCircle2 size={16} />
+                          </button>
+                        )}
+                        <button 
+                          onClick={(e) => handleDelete(m.id, e)}
+                          className="p-2 rounded-lg bg-white/5 hover:bg-red-500/25 hover:text-red-400 text-textMuted transition-all opacity-0 group-hover:opacity-100 cursor-pointer"
+                          title="Remove protocol"
+                        >
+                          <Trash2 size={13} />
+                        </button>
                       </div>
                     </div>
                   </div>
-                  <div className="flex items-center space-x-4">
-                    <div className="text-right">
-                      <p className="text-xs font-black text-textMain">+{m.xp} XP</p>
-                      <p className="text-[8px] text-textMuted font-bold uppercase tracking-widest">Health Pillar</p>
-                    </div>
-                    <button className="p-2 rounded-lg bg-white/5 hover:bg-emerald-500/20 hover:text-emerald-500 transition-all">
-                      <CheckCircle2 size={18} />
-                    </button>
-                  </div>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </div>
         </div>

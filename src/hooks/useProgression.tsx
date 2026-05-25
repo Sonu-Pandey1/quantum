@@ -227,6 +227,7 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
   } | null>(null);
   const [loading, setLoading] = useState(true);
   const [baselineLevel, setBaselineLevel] = useState(0);
+  const [earnedBadgeIds, setEarnedBadgeIds] = useState<string[]>([]);
 
   // Refs — always hold latest values, addXp reads from here to avoid stale closures
   const pillarXpRef = useRef(EMPTY_PILLAR_XP);
@@ -237,6 +238,7 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
   const archetypeRef = useRef<Archetype>('None');
   const buffsRef = useRef<Buff[]>([]);
   const baselineLevelRef = useRef(0);
+  const earnedBadgeIdsRef = useRef<string[]>([]);
 
   useEffect(() => { pillarXpRef.current = pillarXp; }, [pillarXp]);
   useEffect(() => { totalXpRef.current = totalXp; }, [totalXp]);
@@ -245,6 +247,7 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
   useEffect(() => { archetypeRef.current = archetype; }, [archetype]);
   useEffect(() => { buffsRef.current = buffs; }, [buffs]);
   useEffect(() => { baselineLevelRef.current = baselineLevel; }, [baselineLevel]);
+  useEffect(() => { earnedBadgeIdsRef.current = earnedBadgeIds; }, [earnedBadgeIds]);
 
   // ── Load profile on mount ─────────────────────────────────────────────────
   useEffect(() => {

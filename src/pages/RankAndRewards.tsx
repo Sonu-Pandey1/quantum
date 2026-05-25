@@ -50,29 +50,15 @@ function levelFromXp(xp: number): number {
   return Math.floor(Math.pow(xp / 100, 1 / 1.5)) + 1;
 }
 
-// ─── Title milestones ──────────────────────────────────────────────────────────
-// Titles unlock at these GLOBAL levels (totalLevel)
-const TITLES = [
-  { level: 1,   name: 'Novice',           icon: Shield,   color: 'text-gray-400',   bg: 'bg-gray-400/10',   border: 'border-gray-400/20',   glow: '' },
-  { level: 5,   name: 'Apprentice',       icon: Star,     color: 'text-sky-400',    bg: 'bg-sky-400/10',    border: 'border-sky-400/20',    glow: 'shadow-sky-400/20' },
-  { level: 10,  name: 'Specialist',       icon: Target,   color: 'text-blue-400',   bg: 'bg-blue-400/10',   border: 'border-blue-400/20',   glow: 'shadow-blue-400/20' },
-  { level: 20,  name: 'Analyst',          icon: TrendingUp,color:'text-violet-400', bg: 'bg-violet-400/10', border: 'border-violet-400/20', glow: 'shadow-violet-400/20' },
-  { level: 30,  name: 'Commander',        icon: Trophy,   color: 'text-purple-400', bg: 'bg-purple-400/10', border: 'border-purple-400/20', glow: 'shadow-purple-400/30' },
-  { level: 45,  name: 'Elite Vanguard',   icon: Zap,      color: 'text-emerald-400',bg: 'bg-emerald-400/10',border: 'border-emerald-400/20',glow: 'shadow-emerald-400/30' },
-  { level: 60,  name: 'Grandmaster',      icon: Crown,    color: 'text-amber-400',  bg: 'bg-amber-400/10',  border: 'border-amber-400/20',  glow: 'shadow-amber-400/30' },
-  { level: 80,  name: 'Legend',           icon: Sparkles, color: 'text-orange-400', bg: 'bg-orange-400/10', border: 'border-orange-400/20', glow: 'shadow-orange-400/40' },
-  { level: 100, name: 'Mythic',           icon: Star,     color: 'text-pink-400',   bg: 'bg-pink-400/10',   border: 'border-pink-400/20',   glow: 'shadow-pink-400/40' },
-  { level: 150, name: 'Ascendant',        icon: Crown,    color: 'text-cyan-400',   bg: 'bg-cyan-400/10',   border: 'border-cyan-400/20',   glow: 'shadow-cyan-400/50' },
-  { level: 200, name: 'Quantum Sovereign',icon: Crown,    color: 'text-primary',    bg: 'bg-primary/10',    border: 'border-primary/30',    glow: 'shadow-primary/50' },
-];
-
 function getCurrentTitle(lvl: number) {
-  let result = TITLES[0];
-  for (const t of TITLES) { if (lvl >= t.level) result = t; }
+  let result = ASCENSION_RANKS[5]; // Novice as baseline
+  for (const r of ASCENSION_RANKS) {
+    if (lvl >= r.level) result = r;
+  }
   return result;
 }
 function getNextTitle(lvl: number) {
-  return TITLES.find(t => t.level > lvl) ?? null;
+  return ASCENSION_RANKS.find(r => r.level > lvl) ?? null;
 }
 
 // ─── Pillar config ─────────────────────────────────────────────────────────────
@@ -110,18 +96,21 @@ export function RankAndRewards() {
   // ── Derived values ────────────────────────────────────────────────────────────
   const globalLvl  = state.totalLevel;
   const globalXp   = state.totalXp;
+  const baselineOffset = state.baselineLevel || 0;
+  const rawLvl = Math.max(1, globalLvl - baselineOffset);
+
   const thisTitle  = getCurrentTitle(globalLvl);
   const nextTitle  = getNextTitle(globalLvl);
 
-  const currentLvlXp = xpForLevel(globalLvl);
-  const nextLvlXp    = xpForLevel(globalLvl + 1);
+  const currentLvlXp = xpForLevel(rawLvl);
+  const nextLvlXp    = xpForLevel(rawLvl + 1);
   const xpIntoLevel  = globalXp - currentLvlXp;
   const xpNeeded     = nextLvlXp - currentLvlXp;
   const lvlProgress  = Math.min(100, Math.max(0, (xpIntoLevel / xpNeeded) * 100));
 
-  const xpToNextTitle = nextTitle ? xpForLevel(nextTitle.level) - globalXp : 0;
+  const xpToNextTitle = nextTitle ? xpForLevel(Math.max(1, nextTitle.level - baselineOffset)) - globalXp : 0;
   const titleProgress = nextTitle
-    ? Math.min(100, Math.max(0, ((globalXp - xpForLevel(thisTitle.level)) / (xpForLevel(nextTitle.level) - xpForLevel(thisTitle.level))) * 100))
+    ? Math.min(100, Math.max(0, ((globalXp - xpForLevel(Math.max(1, thisTitle.level - baselineOffset))) / (xpForLevel(Math.max(1, nextTitle.level - baselineOffset)) - xpForLevel(Math.max(1, thisTitle.level - baselineOffset)))) * 100))
     : 100;
 
   const TitleIcon = thisTitle.icon;
@@ -226,7 +215,7 @@ export function RankAndRewards() {
                 <span className="text-[10px] font-black uppercase tracking-widest text-textMuted">{p.label}</span>
               </div>
               <div className="flex items-end justify-between">
-                <span className={`text-2xl font-black ${p.color}`}>Lv.{pLvl}</span>
+                <span className={`text-2xl font-black ${p.color}`}>Lv.{pLvl + baselineOffset}</span>
                 <span className="text-[10px] text-textMuted">{pXp.toLocaleString()} XP</span>
               </div>
               <div className="h-1.5 bg-surfaceHighlight rounded-full overflow-hidden">
@@ -238,7 +227,7 @@ export function RankAndRewards() {
                 />
               </div>
               <div className="text-[9px] text-textMuted">
-                {(pNxtXp - pXp).toLocaleString()} XP to Lv.{pLvl + 1}
+                {(pNxtXp - pXp).toLocaleString()} XP to Lv.{pLvl + baselineOffset + 1}
               </div>
             </div>
           );

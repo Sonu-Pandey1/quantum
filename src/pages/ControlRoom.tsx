@@ -540,34 +540,36 @@ export function ControlRoom() {
                         initial={{ opacity: 0, x: -10 }}
                         animate={{ opacity: 1, x: 0 }}
                         exit={{ opacity: 0, scale: 0.95 }}
-                        className="bg-surfaceHighlight/30 border border-border p-4 rounded-2xl flex items-center gap-4 relative group hover:border-white/10 transition-all duration-300"
+                        className="bg-surfaceHighlight/30 border border-border p-3.5 sm:p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 relative group hover:border-white/10 transition-all duration-300"
                       >
-                        {/* Pillar Icon Badge */}
-                        <div className={cn("p-3 rounded-2xl border shrink-0", config.bg, config.border, config.color)}>
-                          <config.icon size={20} />
-                        </div>
-
-                        {/* Task Info */}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <h4 className="text-sm font-bold text-textMain truncate leading-snug">{task.title}</h4>
-                            {task.isWeekend && (
-                              <span className="text-[8px] font-black uppercase text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded tracking-wider">
-                                2× Wknd
-                              </span>
-                            )}
+                        <div className="flex items-center gap-3 flex-1 min-w-0">
+                          {/* Pillar Icon Badge */}
+                          <div className={cn("p-2.5 sm:p-3 rounded-xl sm:rounded-2xl border shrink-0", config.bg, config.border, config.color)}>
+                            <config.icon size={18} className="sm:w-5 sm:h-5" />
                           </div>
-                          <div className="flex flex-wrap gap-x-2 gap-y-1 items-center text-[10px] text-textMuted uppercase font-bold tracking-wider">
-                            <span>{task.start} - {task.end}</span>
-                            <span className="opacity-30">•</span>
-                            <span>{durationStr}</span>
-                            <span className="opacity-30">•</span>
-                            <span className={config.color}>{config.label}</span>
+
+                          {/* Task Info */}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-0.5">
+                              <h4 className="text-xs sm:text-sm font-bold text-textMain truncate leading-snug">{task.title}</h4>
+                              {task.isWeekend && (
+                                <span className="text-[8px] font-black uppercase text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded tracking-wider shrink-0">
+                                  2× Wknd
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex flex-wrap gap-x-2 gap-y-0.5 items-center text-[9px] sm:text-[10px] text-textMuted uppercase font-bold tracking-wider">
+                              <span>{task.start} - {task.end}</span>
+                              <span className="opacity-30">•</span>
+                              <span>{durationStr}</span>
+                              <span className="opacity-30">•</span>
+                              <span className={config.color}>{config.label}</span>
+                            </div>
                           </div>
                         </div>
 
                         {/* Right side controls */}
-                        <div className="flex items-center gap-2 shrink-0">
+                        <div className="flex items-center justify-between sm:justify-end gap-2 shrink-0 pt-2.5 sm:pt-0 border-t border-white/5 sm:border-t-0">
                           {/* Priority XP shifting */}
                           <button
                             onClick={() => {
@@ -577,7 +579,7 @@ export function ControlRoom() {
                               handleTaskChange(task.id, 'task_target', nextPriority);
                             }}
                             className={cn(
-                              "text-[9px] font-black uppercase px-2.5 py-1 rounded-xl border transition-all hover:scale-105 active:scale-95",
+                              "text-[8px] sm:text-[9px] font-black uppercase px-2 py-1 sm:px-2.5 sm:py-1 rounded-lg sm:rounded-xl border transition-all hover:scale-105 active:scale-95",
                               task.task_target === 'High' ? 'text-red-400 border-red-500/20 bg-red-500/10' :
                               task.task_target === 'Medium' ? 'text-amber-400 border-amber-500/20 bg-amber-500/10' :
                               'text-blue-400 border-blue-500/20 bg-blue-500/10'
@@ -586,33 +588,33 @@ export function ControlRoom() {
                             {task.task_target === 'High' ? '100 XP' : task.task_target === 'Medium' ? '60 XP' : '40 XP'}
                           </button>
 
-                          {/* Inline Edit Pencil */}
-                          <button
-                            onClick={() => { audio.playClick(); setEditingTaskId(task.id); }}
-                            className="p-2 text-textMuted hover:text-primary hover:bg-primary/10 rounded-xl transition-all"
-                            title="Edit all fields"
-                          >
-                            <Pencil size={15} />
-                          </button>
+                          <div className="flex items-center gap-1">
+                            {/* Inline Edit Pencil */}
+                            <button
+                              onClick={() => { audio.playClick(); setEditingTaskId(task.id); }}
+                              className="p-1.5 sm:p-2 text-textMuted hover:text-primary hover:bg-primary/10 rounded-xl transition-all"
+                              title="Edit all fields"
+                            >
+                              <Pencil size={14} className="sm:w-[15px] sm:h-[15px]" />
+                            </button>
 
-                          {/* Delete Button */}
-                          <button 
-                            onClick={() => { audio.playClick(); removeTask(task.id); }}
-                            className="p-2 text-textMuted hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-all"
-                          >
-                            <Trash2 size={15} />
-                          </button>
+                            {/* Delete Button */}
+                            <button 
+                              onClick={() => { audio.playClick(); removeTask(task.id); }}
+                              className="p-1.5 sm:p-2 text-textMuted hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-all"
+                            >
+                              <Trash2 size={14} className="sm:w-[15px] sm:h-[15px]" />
+                            </button>
+                          </div>
                         </div>
-                      </motion.div>
-                    );
-                  } else {
+                      </mot                  } else {
                     return (
                       <motion.div 
                         key={task.id}
                         initial={{ opacity: 0, scale: 0.98 }}
                         animate={{ opacity: 1, scale: 1 }}
                         exit={{ opacity: 0 }}
-                        className="bg-surfaceHighlight border border-primary/30 p-5 rounded-2xl flex flex-col gap-4 relative"
+                        className="bg-surfaceHighlight border border-primary/30 p-4 sm:p-5 rounded-2xl flex flex-col gap-3 sm:gap-4 relative"
                       >
                         <div className="flex items-center justify-between border-b border-white/5 pb-2">
                           <span className="text-[10px] font-black text-primary uppercase tracking-widest">Editing Task Protocol</span>
@@ -656,7 +658,7 @@ export function ControlRoom() {
                           </div>
                         </div>
 
-                        <div className="grid grid-cols-3 gap-2.5 items-end">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 items-end">
                           <div>
                             <label className="text-[9px] text-textMuted font-bold uppercase tracking-wider block mb-1">Start Time</label>
                             <input 
@@ -689,14 +691,14 @@ export function ControlRoom() {
                           </div>
                         </div>
 
-                        <div className="flex gap-2 justify-end border-t border-white/5 pt-3">
+                        <div className="flex flex-col sm:flex-row gap-2 justify-end border-t border-white/5 pt-3">
                           <button
                             onClick={() => {
                               audio.playClick();
                               handleTaskChange(task.id, 'isWeekend', !(task.isWeekend));
                             }}
                             className={cn(
-                              "text-[9px] font-black uppercase px-2.5 py-1.5 rounded-lg border transition-all mr-auto",
+                              "w-full sm:w-auto text-[9px] font-black uppercase px-2.5 py-1.5 rounded-lg border transition-all sm:mr-auto text-center",
                               task.isWeekend
                                 ? 'bg-amber-500/20 border-amber-500/50 text-amber-400'
                                 : 'bg-surfaceHighlight border-border text-textMuted hover:border-white/20'
@@ -707,11 +709,12 @@ export function ControlRoom() {
                           
                           <button
                             onClick={() => { audio.playSuccess(); setEditingTaskId(null); }}
-                            className="flex items-center gap-1.5 px-4 py-1.5 bg-primary/20 border border-primary/50 text-primary text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-primary/30 transition-all"
+                            className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-4 py-1.5 bg-primary/20 border border-primary/50 text-primary text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-primary/30 transition-all animate-none"
                           >
                             <Check size={12} /> Apply Changes
                           </button>
                         </div>
+                      </motion.div>      </div>
                       </motion.div>
                     );
                   }

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Cpu, DatabaseBackup, Check, Target, LogOut, Settings, User, Eye, EyeOff, Briefcase, Activity, ShieldAlert, Zap, BrainCircuit, Menu, X } from 'lucide-react';
+import { Cpu, DatabaseBackup, Check, Target, LogOut, Settings, User, Eye, EyeOff, Briefcase, Activity, ShieldAlert, Zap, BrainCircuit, Menu, X, Sparkles } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { audio } from '../lib/audio';
@@ -287,6 +287,7 @@ export function Sidebar({ currentView, onViewChange, isPortfolioMode, onTogglePo
   const navItems = [
     { id: 'dashboard',        icon: Cpu,          label: 'Command'   },
     { id: 'strategic_control',icon: Target,        label: 'Strategy'  },
+    { id: 'ai_counsel',       icon: Sparkles,      label: 'AI Counsel' },
     { id: 'practice',         icon: BrainCircuit,  label: 'Practice'  },
     { id: 'vault',            icon: Briefcase,     label: 'Vault'     },
     { id: 'lab',              icon: Activity,      label: 'The Lab'   },

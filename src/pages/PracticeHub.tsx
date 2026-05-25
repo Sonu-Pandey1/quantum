@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   ChevronLeft, BrainCircuit, Search,
-  CheckCircle2, Star, Lock, Timer
+  CheckCircle2, Star, Lock, Timer,
+  Terminal, Play, Sparkles, Code, Cpu, RefreshCw
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { audio } from '../lib/audio';
@@ -11,6 +12,9 @@ import { QUESTIONS } from '../lib/questions';
 import type { Question } from '../lib/questions';
 import { formatDistanceToNow, parseISO, isAfter, addDays } from 'date-fns';
 import { ListSkeleton } from '../components/Skeleton';
+import { gradeAnswerWithAI, isApiKeyConfigured, generateAIQuestion } from '../lib/aiService';
+import type { AIGradeResult } from '../lib/aiService';
+import { cn } from '../lib/utils';
 
 const LOCK_DAYS = 7; // 1 week lock after solve
 
@@ -80,10 +84,16 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
   const selectedQuestionRef = useRef<Question | null>(null);
   const [userAnswer, setUserAnswer] = useState('');
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error', message: string, bonus?: number } | null>(null);
+  const [aiResult, setAiResult] = useState<AIGradeResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [startTime, setStartTime] = useState<number | null>(null);
   const [hardStreak, setHardStreak] = useState(0);
   const [submitting, setSubmitting] = useState(false);
+  const [dynamicQuestions, setDynamicQuestions] = useState<Question[]>([]);
+  const [generatingQuestion, setGeneratingQuestion] = useState(false);
+  const [isSandboxMode, setIsSandboxMode] = useState(false);
+  const [sandboxConsoleLogs, setSandboxConsoleLogs] = useState<string[]>([]);
+  const [sandboxExecutionSuccess, setSandboxExecutionSuccess] = useState<boolean | null>(null);
   const { addXp, state } = useProgression();
   const submissionsRef = useRef<Record<string, Submission>>({});
   const activeTabRef   = useRef<string>('All');
@@ -171,12 +181,107 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
     fetchSubmissions();
   }, [fetchSubmissions]);
 
+  const handleGenerateQuestion = async () => {
+    if (!isApiKeyConfigured()) {
+      import('react-hot-toast').then(({ default: toast }) => {
+        toast.error("Gemini API Key missing. Please configure key in Neural Settings.");
+      });
+      return;
+    }
+
+    setGeneratingQuestion(true);
+    audio.playClick();
+
+    try {
+      const newQuestion = await generateAIQuestion(
+        activeTab,
+        difficultyFilter,
+        state.level.Study || 1
+      );
+
+      // Append new question to dynamic question array
+      setDynamicQuestions(prev => [newQuestion, ...prev]);
+      
+      // Select the question automatically
+      setSelectedQuestion(newQuestion);
+      setUserAnswer(newQuestion.pseudoCode || '');
+      setFeedback(null);
+      setAiResult(null);
+      setStartTime(Date.now());
+      setIsSandboxMode(false);
+      setSandboxConsoleLogs([]);
+      setSandboxExecutionSuccess(null);
+
+      import('react-hot-toast').then(({ default: toast }) => {
+        toast.success(`Protocol Synthesized: ${newQuestion.title}!`);
+      });
+      audio.playSuccess();
+    } catch (e: any) {
+      console.error(e);
+      import('react-hot-toast').then(({ default: toast }) => {
+        toast.error(e.message || "Failed to synthesize dynamic protocol.");
+      });
+    } finally {
+      setGeneratingQuestion(false);
+    }
+  };
+
+  const runCodeSandbox = (code: string) => {
+    setSandboxConsoleLogs([]);
+    setSandboxExecutionSuccess(null);
+    audio.playClick();
+
+    const logs: string[] = [];
+    const customConsole = {
+      log: (...args: any[]) => {
+        logs.push(args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' '));
+      },
+      error: (...args: any[]) => {
+        logs.push(`[ERROR] ${args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ')}`);
+      },
+      warn: (...args: any[]) => {
+        logs.push(`[WARN] ${args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ')}`);
+      }
+    };
+
+    try {
+      // Setup a safe evaluation box
+      const sandboxFn = new Function('console', `
+        try {
+          ${code}
+        } catch(err) {
+          console.error(err.message || err);
+          throw err;
+        }
+      `);
+
+      sandboxFn(customConsole);
+      setSandboxExecutionSuccess(true);
+      setSandboxConsoleLogs(logs.length > 0 ? logs : ["Code executed successfully with 0 output logs."]);
+      import('react-hot-toast').then(({ default: toast }) => {
+        toast.success("Execution Completed Successfully.");
+      });
+      audio.playSuccess();
+    } catch (err: any) {
+      setSandboxExecutionSuccess(false);
+      const errorMsg = err.message || String(err);
+      if (!logs.some(l => l.includes(errorMsg))) {
+        logs.push(`[RUNTIME ERROR] ${errorMsg}`);
+      }
+      setSandboxConsoleLogs(logs);
+      import('react-hot-toast').then(({ default: toast }) => {
+        toast.error(`Execution Failed: ${errorMsg}`);
+      });
+    }
+  };
+
   const handleSolve = async () => {
     if (!selectedQuestion || submitting) return;
 
-    const validation = validateAnswer(selectedQuestion, userAnswer);
-    if (!validation.isValid) {
-      setFeedback({ type: 'error', message: validation.message });
+    // Enforce basic offline validation checks first
+    const offlineVal = validateAnswer(selectedQuestion, userAnswer);
+    if (!offlineVal.isValid) {
+      setFeedback({ type: 'error', message: offlineVal.message });
       audio.playClick();
       return;
     }
@@ -194,6 +299,43 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
     }
 
     setSubmitting(true);
+    setFeedback(null);
+    setAiResult(null);
+
+    let isAiGraded = false;
+    let aiGradeScore = 100;
+    let aiXpBonus = 0;
+
+    // Try AI grading if key configured
+    if (isApiKeyConfigured()) {
+      try {
+        setFeedback({ type: 'success', message: 'Initiating Holographic Code Assessment via Gemini...' });
+        const gradeResult = await gradeAnswerWithAI(selectedQuestion, userAnswer, isSandboxMode ? sandboxConsoleLogs : undefined);
+        setAiResult(gradeResult);
+        isAiGraded = true;
+        aiGradeScore = gradeResult.score;
+
+        if (!gradeResult.isValid) {
+          setFeedback({ 
+            type: 'error', 
+            message: `Holographic Analysis Rejected (Score: ${gradeResult.score}/100). Review suggestions below.` 
+          });
+          audio.playClick();
+          setSubmitting(false);
+          return;
+        }
+
+        // Calculate AI Performance XP Bonus
+        if (gradeResult.score >= 90) {
+          aiXpBonus = 20; // Excellence Bonus
+        } else if (gradeResult.score >= 75) {
+          aiXpBonus = 10; // Proficiency Bonus
+        }
+      } catch (err: any) {
+        console.warn("AI grading failed, falling back to local protocol validation:", err);
+        setFeedback({ type: 'success', message: 'Gemini Link offline. Falling back to local validator...' });
+      }
+    }
 
     audio.playSuccess();
     const isRepeat = !!sub;
@@ -210,12 +352,15 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
       }
     }
 
+    // Add AI Performance XP Bonus
+    xpGained += aiXpBonus;
+
     // Hard Streak Logic
     if (selectedQuestion.difficulty === 'Hard') {
       saveHardStreak(hardStreak + 1);
     }
 
-    // Sync to DB — explicit UPDATE/INSERT to avoid duplicate rows
+    // Sync to DB
     if (supabase) {
       const { data: { session } } = await supabase.auth.getSession();
       if (session) {
@@ -223,9 +368,8 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
           const uid = session.user.id;
           const qid = selectedQuestion.id;
           const newSolveCount = (sub?.solve_count || 0) + 1;
-          const totalXp = xpGained; // actual XP input passed to addXp (addXp multiplies further)
 
-          // Check if a row already exists for this user+question
+          // Check if row already exists
           const { data: existing } = await supabase
             .from('practice_submissions')
             .select('id')
@@ -237,12 +381,12 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
           if (existing?.id) {
             await supabase
               .from('practice_submissions')
-              .update({ last_solved_at: now.toISOString(), solve_count: newSolveCount, total_xp_earned: totalXp })
+              .update({ last_solved_at: now.toISOString(), solve_count: newSolveCount, total_xp_earned: xpGained })
               .eq('id', existing.id);
           } else {
             await supabase
               .from('practice_submissions')
-              .insert({ user_id: uid, question_id: qid, last_solved_at: now.toISOString(), solve_count: 1, total_xp_earned: totalXp });
+              .insert({ user_id: uid, question_id: qid, last_solved_at: now.toISOString(), solve_count: 1, total_xp_earned: xpGained });
           }
         } catch (e) {
           console.error('DB Sync failed:', e);
@@ -250,28 +394,33 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
       }
     }
 
-    // Breakdown for activity log
     const baseAmount = isRepeat ? selectedQuestion.xpRepeatSolve : selectedQuestion.xpFirstSolve;
     const durationMs = Date.now() - (startTime ?? Date.now());
     const durationSec = Math.floor(durationMs / 1000);
     const durationStr = durationSec < 60 ? `${durationSec}s` : `${Math.floor(durationSec / 60)}m ${durationSec % 60}s`;
 
-    // Award XP — addXp handles ALL multipliers and returns the actual finalAmount awarded
-    const awarded = await addXp(
-      'Study',
-      // Build a concise label; awarded XP recorded by addXp will be the ground truth
-      `${selectedQuestion.title}|Solved in ${durationStr} (+${baseAmount} Base${timeBonus > 0 ? ` +${timeBonus} Speed` : ''})`,
-      xpGained  // base + time bonus, addXp will scale further
-    );
+    // Award XP — addXp handles multipliers
+    const label = isAiGraded
+      ? `${selectedQuestion.title}|Solved (Grade: ${aiGradeScore}% + ${aiXpBonus > 0 ? `AI Bonus` : 'No Bonus'})`
+      : `${selectedQuestion.title}|Solved in ${durationStr} (+${baseAmount} Base${timeBonus > 0 ? ` +${timeBonus} Speed` : ''})`;
 
-    // Now we know the exact XP added — show it accurately in the toast
+    const awarded = await addXp('Study', label, xpGained);
+
+    // Set dynamic feedback
+    let successMsg = `Protocol Mastered! +${awarded} XP awarded.`;
+    if (isAiGraded) {
+      successMsg += ` Grade: ${aiGradeScore}/100.`;
+      if (aiXpBonus > 0) successMsg += ` Included +${aiXpBonus} AI Performance Bonus!`;
+    }
+    if (timeBonus > 0) successMsg += ` (includes +${timeBonus} speed bonus)`;
+
     setFeedback({
       type: 'success',
-      message: `Protocol Mastered! +${awarded} XP awarded.${timeBonus > 0 ? ` (includes +${timeBonus} speed bonus)` : ''}`,
+      message: successMsg,
       bonus: timeBonus > 0 ? timeBonus : undefined
     });
     
-    // Optimistically lock this question immediately — survives fetchSubmissions merge
+    // Lock standard 7 days
     const freshEntry: Submission = {
       question_id: selectedQuestion.id,
       last_solved_at: now.toISOString(),
@@ -282,11 +431,10 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
 
     await fetchSubmissions();
 
-    // Re-stamp after DB refresh to guarantee the lock is never lost
     setSubmissionsWithRef(prev => ({ ...prev, [solvedId]: freshEntry }));
     setSubmitting(false);
 
-    // Auto-navigate — use refs so we read fresh data after the 3s delay
+    // Auto-navigate after 5 seconds to let them read Gemini's feedback notes!
     setTimeout(() => {
       const latestSubs = submissionsRef.current;
       const latestTab  = activeTabRef.current;
@@ -334,7 +482,8 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
     return daily;
   };
 
-  const filtered = activeTab === 'Training' ? getDailyTraining() : QUESTIONS.filter(q => {
+  const allAvailableQuestions = [...dynamicQuestions, ...QUESTIONS];
+  const filtered = activeTab === 'Training' ? getDailyTraining() : allAvailableQuestions.filter(q => {
     if (activeTab !== 'All' && q.category !== activeTab) return false;
     if (difficultyFilter !== 'All' && q.difficulty !== difficultyFilter) return false;
     if (search && !q.title.toLowerCase().includes(search.toLowerCase())) return false;
@@ -387,7 +536,7 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
             )}
           </div>
 
-          <div className="relative group">
+          <div className="relative group mb-3">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-textMuted group-focus-within:text-primary transition-colors" size={16} />
             <input 
               type="text" 
@@ -397,6 +546,24 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
               className="w-full bg-surfaceHighlight/50 border border-border rounded-xl pl-10 pr-4 py-2 text-sm text-textMain focus:outline-none focus:border-primary transition-all"
             />
           </div>
+
+          <button
+            onClick={handleGenerateQuestion}
+            disabled={generatingQuestion}
+            className="w-full py-2.5 px-4 bg-primary/10 border border-primary/25 hover:border-primary/50 text-primary hover:bg-primary/20 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all duration-300 flex items-center justify-center space-x-2 cursor-pointer shadow-inner disabled:opacity-50"
+          >
+            {generatingQuestion ? (
+              <>
+                <RefreshCw size={12} className="animate-spin" />
+                <span>Calibrating AI Protocol...</span>
+              </>
+            ) : (
+              <>
+                <Sparkles size={12} className="animate-pulse" />
+                <span>Synthesize AI Protocol</span>
+              </>
+            )}
+          </button>
         </div>
 
         <div className="flex border-b border-border px-2 overflow-x-auto no-scrollbar shrink-0">
@@ -430,6 +597,7 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
                   setSelectedQuestion(q);
                   setUserAnswer('');
                   setFeedback(null);
+                  setAiResult(null);
                   setStartTime(Date.now());
                 }}
                 disabled={isHardLocked(q) || !!lockUntil}
@@ -498,7 +666,7 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
               exit={{ opacity: 0, x: 20 }}
               className="flex-1 p-4 md:p-12 overflow-y-auto h-full scrollbar-default pb-40 md:pb-12"
             >
-              <button onClick={() => setSelectedQuestion(null)} className="md:hidden flex items-center text-textMuted hover:text-primary mb-2 transition-colors uppercase tracking-[0.2em] font-black text-[10px]">
+              <button onClick={() => { setSelectedQuestion(null); setAiResult(null); }} className="md:hidden flex items-center text-textMuted hover:text-primary mb-2 transition-colors uppercase tracking-[0.2em] font-black text-[10px]">
                 <ChevronLeft size={16} className="mr-1" /> Back to Protocols
               </button>
 
@@ -546,13 +714,69 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
 
                 <div className="flex flex-col space-y-4 md:space-y-6">
                   <div className="glass-panel p-4 md:p-6 flex-1 flex flex-col min-h-[300px] border-primary/20 bg-primary/[0.01]">
-                    <h3 className="text-[10px] font-bold uppercase tracking-widest text-textMuted mb-2 md:mb-4">Input</h3>
+                    <div className="flex items-center justify-between mb-2 md:mb-4">
+                      <h3 className="text-[10px] font-bold uppercase tracking-widest text-textMuted flex items-center">
+                        {isSandboxMode ? <Terminal size={12} className="mr-1 text-primary animate-pulse" /> : <Code size={12} className="mr-1 text-primary" />}
+                        <span>{isSandboxMode ? "JS Sandbox Code Console" : "Input Solution"}</span>
+                      </h3>
+                      <button
+                        onClick={() => {
+                          audio.playClick();
+                          setIsSandboxMode(!isSandboxMode);
+                        }}
+                        className="py-1 px-3 bg-white/5 hover:bg-primary/10 border border-white/5 hover:border-primary/20 rounded-lg text-[9px] font-black uppercase tracking-wider text-textMuted hover:text-primary transition-all cursor-pointer flex items-center space-x-1"
+                      >
+                        <Cpu size={10} />
+                        <span>{isSandboxMode ? "Text Mode" : "JS Sandbox"}</span>
+                      </button>
+                    </div>
+
                     <textarea
                       value={userAnswer}
                       onChange={(e) => setUserAnswer(e.target.value)}
-                      placeholder={selectedQuestion.category === 'Pattern' ? 'Implement protocol...' : 'Type solution...'}
+                      placeholder={isSandboxMode ? "// Write valid JavaScript code here...\nconsole.log('Intercepting Synaptic Buffers...');" : (selectedQuestion.category === 'Pattern' ? 'Implement protocol...' : 'Type solution...')}
                       className="flex-1 w-full bg-black/20 border border-white/10 rounded-xl p-3 md:p-4 text-[13px] md:text-sm font-mono text-textMain focus:outline-none focus:border-primary resize-none scrollbar-thin transition-all min-h-[150px] md:min-h-[200px]"
                     />
+
+                    {isSandboxMode && (
+                      <div className="flex flex-col space-y-3 mt-3">
+                        <button
+                          onClick={() => runCodeSandbox(userAnswer)}
+                          className="py-2.5 px-4 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/25 hover:border-emerald-500/45 text-emerald-400 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all duration-300 flex items-center justify-center space-x-2 cursor-pointer shadow-sm active:scale-95"
+                        >
+                          <Play size={11} className="fill-current text-emerald-400" />
+                          <span>Run JS Code</span>
+                        </button>
+
+                        <div className="bg-black/50 border border-white/5 rounded-xl p-4 font-mono text-[11px] leading-relaxed relative min-h-[120px] max-h-[200px] overflow-y-auto scrollbar-thin shadow-inner">
+                          <div className="absolute top-2 right-2 text-[9px] font-black uppercase tracking-wider flex items-center space-x-2">
+                            {sandboxExecutionSuccess === true && <span className="text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.2 rounded text-[8px] animate-pulse">Success</span>}
+                            {sandboxExecutionSuccess === false && <span className="text-red-400 bg-red-500/10 border border-red-500/20 px-1.5 py-0.2 rounded text-[8px]">Error</span>}
+                            <div className="text-textMuted opacity-55 flex items-center">
+                              <Terminal size={10} className="mr-1 text-primary" />
+                              <span>Execution Log</span>
+                            </div>
+                          </div>
+                          <div className="space-y-1 mt-3">
+                            {sandboxConsoleLogs.length === 0 ? (
+                              <p className="text-textMuted italic">Console idle. Awaiting execution trigger...</p>
+                            ) : (
+                              sandboxConsoleLogs.map((log, idx) => (
+                                <p
+                                  key={idx}
+                                  className={cn(
+                                    log.startsWith('[ERROR]') || log.startsWith('[RUNTIME ERROR]') ? "text-red-400" :
+                                    log.startsWith('[WARN]') ? "text-amber-400" : "text-emerald-400/80"
+                                  )}
+                                >
+                                  &gt; {log}
+                                </p>
+                              ))
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
                     {feedback && (
                       <motion.div
@@ -563,6 +787,38 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
                         }`}
                       >
                         {feedback.message}
+                      </motion.div>
+                    )}
+
+                    {aiResult && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 15 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className={cn(
+                          "mt-4 p-4 rounded-xl border flex flex-col space-y-3 relative overflow-hidden",
+                          aiResult.isValid
+                            ? "bg-emerald-950/20 border-emerald-500/30 text-emerald-300 shadow-[0_0_20px_rgba(16,185,129,0.08)]"
+                            : "bg-red-950/20 border-red-500/30 text-red-300 shadow-[0_0_20px_rgba(239,68,68,0.08)]"
+                        )}
+                      >
+                        {/* Grade Indicator Badge */}
+                        <div className={cn(
+                          "absolute top-0 right-0 px-3 py-1 rounded-bl-xl text-[9px] font-black uppercase tracking-wider",
+                          aiResult.isValid ? "bg-emerald-500/20 text-emerald-400" : "bg-red-500/20 text-red-400"
+                        )}>
+                          AI Grade Score: {aiResult.score}/100
+                        </div>
+
+                        <div className="flex items-center space-x-2">
+                          <BrainCircuit size={15} className={aiResult.isValid ? "text-emerald-400 animate-pulse animate-pulse-slow" : "text-red-400"} />
+                          <span className="text-[9px] font-black uppercase tracking-widest text-textMain/80">
+                            Neural Assessment Code Review
+                          </span>
+                        </div>
+
+                        <div className="text-xs font-medium leading-relaxed max-h-[160px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-white/5 scrollbar-track-transparent whitespace-pre-line text-textMain/90 border-t border-white/5 pt-2">
+                          {aiResult.feedback}
+                        </div>
                       </motion.div>
                     )}
 
