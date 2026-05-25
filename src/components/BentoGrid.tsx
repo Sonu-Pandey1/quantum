@@ -2,6 +2,7 @@ import { motion } from 'framer-motion';
 import type { Variants } from 'framer-motion';
 import { EngineCard } from './EngineCard';
 import { PathCard } from './PathCard';
+import { TodoChecklistCard } from './TodoChecklistCard';
 import { VitalityCard } from './VitalityCard';
 import { LedgerCard } from './LedgerCard';
 import { GuardCard } from './GuardCard';
@@ -49,7 +50,7 @@ export function BentoGrid({ onNavigateToLogic, onNavigate, isPortfolioMode }: Be
             </span>
             {state.archetype !== 'None' && (
               <>
-                <span className="w-1 h-1 bg-white/20 rounded-full" />
+                <span className="w-1.5 h-1.5 bg-white/20 rounded-full" />
                 <span className="text-primary font-bold uppercase tracking-widest text-[9px] md:text-[10px]">{state.archetype}</span>
               </>
             )}
@@ -67,9 +68,9 @@ export function BentoGrid({ onNavigateToLogic, onNavigate, isPortfolioMode }: Be
             <EngineCard />
           </div>
 
-          {/* The Path - SAP Mastery */}
-          <div className="md:col-span-2 lg:col-span-5 lg:row-span-2 glass-panel glass-panel-hover min-h-[400px] lg:min-h-0">
-            <PathCard onNavigateToLogic={onNavigateToLogic} />
+          {/* Daily Protocol Checklist - Replaces PathCard */}
+          <div className="md:col-span-2 lg:col-span-5 lg:row-span-2 glass-panel glass-panel-hover overflow-hidden min-h-[400px] lg:min-h-0">
+            <TodoChecklistCard onNavigate={onNavigate} />
           </div>
 
           {isPortfolioMode ? (
@@ -99,6 +100,11 @@ export function BentoGrid({ onNavigateToLogic, onNavigate, isPortfolioMode }: Be
               </div>
             </>
           )}
+
+          {/* Expanded Career Skill Path Timeline - Full Width Widescreen Panoramic Module */}
+          <div className="md:col-span-2 lg:col-span-12 lg:row-span-2 glass-panel glass-panel-hover min-h-[380px] lg:min-h-0 overflow-hidden">
+            <PathCard onNavigateToLogic={onNavigateToLogic} />
+          </div>
 
         </motion.div>
 

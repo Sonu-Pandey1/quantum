@@ -64,7 +64,7 @@ export function EngineCard() {
   const [isSkippedToday, setIsSkippedToday] = useState(false);
 
   // Executed tasks for today (store IDs)
-  const [executedTaskIds, setExecutedTaskIds] = useState<number[]>([]);
+  const [executedTaskIds, setExecutedTaskIds] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [sundayRest] = useState(true);
   const [userId, setUserId] = useState<string>('default');
@@ -120,26 +120,27 @@ export function EngineCard() {
         }
         
         try {
-          const { data } = await supabase
+          console.log("[EngineCard] Loading executions for user:", uid, "date:", todayStr);
+          const { data, error } = await supabase
             .from('executions')
             .select('*')
+            .eq('user_id', uid)
             .eq('date_string', todayStr);
 
+          if (error) {
+            console.error("[EngineCard] Supabase executions fetch failed:", error);
+          }
+
           if (data && data.length > 0) {
-            // Filter by user_id if available, otherwise scoped local storage
-            const userExecs = data.filter(d => (d as any).user_id === uid);
-            if (userExecs.length > 0) {
-              setExecutedTaskIds(userExecs.map(d => d.task_id));
-            } else {
-              const execStr = localStorage.getItem(`quantum_exec_${uid}_${todayStr}`);
-              if (execStr) setExecutedTaskIds(JSON.parse(execStr));
-            }
+            console.log("[EngineCard] Loaded executions from cloud:", data);
+            setExecutedTaskIds(data.map(d => d.task_id));
           } else {
             const execStr = localStorage.getItem(`quantum_exec_${uid}_${todayStr}`);
+            console.log("[EngineCard] Loaded executions fallback from local storage:", execStr);
             if (execStr) setExecutedTaskIds(JSON.parse(execStr));
           }
         } catch (e) {
-          console.error("Supabase sync failed, falling back to local.");
+          console.error("Supabase sync failed, falling back to local:", e);
           const execStr = localStorage.getItem(`quantum_exec_${uid}_${todayStr}`);
           if (execStr) setExecutedTaskIds(JSON.parse(execStr));
         }
@@ -205,7 +206,7 @@ export function EngineCard() {
         setTimeRemaining(`${minsLeft} minutes remaining in current protocol`);
 
         // Check if executed early
-        if (executedTaskIds.includes(current.id)) {
+        if (executedTaskIds.some(id => String(id) === String(current.id))) {
           setSystemState('optimal');
         } else {
           // If we are more than 50% through and not executed, maybe we are just 'idle' or running.
@@ -214,7 +215,7 @@ export function EngineCard() {
              const tE = (t as any).end || (t as any).timeEnd;
              return tE ? parseTime(tE) < now : false;
           });
-          const missedPrevious = previousTasks.some(t => !executedTaskIds.includes(t.id));
+          const missedPrevious = previousTasks.some(t => !executedTaskIds.some(id => String(id) === String(t.id)));
           setSystemState(missedPrevious ? 'behind' : 'optimal');
         }
       } else {
@@ -226,7 +227,7 @@ export function EngineCard() {
              const tE = (t as any).end || (t as any).timeEnd;
              return tE ? parseTime(tE) < now : false;
         });
-        const missedPrevious = previousTasks.some(t => !executedTaskIds.includes(t.id));
+        const missedPrevious = previousTasks.some(t => !executedTaskIds.some(id => String(id) === String(t.id)));
         setSystemState(missedPrevious ? 'behind' : 'idle');
       }
 
@@ -259,26 +260,48 @@ export function EngineCard() {
     else if (tTarget === 'Low') xpAmount = 40;
     else xpAmount = 30;
 
+    const isWknd = new Date().getDay() === 0 || new Date().getDay() === 6;
+    if (isWknd) {
+      xpAmount *= 2;
+    }
+
     addXp((activeTask as any).pillar || 'Mind', `Routine Task: ${activeTask.title}`, xpAmount);
 
     const todayStr = getTodayString();
+    
+    // Retrieve correct active user ID directly to avoid stale state bugs
+    let activeUid = 'default';
+    if (supabase) {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) activeUid = session.user.id;
+    }
+
     const updated = [...executedTaskIds, activeTask.id];
+    console.log("[EngineCard] Saving executed task ID:", activeTask.id, "to updated list:", updated);
     setExecutedTaskIds(updated);
 
-    // Local fallback scoped
-    localStorage.setItem(`quantum_exec_${userId}_${todayStr}`, JSON.stringify(updated));
+    // Scoped storage
+    const storageKey = `quantum_exec_${activeUid}_${todayStr}`;
+    console.log("[EngineCard] Writing to local storage under key:", storageKey, "value:", updated);
+    localStorage.setItem(storageKey, JSON.stringify(updated));
 
     // Supabase Sync
-    if (supabase) {
-      try {
-        const payload: any = {
-          task_id: activeTask.id,
-          date_string: todayStr
-        };
-        if (userId !== 'default') payload.user_id = userId;
-        await supabase.from('executions').insert([payload]);
-      } catch (e) {
-        console.error("Failed to sync execution to cloud.");
+    if (supabase && activeUid !== 'default') {
+      const payload: any = {
+        task_id: String(activeTask.id),
+        date_string: todayStr,
+        user_id: activeUid
+      };
+      console.log("[EngineCard] Syncing execution to Supabase with payload:", payload);
+      
+      const { error } = await supabase.from('executions').insert([payload]);
+      if (error) {
+        console.error("[EngineCard] Supabase sync failed:", error);
+        import('react-hot-toast').then(({ default: toast }) => {
+          toast.error(`Cloud Sync Failed: ${error.message}`);
+        });
+      } else {
+        console.log("[EngineCard] Supabase sync succeeded.");
       }
     }
 
@@ -357,7 +380,7 @@ export function EngineCard() {
     );
   }
 
-  const isCompleted = activeTask ? executedTaskIds.includes(activeTask.id) : false;
+  const isCompleted = activeTask ? executedTaskIds.some(id => String(id) === String(activeTask.id)) : false;
 
   if (loading) {
     return (

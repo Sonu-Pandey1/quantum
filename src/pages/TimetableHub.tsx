@@ -64,11 +64,8 @@ export function TimetableHub() {
   const [claiming, setClaiming] = useState(false);
 
   // Add form state
-  const [newName, setNewName]           = useState('');
-  const [newCategory, setNewCategory]   = useState<TaskCategory>('study');
-  const [newDuration, setNewDuration]   = useState(30);
-  const [newStartTime, setNewStartTime] = useState('09:00');
-  const [newTarget, setNewTarget]       = useState<'High' | 'Medium' | 'Low'>('Medium');
+  const [newName, setNewName]     = useState('');
+  const [newPillar, setNewPillar] = useState<'Study' | 'Health' | 'Finance' | 'Mind'>('Study');
 
   const dayTasks = tasks.filter(t => t.day_of_week === activeDay);
   const isToday  = activeDay === (new Date().getDay() as DayOfWeek);
@@ -77,16 +74,26 @@ export function TimetableHub() {
 
   const handleAdd = async () => {
     if (!newName.trim()) return;
-    const cat = CATEGORIES.find(c => c.id === newCategory)!;
+
+    // Auto-derive Category based on selected Pillar
+    const pillarToCategory: Record<'Study' | 'Health' | 'Finance' | 'Mind', TaskCategory> = {
+      'Study': 'study',
+      'Health': 'gym',
+      'Finance': 'work',
+      'Mind': 'mind'
+    };
+
+    const derivedCategory = pillarToCategory[newPillar];
+
     await addTask({
       name: newName.trim(),
-      category: newCategory,
-      pillar: cat.pillar as any,
-      duration_minutes: newDuration,
+      category: derivedCategory,
+      pillar: newPillar,
+      duration_minutes: 45, // default duration
       day_of_week: activeDay,
       is_weekend: isActiveWeekend,
-      task_target: newTarget,
-      start_time: newStartTime,
+      task_target: 'Medium', // default priority (60 XP)
+      start_time: '09:00', // default start time
       order_index: dayTasks.length,
     });
     setNewName(''); setShowAddForm(false);
@@ -215,7 +222,6 @@ export function TimetableHub() {
                 </button>
               </div>
             </div>
-
             {/* Add form */}
             <AnimatePresence>
               {showAddForm && (
@@ -225,82 +231,95 @@ export function TimetableHub() {
                   exit={{ opacity: 0, height: 0 }}
                   className="overflow-hidden"
                 >
-                  <div className="p-4 bg-surface rounded-2xl border border-primary/20 space-y-3">
-                    <input
-                      type="text"
-                      value={newName}
-                      onChange={e => setNewName(e.target.value)}
-                      onKeyDown={e => e.key === 'Enter' && handleAdd()}
-                      placeholder="Task name (e.g. Morning run, Read 30 mins)..."
-                      className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-2.5 text-sm text-textMain focus:border-primary outline-none placeholder:text-white/20"
-                    />
-                    <div className="p-4 bg-surfaceHighlight/50 border border-white/5 rounded-2xl space-y-4">
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-black text-textMuted uppercase tracking-widest block opacity-50">Core Category</label>
-                        <div className="flex flex-wrap gap-2">
-                          {CATEGORIES.map(c => (
-                            <button
-                              key={c.id}
-                              type="button"
-                              onClick={() => setNewCategory(c.id)}
-                              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[10px] font-black uppercase tracking-widest transition-all ${
-                                newCategory === c.id
-                                  ? 'bg-primary/20 border-primary text-primary shadow-[0_0_15px_rgba(59,130,246,0.1)]'
-                                  : 'bg-surface border-white/10 text-textMuted hover:border-white/20'
-                              }`}
-                            >
-                              <c.icon size={10} /> {c.label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
+                  <div className="p-4 bg-surface rounded-2xl border border-primary/20 space-y-4">
+                    <div>
+                      <label className="text-[10px] font-black text-textMuted uppercase tracking-widest block mb-2 opacity-50">Task Name (What you do)</label>
+                      <input
+                        type="text"
+                        value={newName}
+                        onChange={e => {
+                          const val = e.target.value;
+                          setNewName(val);
+                          
+                          // Real-time AI keyword heuristic
+                          const lower = val.toLowerCase();
+                          if (/gym|run|workout|cardio|sleep|eat|movement|stretch|swim|lift/i.test(lower)) {
+                            setNewPillar('Health');
+                          } else if (/study|code|read|learn|abap|react|practice|write|course|lecture/i.test(lower)) {
+                            setNewPillar('Study');
+                          } else if (/work|finance|ledger|stock|money|invest|buy|sell|budget|bill/i.test(lower)) {
+                            setNewPillar('Finance');
+                          } else if (/meditate|mind|mindful|yoga|breathe|relax|reflect|journal/i.test(lower)) {
+                            setNewPillar('Mind');
+                          }
+                        }}
+                        onKeyDown={e => e.key === 'Enter' && handleAdd()}
+                        placeholder="Task name (e.g. Gym workout, Studying react, Focus block)..."
+                        className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-2.5 text-sm text-textMain focus:border-primary outline-none placeholder:text-white/20"
+                      />
+                    </div>
 
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-black text-textMuted uppercase tracking-widest block opacity-50">Strategic Priority</label>
-                        <div className="grid grid-cols-3 gap-2">
-                          {[
-                            { id: 'High', label: 'MOST IMPORTANT', sub: '100 XP', color: 'text-red-400', bg: 'bg-red-500/10', border: 'border-red-500/20' },
-                            { id: 'Medium', label: 'IMPORTANT', sub: '60 XP', color: 'text-amber-400', bg: 'bg-amber-500/10', border: 'border-amber-500/20' },
-                            { id: 'Low', label: 'OTHER', sub: '40 XP', color: 'text-blue-400', bg: 'bg-blue-500/10', border: 'border-blue-500/20' },
-                          ].map(t => (
-                            <button
-                              key={t.id}
-                              type="button"
-                              onClick={() => setNewTarget(t.id as any)}
-                              className={`flex flex-col items-center justify-center p-3 rounded-2xl border transition-all ${
-                                newTarget === t.id
-                                  ? `${t.bg} ${t.border} ${t.color} ring-1 ring-white/10 scale-[1.02] shadow-lg`
-                                  : 'bg-surface border-white/5 text-textMuted hover:border-white/10'
-                              }`}
-                            >
-                              <span className="text-[9px] font-black tracking-widest leading-none mb-1">{t.label}</span>
-                              <span className="text-[11px] font-black uppercase">{t.sub}</span>
-                            </button>
-                          ))}
-                        </div>
+                    {newName.trim() && (
+                      <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-primary/5 border border-primary/10 w-fit text-[10px] text-primary font-black uppercase tracking-wider animate-pulse">
+                        <span>🤖 Auto-Predicted Pillar:</span>
+                        <span className="text-white bg-primary/20 px-2 py-0.5 rounded">{newPillar}</span>
+                      </div>
+                    )}
+
+                    {/* Quick Presets */}
+                    <div className="space-y-1.5">
+                      <span className="text-[9px] font-black text-textMuted uppercase tracking-widest block opacity-40">Quick Presets</span>
+                      <div className="flex flex-wrap gap-2">
+                        {[
+                          { title: '💪 Gym Workout', pillar: 'Health' },
+                          { title: '📚 Code Practice', pillar: 'Study' },
+                          { title: '💼 Ledger Audit', pillar: 'Finance' },
+                          { title: '🧘 Mindful Meditation', pillar: 'Mind' },
+                        ].map(preset => (
+                          <button
+                            key={preset.title}
+                            type="button"
+                            onClick={() => {
+                              setNewName(preset.title.substring(3)); // Strip emoji
+                              setNewPillar(preset.pillar as any);
+                            }}
+                            className="px-3 py-1.5 rounded-xl bg-surfaceHighlight border border-white/5 text-[10px] font-bold text-textMuted hover:text-textMain hover:border-primary/30 transition-all cursor-pointer"
+                          >
+                            {preset.title}
+                          </button>
+                        ))}
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-3">
-                      <label className="text-[10px] font-bold text-textMuted uppercase tracking-widest shrink-0">Start Time</label>
-                      <input
-                        type="time"
-                        value={newStartTime}
-                        onChange={e => setNewStartTime(e.target.value)}
-                        className="bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-1.5 text-xs text-textMain outline-none focus:border-primary"
-                      />
-                      <label className="text-[10px] font-bold text-textMuted uppercase tracking-widest shrink-0 ml-4">Duration</label>
-                      <input
-                        type="range" min="5" max="180" step="5"
-                        value={newDuration}
-                        onChange={e => setNewDuration(Number(e.target.value))}
-                        className="flex-1 accent-primary"
-                      />
-                      <span className="text-xs font-bold text-textMain w-14 text-right">{newDuration} min</span>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-textMuted uppercase tracking-widest block opacity-50">Related Pillar</label>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        {[
+                          { id: 'Study',   label: 'Study',   icon: BookOpen,   color: 'text-blue-400',    bg: 'bg-blue-500/10',    border: 'border-blue-500/20' },
+                          { id: 'Health',  label: 'Health',  icon: Dumbbell,  color: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/20' },
+                          { id: 'Finance', label: 'Finance', icon: Briefcase,  color: 'text-amber-400',   bg: 'bg-amber-500/10',   border: 'border-amber-500/20' },
+                          { id: 'Mind',    label: 'Mind',    icon: Brain,      color: 'text-purple-400',  bg: 'bg-purple-500/10',  border: 'border-purple-500/20' },
+                        ].map(p => (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onClick={() => setNewPillar(p.id as any)}
+                            className={`flex flex-col items-center justify-center p-3.5 rounded-2xl border transition-all ${
+                              newPillar === p.id
+                                ? `${p.bg} ${p.border} ${p.color} ring-1 ring-white/10 scale-[1.02] shadow-lg`
+                                : 'bg-surface border-white/5 text-textMuted hover:border-white/10'
+                            }`}
+                          >
+                            <p.icon size={18} className="mb-1.5" />
+                            <span className="text-[10px] font-black tracking-widest uppercase leading-none">{p.label}</span>
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                    <div className="flex gap-2 justify-end">
+
+                    <div className="flex gap-2 justify-end pt-2">
                       <button onClick={() => setShowAddForm(false)} className="px-4 py-2 text-[10px] font-black uppercase text-textMuted hover:text-textMain transition-colors">Cancel</button>
-                      <button onClick={handleAdd} className="px-6 py-2 bg-primary text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:scale-105 transition-all">Add</button>
+                      <button onClick={handleAdd} className="px-6 py-2 bg-primary text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:scale-105 transition-all">Add Task</button>
                     </div>
                   </div>
                 </motion.div>

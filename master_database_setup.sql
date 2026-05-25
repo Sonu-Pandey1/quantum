@@ -1,10 +1,10 @@
 -- ╔══════════════════════════════════════════════════════════════════════════╗
--- ║         QUANTUM GROWTH OS — MASTER DATABASE INITIALIZATION              ║
+-- ║         QUANTUM GROWTH OS — MASTER DATABASE INITIALIZATION               ║
 -- ║                                                                          ║
--- ║  VERSION: 3.0 (Comprehensive Identity, Persistence & Modules)           ║
+-- ║  VERSION: 3.1 (Comprehensive Identity, Persistence & Modules - Unified)  ║
 -- ║                                                                          ║
--- ║  ✅ SAFE TO RE-RUN: All statements use IF NOT EXISTS / OR REPLACE       ║
--- ║  ✅ UNIFIED: Combines original schema, identity fixes, and new modules  ║
+-- ║  ✅ SAFE TO RE-RUN: All statements use IF NOT EXISTS / OR REPLACE        ║
+-- ║  ✅ UNIFIED: Combines original schema, identity fixes, and all modules   ║
 -- ╚══════════════════════════════════════════════════════════════════════════╝
 
 -- ===========================================================================
@@ -133,11 +133,11 @@ CREATE POLICY "Users can manage own login logs" ON public.login_logs FOR ALL USI
 -- PART 4: CORE SYSTEMS (Engine, Vault, Practice)
 -- ===========================================================================
 
--- Engine Module: Task completions
+-- Engine Module: Task completions (Optimized task_id type directly to TEXT)
 CREATE TABLE IF NOT EXISTS public.executions (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id     UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
-  task_id     INTEGER NOT NULL,
+  task_id     TEXT NOT NULL,
   date_string TEXT    NOT NULL,
   executed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
 );
@@ -259,5 +259,160 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 
 -- ===========================================================================
--- ✅ UNIFIED MASTER SETUP COMPLETE
+-- PART 6: SUPER ADMIN & REWARDS SYSTEM
 -- ===========================================================================
+
+-- 1. App Config Table (For Super Admin Global Settings)
+CREATE TABLE IF NOT EXISTS public.app_config (
+  key TEXT PRIMARY KEY,
+  value JSONB NOT NULL,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
+);
+
+-- RLS: Only admins can read/write to app_config
+ALTER TABLE public.app_config ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Admins can read config" ON public.app_config;
+CREATE POLICY "Admins can read config" ON public.app_config 
+  FOR SELECT USING (
+    (SELECT role FROM public.profiles WHERE id = auth.uid()) = 'admin'
+  );
+
+DROP POLICY IF EXISTS "Admins can update config" ON public.app_config;
+CREATE POLICY "Admins can update config" ON public.app_config 
+  FOR ALL USING (
+    (SELECT role FROM public.profiles WHERE id = auth.uid()) = 'admin'
+  );
+
+-- Insert default global config
+INSERT INTO public.app_config (key, value) 
+VALUES ('global_settings', '{"xpMultiplier": 1.0, "isGlobalEvent": false}'::jsonb)
+ON CONFLICT (key) DO NOTHING;
+
+-- 2. Rewards System
+CREATE TABLE IF NOT EXISTS public.rewards (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title TEXT NOT NULL,
+  description TEXT NOT NULL,
+  required_level INTEGER NOT NULL,
+  pillar TEXT NOT NULL,
+  icon TEXT NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
+);
+
+-- Insert initial badges
+INSERT INTO public.rewards (title, description, required_level, pillar, icon) VALUES
+('Early Riser', 'Complete a task before 6AM', 5, 'Health', 'Sun'),
+('Code Architect', 'Reach level 10 in Study', 10, 'Study', 'Code'),
+('Wealth Builder', 'Reach level 5 in Finance', 5, 'Finance', 'DollarSign')
+ON CONFLICT DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS public.user_rewards (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
+  reward_id UUID REFERENCES public.rewards(id) ON DELETE CASCADE,
+  unlocked_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
+  UNIQUE(user_id, reward_id)
+);
+
+-- Rewards RLS
+ALTER TABLE public.rewards ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public read rewards" ON public.rewards;
+CREATE POLICY "Public read rewards" ON public.rewards FOR SELECT USING (true);
+
+ALTER TABLE public.user_rewards ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Users can read own rewards" ON public.user_rewards;
+CREATE POLICY "Users can read own rewards" ON public.user_rewards FOR SELECT USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Users can insert own rewards" ON public.user_rewards;
+CREATE POLICY "Users can insert own rewards" ON public.user_rewards FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+-- Make sure profiles RLS allows admins to manage them
+DROP POLICY IF EXISTS "Admins can update all profiles" ON public.profiles;
+CREATE POLICY "Admins can update all profiles" ON public.profiles 
+  FOR UPDATE USING (
+    (SELECT role FROM public.profiles WHERE id = auth.uid()) = 'admin'
+  );
+
+
+-- ===========================================================================
+-- PART 7: TIMETABLE SYSTEM
+-- ===========================================================================
+
+-- 1. Tasks per day (user-defined)
+CREATE TABLE IF NOT EXISTS timetable_tasks (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id          UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  name             TEXT NOT NULL,
+  pillar           TEXT NOT NULL CHECK (pillar IN ('Study','Health','Finance','Mind')),
+  category         TEXT NOT NULL CHECK (category IN ('gym','study','work','mind','other')) DEFAULT 'other',
+  duration_minutes INTEGER NOT NULL DEFAULT 30,
+  day_of_week      SMALLINT NOT NULL CHECK (day_of_week BETWEEN 0 AND 6),
+  is_weekend       BOOLEAN NOT NULL DEFAULT FALSE,
+  order_index      INTEGER NOT NULL DEFAULT 0,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE timetable_tasks ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "User manages own tasks" ON timetable_tasks;
+CREATE POLICY "User manages own tasks" ON timetable_tasks
+  FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+
+-- 2. Daily completion log (one row per task per day)
+CREATE TABLE IF NOT EXISTS daily_completions (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id      UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  date         DATE NOT NULL,
+  task_id      UUID NOT NULL REFERENCES timetable_tasks(id) ON DELETE CASCADE,
+  completed    BOOLEAN NOT NULL DEFAULT FALSE,
+  completed_at TIMESTAMPTZ,
+  UNIQUE (user_id, date, task_id)
+);
+
+ALTER TABLE daily_completions ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "User manages own completions" ON daily_completions;
+CREATE POLICY "User manages own completions" ON daily_completions
+  FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+
+-- 3. Bonus XP claim log (prevents double-claiming same day)
+CREATE TABLE IF NOT EXISTS daily_bonus_log (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id          UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  date             DATE NOT NULL,
+  tier             TEXT NOT NULL,
+  bonus_multiplier NUMERIC NOT NULL DEFAULT 0,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (user_id, date)
+);
+
+ALTER TABLE daily_bonus_log ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "User manages own bonus log" ON daily_bonus_log;
+CREATE POLICY "User manages own bonus log" ON daily_bonus_log
+  FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+
+-- 4. Discipline badges (cumulative counts)
+CREATE TABLE IF NOT EXISTS timetable_badges (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id    UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  badge_type TEXT NOT NULL,
+  count      INTEGER NOT NULL DEFAULT 0,
+  tier       TEXT NOT NULL DEFAULT 'bronze' CHECK (tier IN ('bronze','silver','gold','platinum')),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (user_id, badge_type)
+);
+
+ALTER TABLE timetable_badges ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "User manages own badges" ON timetable_badges;
+CREATE POLICY "User manages own badges" ON timetable_badges
+  FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+
+-- Performance indexes
+CREATE INDEX IF NOT EXISTS idx_timetable_tasks_user_day ON timetable_tasks(user_id, day_of_week);
+CREATE INDEX IF NOT EXISTS idx_daily_completions_user_date ON daily_completions(user_id, date);
+CREATE INDEX IF NOT EXISTS idx_daily_bonus_log_user_date ON daily_bonus_log(user_id, date);
+CREATE INDEX IF NOT EXISTS idx_timetable_badges_user ON timetable_badges(user_id);
+
+
+-- ===========================================================================
+-- PART 8: SCHEMALESS OR CONDITIONAL UPGRADES
+-- ===========================================================================
+ALTER TABLE public.executions ALTER COLUMN task_id TYPE TEXT;

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Save, Settings, Clock, Activity, Target, Plus, Trash2 } from 'lucide-react';
+import { Save, Settings, Clock, Activity, Target, Plus, Trash2, Dumbbell, BookOpen, Briefcase, Brain, Pencil, Check, X } from 'lucide-react';
 import { audio } from '../lib/audio';
 import { supabase } from '../lib/supabaseClient';
 import { cn } from '../lib/utils';
@@ -16,6 +16,7 @@ interface TimetableTask {
   category?: string;   // 'gym' | 'study' | 'work' | 'mind' | 'other'
   isWeekend?: boolean; // marks as optional weekend bonus task
   task_target?: 'High' | 'Medium' | 'Low';
+  pillar?: string;
 }
 
 interface HabitTask {
@@ -31,6 +32,17 @@ interface RoadmapPhase {
   desc: string;
   status: string;
   type: 'partial' | 'current' | 'locked';
+}
+
+interface TodoItem {
+  id: number;
+  title: string;
+  dayOfWeek: number; // 0=Sun … 6=Sat
+  time?: string;      // optional, e.g. "18:30"
+  pillar: 'Study' | 'Health' | 'Finance' | 'Mind';
+  isOneOff?: boolean;
+  completed?: boolean;
+  completedDates?: string[];
 }
 
 const defaultTasks: TimetableTask[] = [
@@ -62,6 +74,15 @@ export function ControlRoom() {
   const [savedMessage, setSavedMessage] = useState('');
   const [userId, setUserId]       = useState<string | null>(null);
   const [activeDay, setActiveDay] = useState<number>(new Date().getDay()); // 0=Sun…6=Sat
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newPillar, setNewPillar] = useState<'Study' | 'Health' | 'Finance' | 'Mind'>('Study');
+  const [editingTaskId, setEditingTaskId] = useState<number | null>(null);
+  const [todos, setTodos] = useState<TodoItem[]>([]);
+  const [newTodoTitle, setNewTodoTitle] = useState('');
+  const [newTodoPillar, setNewTodoPillar] = useState<'Study' | 'Health' | 'Finance' | 'Mind'>('Study');
+  const [newTodoTime, setNewTodoTime] = useState('');
+  const [newTodoIsOneOff, setNewTodoIsOneOff] = useState(false);
 
   useEffect(() => {
     async function loadUserConfig() {
@@ -85,6 +106,7 @@ export function ControlRoom() {
             if (s.timetable) setTasks(s.timetable);
             if (s.habits) setHabits(s.habits);
             if (s.roadmap) setRoadmap(s.roadmap);
+            if (s.todos) setTodos(s.todos);
             if (s.weightGoal) setWeightGoal(s.weightGoal.toString());
             if (s.sapTarget) setSapTarget(s.sapTarget);
             if (s.sundayRest !== undefined) setSundayRest(s.sundayRest);
@@ -93,6 +115,7 @@ export function ControlRoom() {
             if (s.timetable) localStorage.setItem(`quantum_timetable_${uid}`, JSON.stringify(s.timetable));
             if (s.habits) localStorage.setItem(`quantum_habits_${uid}`, JSON.stringify(s.habits));
             if (s.roadmap) localStorage.setItem(`quantum_roadmap_${uid}`, JSON.stringify(s.roadmap));
+            if (s.todos) localStorage.setItem(`quantum_todos_${uid}`, JSON.stringify(s.todos));
             if (s.weightGoal !== undefined) localStorage.setItem(`quantum_weight_goal_${uid}`, s.weightGoal.toString());
             if (s.sapTarget) localStorage.setItem(`quantum_sap_target_${uid}`, s.sapTarget);
             localStorage.setItem(`quantum_sunday_rest_${uid}`, (s.sundayRest ?? true).toString());
@@ -112,6 +135,9 @@ export function ControlRoom() {
 
       const r = localStorage.getItem(`quantum_roadmap_${uid}`);
       if (r && r !== "undefined") { try { setRoadmap(JSON.parse(r)); } catch(e){} }
+
+      const td = localStorage.getItem(`quantum_todos_${uid}`);
+      if (td && td !== "undefined") { try { setTodos(JSON.parse(td)); } catch(e){} }
 
       const w = localStorage.getItem(`quantum_weight_goal_${uid}`);
       if (w) setWeightGoal(w);
@@ -148,6 +174,7 @@ export function ControlRoom() {
       localStorage.setItem(`quantum_timetable_${uid}`, JSON.stringify(tasks));
       localStorage.setItem(`quantum_habits_${uid}`, JSON.stringify(habits));
       localStorage.setItem(`quantum_roadmap_${uid}`, JSON.stringify(roadmap));
+      localStorage.setItem(`quantum_todos_${uid}`, JSON.stringify(todos));
       localStorage.setItem(`quantum_weight_goal_${uid}`, weightGoal);
       localStorage.setItem(`quantum_sap_target_${uid}`, sapTarget);
       localStorage.setItem(`quantum_sunday_rest_${uid}`, sundayRest.toString());
@@ -159,6 +186,7 @@ export function ControlRoom() {
             timetable: tasks,
             habits: habits,
             roadmap: roadmap,
+            todos: todos,
             weightGoal,
             sapTarget,
             sundayRest
@@ -185,13 +213,61 @@ export function ControlRoom() {
     setTasks(tasks.map(t => t.id === id ? { ...t, [field]: value } : t));
   };
 
-  const addTask = () => {
+  const getDuration = (start: string, end: string) => {
+    try {
+      const [sh, sm] = start.split(':').map(Number);
+      const [eh, em] = end.split(':').map(Number);
+      const diff = (eh * 60 + em) - (sh * 60 + sm);
+      return diff > 0 ? `${diff} min` : 'Custom';
+    } catch (e) {
+      return 'Custom';
+    }
+  };
+
+  const handleAddTask = () => {
+    if (!newName.trim()) return;
+
     const newId = tasks.length > 0 ? Math.max(...tasks.map(t => t.id)) + 1 : 1;
     const isWknd = activeDay === 0 || activeDay === 6;
-    setTasks([...tasks, {
-      id: newId, title: 'New Protocol', start: '12:00', end: '13:00',
-      dayOfWeek: activeDay, category: 'other', isWeekend: isWknd
-    }]);
+
+    const pillarToCategory: Record<'Study' | 'Health' | 'Finance' | 'Mind', string> = {
+      'Study': 'study',
+      'Health': 'gym',
+      'Finance': 'work',
+      'Mind': 'mind'
+    };
+
+    const derivedCategory = pillarToCategory[newPillar];
+
+    const todayTasks = tasks.filter(t => t.dayOfWeek === activeDay);
+    let defaultStart = '09:00';
+    if (todayTasks.length > 0) {
+      const sorted = [...todayTasks].sort((a,b) => a.end.localeCompare(b.end));
+      defaultStart = sorted[sorted.length - 1].end;
+    }
+
+    const [hours, minutes] = defaultStart.split(':').map(Number);
+    const date = new Date();
+    date.setHours(hours, minutes + 45, 0, 0);
+    const defaultEnd = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+
+    const newTask: TimetableTask = {
+      id: newId,
+      title: newName.trim(),
+      start: defaultStart,
+      end: defaultEnd,
+      dayOfWeek: activeDay,
+      category: derivedCategory,
+      pillar: newPillar,
+      isWeekend: isWknd,
+      task_target: 'Medium',
+      statusMsg: 'Executing Protocol...'
+    };
+
+    setTasks([...tasks, newTask]);
+    setNewName('');
+    setShowAddForm(false);
+    audio.playSuccess();
   };
 
   const removeTask = (id: number) => {
@@ -222,6 +298,33 @@ export function ControlRoom() {
 
   const removeRoadmapPhase = (id: number) => {
     setRoadmap(roadmap.filter(r => r.id !== id));
+  };
+
+
+
+  const addTodo = () => {
+    if (!newTodoTitle.trim()) return;
+    const newId = todos.length > 0 ? Math.max(...todos.map(t => t.id)) + 1 : 1;
+    const item: TodoItem = {
+      id: newId,
+      title: newTodoTitle.trim(),
+      dayOfWeek: activeDay,
+      pillar: newTodoPillar,
+      isOneOff: newTodoIsOneOff,
+      completed: false,
+      completedDates: [],
+      time: newTodoTime || undefined
+    };
+    setTodos([...todos, item]);
+    setNewTodoTitle('');
+    setNewTodoTime('');
+    setNewTodoIsOneOff(false);
+    audio.playSuccess();
+  };
+
+  const removeTodo = (id: number) => {
+    setTodos(todos.filter(t => t.id !== id));
+    audio.playClick();
   };
 
   return (
@@ -262,13 +365,118 @@ export function ControlRoom() {
               <h2>Protocol Timetable Builder</h2>
             </div>
             <button 
-              onClick={addTask}
+              onClick={() => { audio.playClick(); setShowAddForm(!showAddForm); }}
               className="flex items-center space-x-1 text-xs font-bold bg-primary/10 hover:bg-primary/20 text-primary px-3 py-1.5 rounded-lg border border-primary/30 transition-all"
             >
-              <Plus size={14} /> <span>Add Block</span>
+              <Plus size={14} /> <span>{showAddForm ? 'Close panel' : 'Add Task'}</span>
             </button>
           </div>
           <p className="text-xs text-textMuted">Modify the exact execution blocks that drive The Engine.</p>
+
+          {/* Add Form */}
+          <AnimatePresence>
+            {showAddForm && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="overflow-hidden"
+              >
+                <div className="p-4 bg-surfaceHighlight/35 rounded-2xl border border-primary/20 space-y-4 my-2">
+                  <div>
+                    <label className="text-[10px] font-black text-textMuted uppercase tracking-widest block mb-2 opacity-50">Task Name (What you do)</label>
+                    <input
+                      type="text"
+                      value={newName}
+                      onChange={e => {
+                        const val = e.target.value;
+                        setNewName(val);
+                        
+                        // Real-time AI keyword heuristic
+                        const lower = val.toLowerCase();
+                        if (/gym|run|workout|cardio|sleep|eat|movement|stretch|swim|lift/i.test(lower)) {
+                          setNewPillar('Health');
+                        } else if (/study|code|read|learn|abap|react|practice|write|course|lecture/i.test(lower)) {
+                          setNewPillar('Study');
+                        } else if (/work|finance|ledger|stock|money|invest|buy|sell|budget|bill/i.test(lower)) {
+                          setNewPillar('Finance');
+                        } else if (/meditate|mind|mindful|yoga|breathe|relax|reflect|journal/i.test(lower)) {
+                          setNewPillar('Mind');
+                        }
+                      }}
+                      onKeyDown={e => e.key === 'Enter' && handleAddTask()}
+                      placeholder="Task name (e.g. Gym workout, Studying react, Focus block)..."
+                      className="w-full bg-background border border-border rounded-xl px-4 py-2.5 text-sm text-textMain focus:border-primary outline-none placeholder:text-white/20"
+                    />
+                  </div>
+
+                  {newName.trim() && (
+                    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-primary/5 border border-primary/10 w-fit text-[10px] text-primary font-black uppercase tracking-wider animate-pulse">
+                      <span>🤖 Auto-Predicted Pillar:</span>
+                      <span className="text-white bg-primary/20 px-2 py-0.5 rounded">{newPillar}</span>
+                    </div>
+                  )}
+
+                  {/* Quick Presets */}
+                  <div className="space-y-1.5">
+                    <span className="text-[9px] font-black text-textMuted uppercase tracking-widest block opacity-40">Quick Presets</span>
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        { title: '💪 Gym Workout', pillar: 'Health' },
+                        { title: '📚 Code Practice', pillar: 'Study' },
+                        { title: '💼 Ledger Audit', pillar: 'Finance' },
+                        { title: '🧘 Mindful Meditation', pillar: 'Mind' },
+                      ].map(preset => (
+                        <button
+                          key={preset.title}
+                          type="button"
+                          onClick={() => {
+                            setNewName(preset.title.substring(3)); // Strip emoji
+                            setNewPillar(preset.pillar as any);
+                            audio.playClick();
+                          }}
+                          className="px-3 py-1.5 rounded-xl bg-surfaceHighlight/50 border border-white/5 text-[10px] font-bold text-textMuted hover:text-textMain hover:border-primary/30 transition-all cursor-pointer"
+                        >
+                          {preset.title}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-textMuted uppercase tracking-widest block opacity-50">Related Pillar</label>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      {[
+                        { id: 'Study',   label: 'Study',   icon: BookOpen,   color: 'text-blue-400',    bg: 'bg-blue-500/10',    border: 'border-blue-500/20' },
+                        { id: 'Health',  label: 'Health',  icon: Dumbbell,  color: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/20' },
+                        { id: 'Finance', label: 'Finance', icon: Briefcase,  color: 'text-amber-400',   bg: 'bg-amber-500/10',   border: 'border-amber-500/20' },
+                        { id: 'Mind',    label: 'Mind',    icon: Brain,      color: 'text-purple-400',  bg: 'bg-purple-500/10',  border: 'border-purple-500/20' },
+                      ].map(p => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => { setNewPillar(p.id as any); audio.playClick(); }}
+                          className={`flex flex-col items-center justify-center p-3.5 rounded-2xl border transition-all ${
+                            newPillar === p.id
+                              ? `${p.bg} ${p.border} ${p.color} ring-1 ring-white/10 scale-[1.02] shadow-lg`
+                              : 'bg-background border-white/5 text-textMuted hover:border-white/10'
+                          }`}
+                        >
+                          <p.icon size={18} className="mb-1.5" />
+                          <span className="text-[10px] font-black tracking-widest uppercase leading-none">{p.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2 justify-end pt-2">
+                    <button onClick={() => setShowAddForm(false)} className="px-4 py-2 text-[10px] font-black uppercase text-textMuted hover:text-textMain transition-colors">Cancel</button>
+                    <button onClick={handleAddTask} className="px-6 py-2 bg-primary text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:scale-105 transition-all">Add Task</button>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* Day tabs */}
           <div className="flex gap-1 overflow-x-auto pb-1 scrollbar-none">
@@ -302,102 +510,216 @@ export function ControlRoom() {
             <AnimatePresence>
               {tasks
                 .filter(t => t.dayOfWeek === activeDay || t.dayOfWeek === undefined)
-                .map((task) => (
-                <motion.div 
-                  key={task.id}
-                  initial={{ opacity: 0, x: -10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, scale: 0.95 }}
-                  className="bg-surfaceHighlight/50 border border-border p-4 rounded-xl flex flex-col gap-3 relative group"
-                >
-                  {/* Row 1: Title + Category */}
-                  <div className="flex flex-col sm:flex-row gap-3">
-                    <div className="flex-1">
-                      <label className="text-[10px] text-textMuted font-bold uppercase tracking-wider mb-1 block">Task Title</label>
-                      <input 
-                        type="text" 
-                        value={task.title}
-                        onChange={(e) => handleTaskChange(task.id, 'title', e.target.value)}
-                        className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-textMain outline-none focus:border-primary"
-                      />
-                    </div>
-                    <div className="sm:w-32">
-                      <label className="text-[10px] text-textMuted font-bold uppercase tracking-wider mb-1 block">Category</label>
-                      <select
-                        value={task.category || 'other'}
-                        onChange={(e) => handleTaskChange(task.id, 'category', e.target.value)}
-                        className="w-full bg-background border border-border rounded-lg px-2 py-2 text-sm text-textMain outline-none focus:border-primary"
+                .map((task) => {
+                  const isEditing = editingTaskId === task.id;
+                  
+                  // Category configuration mapping
+                  const categoryConfig: Record<string, { icon: any; color: string; bg: string; border: string; label: string }> = {
+                    gym:   { icon: Dumbbell,  color: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/20', label: 'Health' },
+                    study: { icon: BookOpen,   color: 'text-blue-400',    bg: 'bg-blue-500/10',    border: 'border-blue-500/20',    label: 'Study'  },
+                    work:  { icon: Briefcase,  color: 'text-amber-400',   bg: 'bg-amber-500/10',   border: 'border-amber-500/20',   label: 'Finance' },
+                    mind:  { icon: Brain,      color: 'text-purple-400',  bg: 'bg-purple-500/10',  border: 'border-purple-500/20',  label: 'Mind'   },
+                    other: { icon: Target,     color: 'text-gray-400',    bg: 'bg-white/5',        border: 'border-white/10',       label: 'Other'  }
+                  };
+
+                  let catKey = task.category || 'other';
+                  if (!task.category && task.pillar) {
+                    const pillarToCat: Record<string, string> = {
+                      'Study': 'study', 'Health': 'gym', 'Finance': 'work', 'Mind': 'mind'
+                    };
+                    catKey = pillarToCat[task.pillar] || 'other';
+                  }
+                  
+                  const config = categoryConfig[catKey] || categoryConfig.other;
+                  const durationStr = getDuration(task.start, task.end);
+
+                  if (!isEditing) {
+                    return (
+                      <motion.div 
+                        key={task.id}
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, scale: 0.95 }}
+                        className="bg-surfaceHighlight/30 border border-border p-4 rounded-2xl flex items-center gap-4 relative group hover:border-white/10 transition-all duration-300"
                       >
-                        <option value="gym">💪 Gym</option>
-                        <option value="study">📚 Study</option>
-                        <option value="work">💼 Work</option>
-                        <option value="mind">🧘 Mind</option>
-                        <option value="other">⚙️ Other</option>
-                      </select>
-                    </div>
-                    <div className="sm:w-40">
-                      <label className="text-[10px] text-textMuted font-bold uppercase tracking-wider mb-1 block">Priority</label>
-                      <select
-                        value={task.task_target || 'Medium'}
-                        onChange={(e) => handleTaskChange(task.id, 'task_target', e.target.value)}
-                        className={`w-full bg-background border rounded-lg px-2 py-2 text-sm font-bold outline-none focus:border-primary ${
-                          task.task_target === 'High' ? 'text-red-400 border-red-500/20' :
-                          task.task_target === 'Medium' ? 'text-amber-400 border-amber-500/20' :
-                          'text-blue-400 border-blue-500/20'
-                        }`}
+                        {/* Pillar Icon Badge */}
+                        <div className={cn("p-3 rounded-2xl border shrink-0", config.bg, config.border, config.color)}>
+                          <config.icon size={20} />
+                        </div>
+
+                        {/* Task Info */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <h4 className="text-sm font-bold text-textMain truncate leading-snug">{task.title}</h4>
+                            {task.isWeekend && (
+                              <span className="text-[8px] font-black uppercase text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded tracking-wider">
+                                2× Wknd
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex flex-wrap gap-x-2 gap-y-1 items-center text-[10px] text-textMuted uppercase font-bold tracking-wider">
+                            <span>{task.start} - {task.end}</span>
+                            <span className="opacity-30">•</span>
+                            <span>{durationStr}</span>
+                            <span className="opacity-30">•</span>
+                            <span className={config.color}>{config.label}</span>
+                          </div>
+                        </div>
+
+                        {/* Right side controls */}
+                        <div className="flex items-center gap-2 shrink-0">
+                          {/* Priority XP shifting */}
+                          <button
+                            onClick={() => {
+                              audio.playClick();
+                              const next: Record<string, 'High' | 'Medium' | 'Low'> = { 'High': 'Medium', 'Medium': 'Low', 'Low': 'High' };
+                              const nextPriority = next[task.task_target || 'Medium'];
+                              handleTaskChange(task.id, 'task_target', nextPriority);
+                            }}
+                            className={cn(
+                              "text-[9px] font-black uppercase px-2.5 py-1 rounded-xl border transition-all hover:scale-105 active:scale-95",
+                              task.task_target === 'High' ? 'text-red-400 border-red-500/20 bg-red-500/10' :
+                              task.task_target === 'Medium' ? 'text-amber-400 border-amber-500/20 bg-amber-500/10' :
+                              'text-blue-400 border-blue-500/20 bg-blue-500/10'
+                            )}
+                          >
+                            {task.task_target === 'High' ? '100 XP' : task.task_target === 'Medium' ? '60 XP' : '40 XP'}
+                          </button>
+
+                          {/* Inline Edit Pencil */}
+                          <button
+                            onClick={() => { audio.playClick(); setEditingTaskId(task.id); }}
+                            className="p-2 text-textMuted hover:text-primary hover:bg-primary/10 rounded-xl transition-all"
+                            title="Edit all fields"
+                          >
+                            <Pencil size={15} />
+                          </button>
+
+                          {/* Delete Button */}
+                          <button 
+                            onClick={() => { audio.playClick(); removeTask(task.id); }}
+                            className="p-2 text-textMuted hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-all"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      </motion.div>
+                    );
+                  } else {
+                    return (
+                      <motion.div 
+                        key={task.id}
+                        initial={{ opacity: 0, scale: 0.98 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="bg-surfaceHighlight border border-primary/30 p-5 rounded-2xl flex flex-col gap-4 relative"
                       >
-                        <option value="High">🔴 Most Important (100XP)</option>
-                        <option value="Medium">🟡 Important (60XP)</option>
-                        <option value="Low">🔵 Other (40XP)</option>
-                      </select>
-                    </div>
-                  </div>
-                  {/* Row 2: Times + Weekend + Delete */}
-                  <div className="flex flex-wrap gap-2 items-end">
-                    <div>
-                      <label className="text-[10px] text-textMuted font-bold uppercase tracking-wider mb-1 block">Start</label>
-                      <input 
-                        type="time" 
-                        value={task.start}
-                        onChange={(e) => handleTaskChange(task.id, 'start', e.target.value)}
-                        className="bg-background border border-border rounded-lg px-2 py-2 text-sm text-textMain outline-none focus:border-primary w-[100px]"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] text-textMuted font-bold uppercase tracking-wider mb-1 block">End</label>
-                      <input 
-                        type="time" 
-                        value={task.end}
-                        onChange={(e) => handleTaskChange(task.id, 'end', e.target.value)}
-                        className="bg-background border border-border rounded-lg px-2 py-2 text-sm text-textMain outline-none focus:border-primary w-[100px]"
-                      />
-                    </div>
-                    <div className="flex items-center gap-2 ml-auto">
-                      <button
-                        onClick={() => handleTaskChange(task.id, 'isWeekend', !(task.isWeekend))}
-                        className={`text-[9px] font-black uppercase px-2 py-1 rounded border transition-all ${
-                          task.isWeekend
-                            ? 'bg-amber-500/20 border-amber-500/50 text-amber-400'
-                            : 'bg-surfaceHighlight border-border text-textMuted hover:border-white/20'
-                        }`}
-                        title="Mark as weekend bonus task"
-                      >
-                        {task.isWeekend ? '⚡ 2× Wknd' : 'Wknd?'}
-                      </button>
-                      <button 
-                        onClick={() => removeTask(task.id)}
-                        className="p-2 text-textMuted hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  </div>
-                </motion.div>
-              ))}
+                        <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                          <span className="text-[10px] font-black text-primary uppercase tracking-widest">Editing Task Protocol</span>
+                          <button
+                            onClick={() => { audio.playClick(); setEditingTaskId(null); }}
+                            className="p-1 rounded bg-white/5 hover:bg-white/10 text-textMuted hover:text-textMain"
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="text-[9px] text-textMuted font-bold uppercase tracking-wider block mb-1">Task Title</label>
+                            <input 
+                              type="text" 
+                              value={task.title}
+                              onChange={(e) => handleTaskChange(task.id, 'title', e.target.value)}
+                              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-xs text-textMain outline-none focus:border-primary"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[9px] text-textMuted font-bold uppercase tracking-wider block mb-1">Pillar & Category</label>
+                            <select
+                              value={task.pillar || config.label}
+                              onChange={(e) => {
+                                const selectedPillar = e.target.value as 'Study' | 'Health' | 'Finance' | 'Mind';
+                                const pToCat: Record<string, string> = {
+                                  'Study': 'study', 'Health': 'gym', 'Finance': 'work', 'Mind': 'mind'
+                                };
+                                handleTaskChange(task.id, 'pillar', selectedPillar);
+                                handleTaskChange(task.id, 'category', pToCat[selectedPillar]);
+                              }}
+                              className="w-full bg-background border border-border rounded-lg px-2 py-2 text-xs text-textMain outline-none focus:border-primary font-bold text-textMain"
+                            >
+                              <option value="Study">📚 Study Pillar</option>
+                              <option value="Health">💪 Health Pillar</option>
+                              <option value="Finance">💼 Finance Pillar</option>
+                              <option value="Mind">🧘 Mind Pillar</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-2.5 items-end">
+                          <div>
+                            <label className="text-[9px] text-textMuted font-bold uppercase tracking-wider block mb-1">Start Time</label>
+                            <input 
+                              type="time" 
+                              value={task.start}
+                              onChange={(e) => handleTaskChange(task.id, 'start', e.target.value)}
+                              className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-xs text-textMain outline-none focus:border-primary"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[9px] text-textMuted font-bold uppercase tracking-wider block mb-1">End Time</label>
+                            <input 
+                              type="time" 
+                              value={task.end}
+                              onChange={(e) => handleTaskChange(task.id, 'end', e.target.value)}
+                              className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-xs text-textMain outline-none focus:border-primary"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[9px] text-textMuted font-bold uppercase tracking-wider block mb-1">Priority / XP</label>
+                            <select
+                              value={task.task_target || 'Medium'}
+                              onChange={(e) => handleTaskChange(task.id, 'task_target', e.target.value)}
+                              className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-xs font-bold outline-none focus:border-primary text-textMain"
+                            >
+                              <option value="High">High (100 XP)</option>
+                              <option value="Medium">Medium (60 XP)</option>
+                              <option value="Low">Low (40 XP)</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        <div className="flex gap-2 justify-end border-t border-white/5 pt-3">
+                          <button
+                            onClick={() => {
+                              audio.playClick();
+                              handleTaskChange(task.id, 'isWeekend', !(task.isWeekend));
+                            }}
+                            className={cn(
+                              "text-[9px] font-black uppercase px-2.5 py-1.5 rounded-lg border transition-all mr-auto",
+                              task.isWeekend
+                                ? 'bg-amber-500/20 border-amber-500/50 text-amber-400'
+                                : 'bg-surfaceHighlight border-border text-textMuted hover:border-white/20'
+                            )}
+                          >
+                            {task.isWeekend ? '⚡ Weekend 2× Active' : 'Mark Weekend 2×'}
+                          </button>
+                          
+                          <button
+                            onClick={() => { audio.playSuccess(); setEditingTaskId(null); }}
+                            className="flex items-center gap-1.5 px-4 py-1.5 bg-primary/20 border border-primary/50 text-primary text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-primary/30 transition-all"
+                          >
+                            <Check size={12} /> Apply Changes
+                          </button>
+                        </div>
+                      </motion.div>
+                    );
+                  }
+                })}
             </AnimatePresence>
             {tasks.filter(t => t.dayOfWeek === activeDay || t.dayOfWeek === undefined).length === 0 && (
               <div className="text-center p-8 text-textMuted text-sm border border-dashed border-border rounded-xl">
-                No protocols for this day. Click "Add Block" to create one.
+                No protocols for this day. Click "Add Task" to create one.
               </div>
             )}
           </div>
@@ -458,6 +780,140 @@ export function ControlRoom() {
                   </motion.div>
                 ))}
               </AnimatePresence>
+            </div>
+          </div>
+
+          {/* Daily Todo Protocol Deck */}
+          <div className="glass-panel p-6 space-y-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2 text-primary font-bold">
+                <Clock size={20} className="text-primary" />
+                <h2>Daily Todo Protocol Deck</h2>
+              </div>
+            </div>
+            <p className="text-xs text-textMuted">Add one-off or day-based specific tasks to execute. They reset daily or archive when done.</p>
+
+            {/* Todo Creation deck */}
+            <div className="p-4 bg-surfaceHighlight/30 rounded-2xl border border-border space-y-4">
+              <div>
+                <label className="text-[10px] font-black text-textMuted uppercase tracking-widest block mb-1 opacity-60">Todo Description</label>
+                <input 
+                  type="text" 
+                  value={newTodoTitle}
+                  onChange={(e) => setNewTodoTitle(e.target.value)}
+                  placeholder="e.g. Complete math workbook, Fix ledger audit..."
+                  className="w-full bg-background border border-border rounded-xl px-3 py-2 text-sm text-textMain outline-none focus:border-primary placeholder:text-white/20"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-black text-textMuted uppercase tracking-widest block mb-1 opacity-60">Time (Optional)</label>
+                  <input 
+                    type="time" 
+                    value={newTodoTime}
+                    onChange={(e) => setNewTodoTime(e.target.value)}
+                    className="w-full bg-background border border-border rounded-xl px-3 py-1.5 text-sm text-textMain outline-none focus:border-primary"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-black text-textMuted uppercase tracking-widest block mb-1 opacity-60">Related Pillar</label>
+                  <select
+                    value={newTodoPillar}
+                    onChange={(e) => setNewTodoPillar(e.target.value as any)}
+                    className="w-full bg-background border border-border rounded-xl px-2 py-1.5 text-sm text-textMain font-bold outline-none focus:border-primary"
+                  >
+                    <option value="Study">📚 Study</option>
+                    <option value="Health">💪 Health</option>
+                    <option value="Finance">💼 Finance</option>
+                    <option value="Mind">🧘 Mind</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between p-2 bg-background/50 border border-border rounded-xl">
+                <div>
+                  <p className="text-xs font-bold text-textMain">One-Off Todo</p>
+                  <p className="text-[9px] text-textMuted uppercase">Check off once and archive. Otherwise repeats every {['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][activeDay]}.</p>
+                </div>
+                <button 
+                  onClick={() => { audio.playClick(); setNewTodoIsOneOff(!newTodoIsOneOff); }}
+                  className={cn(
+                    "w-12 h-6 rounded-full transition-all relative border",
+                    newTodoIsOneOff ? "bg-primary/20 border-primary" : "bg-white/5 border-white/10"
+                  )}
+                >
+                  <motion.div 
+                    animate={{ x: newTodoIsOneOff ? 24 : 2 }}
+                    className={cn(
+                      "w-4 h-4 rounded-full absolute top-0.5",
+                      newTodoIsOneOff ? "bg-primary" : "bg-textMuted"
+                    )}
+                  />
+                </button>
+              </div>
+
+              <button
+                onClick={addTodo}
+                disabled={!newTodoTitle.trim()}
+                className="w-full flex items-center justify-center space-x-1 py-2 bg-primary/20 hover:bg-primary/30 text-primary border border-primary/40 rounded-xl text-xs font-bold transition-all disabled:opacity-40"
+              >
+                <Plus size={14} /> <span>Schedule Todo for {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][activeDay]}</span>
+              </button>
+            </div>
+
+            {/* Todo List for activeDay */}
+            <div className="space-y-2">
+              <span className="text-[10px] font-black text-textMuted uppercase tracking-widest block opacity-50">
+                Active Todos ({['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][activeDay]})
+              </span>
+              
+              <div className="max-h-60 overflow-y-auto pr-2 space-y-2 scrollbar-thin scrollbar-thumb-surfaceHighlight">
+                <AnimatePresence>
+                  {todos
+                    .filter(t => t.dayOfWeek === activeDay)
+                    .map(todo => {
+                      const pillarColors: Record<string, string> = {
+                        Study: 'text-blue-400 bg-blue-500/10 border-blue-500/20',
+                        Health: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20',
+                        Finance: 'text-amber-400 bg-amber-500/10 border-amber-500/20',
+                        Mind: 'text-purple-400 bg-purple-500/10 border-purple-500/20'
+                      };
+                      return (
+                        <motion.div
+                          key={todo.id}
+                          initial={{ opacity: 0, y: -5 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, scale: 0.95 }}
+                          className="flex items-center gap-3 p-3 bg-surfaceHighlight/30 border border-border rounded-xl relative group hover:border-white/10 transition-all duration-300"
+                        >
+                          <div className={cn("px-2 py-0.5 rounded text-[8px] font-black uppercase border shrink-0", pillarColors[todo.pillar])}>
+                            {todo.pillar}
+                          </div>
+                          
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-bold text-textMain truncate leading-snug">{todo.title}</p>
+                            <p className="text-[9px] text-textMuted font-medium uppercase tracking-wider">
+                              {todo.time ? `⏰ ${todo.time}` : '📅 Day Task'} · {todo.isOneOff ? 'One-off' : 'Weekly Repeat'}
+                            </p>
+                          </div>
+
+                          <button
+                            onClick={() => removeTodo(todo.id)}
+                            className="p-1.5 text-textMuted hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </motion.div>
+                      );
+                    })}
+                </AnimatePresence>
+                {todos.filter(t => t.dayOfWeek === activeDay).length === 0 && (
+                  <div className="text-center py-6 text-textMuted text-xs border border-dashed border-border rounded-xl">
+                    No custom todos scheduled for this day.
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
