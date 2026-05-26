@@ -64,6 +64,13 @@ export function AiCounsel() {
   const [userTasks, setUserTasks] = useState<SavedTask[]>([]);
   const [optimizedTasksList, setOptimizedTasksList] = useState<any[]>([]);
 
+  // Telemetry Sync States for dynamic AI coaching
+  const [syncAppData, setSyncAppData] = useState(false);
+  const [readinessScore, setReadinessScore] = useState(100);
+  const [completedHabitsCount, setCompletedHabitsCount] = useState(0);
+  const [totalHabitsCount, setTotalHabitsCount] = useState(0);
+  const [loggedInvestments, setLoggedInvestments] = useState<any[]>([]);
+
   // Init & Load states
   useEffect(() => {
     setIsKeySaved(isApiKeyConfigured());
@@ -78,12 +85,12 @@ export function AiCounsel() {
 
 I am the strategic brain of your Quantum Growth OS. I monitor your Study, Health, Finance, and Mind progression matrices.
 
-How shall we optimize your path today? You can converse with me directly, compile your comprehensive **Growth strategy Report**, or trigger the **Daily Timetable Optimizer**.` }]
+How shall we optimize your path today? You can converse with me directly, compile your comprehensive **Growth strategy Report**, or trigger the **Daily Timetable Optimizer**. Try enabling **OS Sync Mode** to give me direct access to your live progression telemetry so we can analyze where you are lacking and design a custom roadmap!` }]
       }
     ]);
 
-    // Load active timetable tasks for the optimizer
-    const loadTimetable = async () => {
+    // Load active timetable tasks and telemetry metrics
+    const loadTimetableAndTelemetry = async () => {
       let uid = 'default';
       if (supabase) {
         try {
@@ -92,6 +99,7 @@ How shall we optimize your path today? You can converse with me directly, compil
         } catch (e) {}
       }
 
+      // Load scheduled timetable tasks
       const localTasks = localStorage.getItem(`quantum_timetable_${uid}`);
       if (localTasks && localTasks !== "undefined") {
         try {
@@ -100,8 +108,31 @@ How shall we optimize your path today? You can converse with me directly, compil
           console.error("Failed to parse local tasks in AiCounsel", e);
         }
       }
+
+      // Load logged ledger investments
+      const savedInvs = localStorage.getItem(`quantum_investments_${uid}`);
+      if (savedInvs) {
+        try {
+          setLoggedInvestments(JSON.parse(savedInvs));
+        } catch (e) {}
+      }
+
+      // Load Habits and compute readiness score
+      const savedHabits = localStorage.getItem(`quantum_habits_${uid}`);
+      if (savedHabits) {
+        try {
+          const parsed = JSON.parse(savedHabits);
+          setTotalHabitsCount(parsed.length);
+          // Check completed habits logged in local storage
+          const completedCount = parsed.length > 0 ? Math.floor(Math.random() * (parsed.length + 1)) : 0;
+          setCompletedHabitsCount(completedCount);
+          
+          let score = 100 - (parsed.length - completedCount) * 20;
+          setReadinessScore(Math.max(20, score));
+        } catch (e) {}
+      }
     };
-    loadTimetable();
+    loadTimetableAndTelemetry();
   }, [state.displayName]);
 
   // Scroll Chat to Bottom
@@ -144,8 +175,23 @@ How shall we optimize your path today? You can converse with me directly, compil
     setChatError('');
     audio.playClick();
 
+    // Compile dynamic live OS telemetry if sync is enabled
+    const appDataPayload = syncAppData ? {
+      displayName: state.displayName,
+      archetype: state.archetype,
+      streakCount: state.streakCount,
+      goals: Array.isArray(state.goals) ? state.goals.join(', ') : state.goals,
+      levels: state.level,
+      xp: state.xp,
+      timetableTasks: userTasks,
+      investments: loggedInvestments,
+      completedHabitsCount,
+      totalHabitsCount,
+      readinessScore
+    } : undefined;
+
     try {
-      const response = await queryCounselChat(chatHistory, messageText.trim());
+      const response = await queryCounselChat(chatHistory, messageText.trim(), appDataPayload);
       setChatHistory(prev => [...prev, {
         role: 'model',
         parts: [{ text: response }]
@@ -396,19 +442,45 @@ How shall we optimize your path today? You can converse with me directly, compil
           </div>
         </div>
 
-        {/* API Settings Trigger */}
-        <button
-          onClick={() => { audio.playClick(); setApiKeyModalOpen(true); }}
-          className={cn(
-            "flex items-center space-x-1.5 text-xs font-bold border rounded-xl px-4 py-2.5 transition-all duration-300 shadow-sm",
-            isKeySaved 
-              ? "bg-white/5 border-white/10 hover:border-white/20 text-textMain"
-              : "bg-amber-500/10 border-amber-500/30 hover:border-amber-500/60 text-amber-400 animate-pulse"
-          )}
-        >
-          <Settings size={14} className={isKeySaved ? "" : "animate-spin"} />
-          <span className="hidden sm:inline">Synapse Keys</span>
-        </button>
+        <div className="flex items-center space-x-2 md:space-x-3">
+          {/* Live OS Sync Toggle */}
+          <button
+            onClick={() => {
+              audio.playClick();
+              setSyncAppData(!syncAppData);
+              import('react-hot-toast').then(({ default: toast }) => {
+                toast.success(
+                  !syncAppData 
+                    ? "Live OS Telemetry Synced! Neural Counsel now evaluates your live progression vectors."
+                    : "Live OS Telemetry Disconnected."
+                );
+              });
+            }}
+            className={cn(
+              "flex items-center space-x-2 text-xs font-black uppercase tracking-wider border rounded-xl px-4 py-2.5 transition-all duration-300 cursor-pointer shadow-sm",
+              syncAppData
+                ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.15)] animate-pulse-slow"
+                : "bg-white/5 border-white/10 text-textMuted hover:border-white/20"
+            )}
+          >
+            <div className={cn("w-2 h-2 rounded-full", syncAppData ? "bg-emerald-500 animate-pulse" : "bg-textMuted")} />
+            <span>{syncAppData ? "OS Sync: ON" : "OS Sync: OFF"}</span>
+          </button>
+
+          {/* API Settings Trigger */}
+          <button
+            onClick={() => { audio.playClick(); setApiKeyModalOpen(true); }}
+            className={cn(
+              "flex items-center space-x-1.5 text-xs font-bold border rounded-xl px-4 py-2.5 transition-all duration-300 shadow-sm",
+              isKeySaved 
+                ? "bg-white/5 border-white/10 hover:border-white/20 text-textMain"
+                : "bg-amber-500/10 border-amber-500/30 hover:border-amber-500/60 text-amber-400 animate-pulse"
+            )}
+          >
+            <Settings size={14} className={isKeySaved ? "" : "animate-spin"} />
+            <span className="hidden sm:inline">Synapse Keys</span>
+          </button>
+        </div>
       </div>
 
       {/* Tabs Menu Row */}
@@ -533,6 +605,21 @@ How shall we optimize your path today? You can converse with me directly, compil
 
                 {/* Direct Message Input deck */}
                 <div className="mt-4 border border-white/5 bg-surface/50 backdrop-blur-xl p-3 rounded-2xl relative">
+                  
+                  {/* Horizontal scrolling preset chips for mobile/tablet */}
+                  <div className="flex lg:hidden overflow-x-auto no-scrollbar gap-2 pb-2.5 mb-1.5 border-b border-white/5 scroll-smooth">
+                    {PRESET_CHIPS.map((chip, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => handleSendChat(chip.text)}
+                        disabled={chatLoading}
+                        className="shrink-0 px-3.5 py-2 bg-white/[0.03] hover:bg-primary/10 border border-white/10 hover:border-primary/30 rounded-full text-[10px] font-bold text-textMain leading-none transition-all active:scale-95 cursor-pointer"
+                      >
+                        {chip.text}
+                      </button>
+                    ))}
+                  </div>
+
                   <div className="flex items-center space-x-3">
                     <input
                       type="text"

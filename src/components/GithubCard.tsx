@@ -30,7 +30,7 @@ export function GithubCard() {
   };
 
   return (
-    <div className="glass-panel col-span-1 md:col-span-2 lg:col-span-3 p-6 flex flex-col justify-center hover:border-emerald-500/50 transition-colors relative overflow-hidden group">
+    <div className="h-full p-6 flex flex-col justify-center relative overflow-hidden group">
       <div className="flex items-center space-x-2 mb-6">
         <GitCommit size={20} className="text-emerald-500" />
         <h3 className="text-lg font-semibold text-textMain">Execution Matrix (Github Activity)</h3>

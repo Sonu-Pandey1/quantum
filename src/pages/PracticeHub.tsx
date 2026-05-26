@@ -99,6 +99,42 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
   const activeTabRef   = useRef<string>('All');
 
   const [userId, setUserId] = useState<string>('default');
+  
+  // Dynamic AI Protocol Forge and daily quest constraints
+  const [topicPrompt, setTopicPrompt] = useState('');
+  const [aiSolvesCountToday, setAiSolvesCountToday] = useState(0);
+
+  // Load and filter dynamic quests and daily solved quest counts on mount
+  useEffect(() => {
+    if (userId && userId !== 'default') {
+      // 1. Filter out expired dynamic questions (older than 24 hours)
+      const savedQuests = localStorage.getItem(`quantum_dynamic_quests_${userId}`);
+      if (savedQuests) {
+        try {
+          const parsed = JSON.parse(savedQuests);
+          const now = Date.now();
+          const valid = parsed.filter((q: any) => {
+            if (!q.expiresAt) return true; // keep if no expiry
+            return new Date(q.expiresAt).getTime() > now;
+          });
+          setDynamicQuestions(valid);
+          localStorage.setItem(`quantum_dynamic_quests_${userId}`, JSON.stringify(valid));
+        } catch (e) {
+          console.error("Failed to parse local dynamic quests", e);
+        }
+      }
+
+      // 2. Load daily solved count
+      const todayStr = new Date().toISOString().split('T')[0];
+      const solvesKey = `quantum_ai_solves_today_${userId}_${todayStr}`;
+      const savedSolves = localStorage.getItem(solvesKey);
+      if (savedSolves) {
+        setAiSolvesCountToday(parseInt(savedSolves));
+      } else {
+        setAiSolvesCountToday(0);
+      }
+    }
+  }, [userId]);
 
   const saveHardStreak = (newStreak: number) => {
     setHardStreak(newStreak);
@@ -196,24 +232,32 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
       const newQuestion = await generateAIQuestion(
         activeTab,
         difficultyFilter,
-        state.level.Study || 1
+        state.level.Study || 1,
+        topicPrompt.trim() || undefined
       );
 
-      // Append new question to dynamic question array
-      setDynamicQuestions(prev => [newQuestion, ...prev]);
+      // Add 24-hour expiration timestamp
+      const expiresAt = addDays(new Date(), 1).toISOString();
+      const dynamicQuest: Question = { ...newQuestion, expiresAt } as any;
+
+      // Append new question to dynamic question array and save to local storage
+      const updatedQuests = [dynamicQuest, ...dynamicQuestions];
+      setDynamicQuestions(updatedQuests);
+      localStorage.setItem(`quantum_dynamic_quests_${userId}`, JSON.stringify(updatedQuests));
       
       // Select the question automatically
-      setSelectedQuestion(newQuestion);
-      setUserAnswer(newQuestion.pseudoCode || '');
+      setSelectedQuestion(dynamicQuest);
+      setUserAnswer(dynamicQuest.pseudoCode || '');
       setFeedback(null);
       setAiResult(null);
       setStartTime(Date.now());
       setIsSandboxMode(false);
       setSandboxConsoleLogs([]);
       setSandboxExecutionSuccess(null);
+      setTopicPrompt(''); // Clear input after successful forge
 
       import('react-hot-toast').then(({ default: toast }) => {
-        toast.success(`Protocol Synthesized: ${newQuestion.title}!`);
+        toast.success(`Protocol Synthesized: ${dynamicQuest.title}!`);
       });
       audio.playSuccess();
     } catch (e: any) {
@@ -406,6 +450,26 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
 
     const awarded = await addXp('Study', label, xpGained);
 
+    // Increment Daily AI Quest solves count and evaluate Syndicate Synergy Bonus
+    if (userId && userId !== 'default') {
+      const todayStr = new Date().toISOString().split('T')[0];
+      const solvesKey = `quantum_ai_solves_today_${userId}_${todayStr}`;
+      const nextSolvesCount = aiSolvesCountToday + 1;
+      setAiSolvesCountToday(nextSolvesCount);
+      localStorage.setItem(solvesKey, nextSolvesCount.toString());
+
+      if (nextSolvesCount === 20) {
+        // Syndicate Synergy achieved! Award 200 XP
+        import('canvas-confetti').then(({ default: confetti }) => {
+          confetti({ particleCount: 200, spread: 80, origin: { y: 0.6 } });
+        });
+        await addXp('Study', 'Complete 20 Daily AI Protocols Syndicate Synergy Bonus', 200);
+        import('react-hot-toast').then(({ default: toast }) => {
+          toast.success("🏆 SYNDICATE SYNERGY ACHIEVED! +200 XP Complete Daily Mastery Bonus awarded!", { duration: 8000 });
+        });
+      }
+    }
+
     // Set dynamic feedback
     let successMsg = `Protocol Mastered! +${awarded} XP awarded.`;
     if (isAiGraded) {
@@ -469,26 +533,82 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
   const isHardLocked = (_q: Question) => false;
 
   const getDailyTraining = () => {
-    // Pick 1 Easy, 1 Medium, 1 Hard that aren't locked recently
     const daily: Question[] = [];
-    ['Easy', 'Medium', 'Hard'].forEach(diff => {
-      const available = QUESTIONS.filter(q => q.difficulty === diff && !getLockInfo(q.id) && !isHardLocked(q));
-      if (available.length > 0) {
-        // Deterministic daily pick based on date
-        const index = new Date().getDate() % available.length;
-        daily.push(available[index]);
+    const dayOffset = new Date().getDate();
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    // Helper to check if a question was solved today
+    const isSolvedToday = (qId: string) => {
+      const sub = submissions[qId];
+      if (!sub) return false;
+      const solvedDateStr = new Date(sub.last_solved_at).toISOString().split('T')[0];
+      return solvedDateStr === todayStr;
+    };
+
+    // We must always include logic-019 (Render Discipline) in the daily pool
+    const renderDisciplineQuest = QUESTIONS.find(q => q.id === 'logic-019');
+    if (renderDisciplineQuest) {
+      daily.push(renderDisciplineQuest);
+    }
+
+    const selectForDifficulty = (diff: 'Easy' | 'Medium' | 'Hard', count: number) => {
+      // Find questions of this difficulty that are:
+      // 1. Solved today (keep showing them)
+      // 2. OR not locked at all
+      let available = QUESTIONS.filter(q => {
+        if (q.difficulty !== diff) return false;
+        if (isHardLocked(q)) return false;
+        if (isSolvedToday(q.id)) return true;
+        return !getLockInfo(q.id);
+      });
+
+      // Fallback: if not enough available, allow previously solved/locked questions
+      if (available.length < count) {
+        available = QUESTIONS.filter(q => q.difficulty === diff && !isHardLocked(q));
       }
-    });
+
+      if (available.length === 0) return;
+
+      let added = 0;
+      // Adjust target count if logic-019 (Medium) was already added to this pool
+      const targetCount = (diff === 'Medium' && renderDisciplineQuest) ? count - 1 : count;
+
+      for (let i = 0; i < available.length && added < targetCount; i++) {
+        const qIndex = (dayOffset + i) % available.length;
+        const selected = available[qIndex];
+        if (!daily.some(d => d.id === selected.id)) {
+          daily.push(selected);
+          added++;
+        }
+      }
+    };
+
+    selectForDifficulty('Easy', 5);
+    selectForDifficulty('Medium', 10);
+    selectForDifficulty('Hard', 5);
+
+    // Final fallback to fill up to exactly 20 questions
+    if (daily.length < 20) {
+      const remainingCount = 20 - daily.length;
+      const allPossible = QUESTIONS.filter(q => !isHardLocked(q) && !daily.some(d => d.id === q.id));
+      for (let i = 0; i < remainingCount && i < allPossible.length; i++) {
+        daily.push(allPossible[i]);
+      }
+    }
+
     return daily;
   };
 
   const allAvailableQuestions = [...dynamicQuestions, ...QUESTIONS];
-  const filtered = activeTab === 'Training' ? getDailyTraining() : allAvailableQuestions.filter(q => {
+  let filtered = activeTab === 'Training' ? getDailyTraining() : allAvailableQuestions.filter(q => {
     if (activeTab !== 'All' && q.category !== activeTab) return false;
     if (difficultyFilter !== 'All' && q.difficulty !== difficultyFilter) return false;
-    if (search && !q.title.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });
+
+  if (search) {
+    filtered = filtered.filter(q => q.title.toLowerCase().includes(search.toLowerCase()));
+  }
 
   // ── Pillar-level analytics (Study only in Practice Hub) ─────────────
   const studyXp   = state?.xp?.Study ?? 0;
@@ -547,23 +667,58 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
             />
           </div>
 
-          <button
-            onClick={handleGenerateQuestion}
-            disabled={generatingQuestion}
-            className="w-full py-2.5 px-4 bg-primary/10 border border-primary/25 hover:border-primary/50 text-primary hover:bg-primary/20 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all duration-300 flex items-center justify-center space-x-2 cursor-pointer shadow-inner disabled:opacity-50"
-          >
-            {generatingQuestion ? (
-              <>
-                <RefreshCw size={12} className="animate-spin" />
-                <span>Calibrating AI Protocol...</span>
-              </>
+          {/* Dynamic AI Protocol Forge Input Deck */}
+          <div className="flex flex-col space-y-2 mb-4">
+            <input 
+              type="text" 
+              placeholder="Enter custom focus topic (e.g. React hooks, ABAP SELECT)..." 
+              value={topicPrompt}
+              onChange={(e) => setTopicPrompt(e.target.value)}
+              className="w-full bg-surfaceHighlight/30 border border-border/80 focus:border-primary/50 rounded-xl px-3 py-2 text-xs text-textMain focus:outline-none transition-all placeholder:text-textMuted/50 font-sans"
+            />
+            <button
+              onClick={handleGenerateQuestion}
+              disabled={generatingQuestion}
+              className="w-full py-2.5 px-4 bg-primary/10 border border-primary/25 hover:border-primary/50 text-primary hover:bg-primary/20 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all duration-300 flex items-center justify-center space-x-2 cursor-pointer shadow-inner disabled:opacity-50"
+            >
+              {generatingQuestion ? (
+                <>
+                  <RefreshCw size={12} className="animate-spin" />
+                  <span>Calibrating AI Protocol...</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles size={12} className="animate-pulse" />
+                  <span>Synthesize AI Protocol</span>
+                </>
+              )}
+            </button>
+          </div>
+
+          {/* Quest Synergy Progress Calibrator */}
+          <div className="bg-primary/5 border border-primary/20 rounded-2xl p-3.5 mb-4 shadow-sm relative overflow-hidden group">
+            <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-textMuted mb-2">
+              <span>Quest Synergy</span>
+              <span className="text-primary font-bold">{aiSolvesCountToday} / 20 Completed</span>
+            </div>
+            <div className="w-full bg-surfaceHighlight/50 rounded-full h-2 overflow-hidden shadow-inner border border-white/5">
+              <motion.div 
+                className="h-full bg-primary" 
+                style={{ width: `${Math.min(100, (aiSolvesCountToday / 20) * 100)}%` }} 
+                animate={{ width: `${Math.min(100, (aiSolvesCountToday / 20) * 100)}%` }}
+              />
+            </div>
+            {aiSolvesCountToday >= 20 ? (
+              <p className="text-[9px] text-emerald-400 font-black uppercase tracking-wider mt-2.5 flex items-center">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-2 animate-ping" />
+                <span>Syndicate Bonus Active (+200 XP)</span>
+              </p>
             ) : (
-              <>
-                <Sparkles size={12} className="animate-pulse" />
-                <span>Synthesize AI Protocol</span>
-              </>
+              <p className="text-[9px] text-textMuted/60 leading-normal mt-2.5">
+                Complete 20 AI dynamic protocols today to claim your +200 XP Syndicate calibrator bonus.
+              </p>
             )}
-          </button>
+          </div>
         </div>
 
         <div className="flex border-b border-border px-2 overflow-x-auto no-scrollbar shrink-0">

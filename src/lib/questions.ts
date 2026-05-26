@@ -727,5 +727,41 @@ export const QUESTIONS: Question[] = [
     logic: 'iterate through characters with a counter until a null terminator or end of sequence is reached.',
     hint: 'Use a simple loop.',
     xpFirstSolve: 15, xpRepeatSolve: 3
+  },
+  {
+    id: 'logic-019',
+    category: 'Logic',
+    difficulty: 'Medium',
+    title: 'Synaptic Flux Optimization: Nexus Core Render Discipline',
+    description: 'The \'Nexus Core\' real-time monitoring interface is experiencing severe computational latency. Sensor data from hundreds of \'Neural Conduit\' nodes streams in constantly, and individual \'ConduitPanel\' child components re-render even when their specific dedicated data remains unchanged. Refactor the ConduitPanel component and its immediate parent(s) to enforce \'render discipline\'. Ensure that a ConduitPanel only re-renders when its specific conduitData deeply changes or onClick callback is invoked. Use React.memo and useCallback to prevent unnecessary child re-renders.',
+    logic: 'React.memo(ConduitPanel) with stable onClick parent callback using useCallback.',
+    hint: 'Use React.memo to wrap ConduitPanel, and use React.useCallback to memoize the click handler in the parent NexusMonitor to maintain stable references.',
+    xpFirstSolve: 30, xpRepeatSolve: 6,
+    correctAnswer: 'React.memo',
+    pseudoCode: `interface ConduitData { id: string; status: 'active' | 'dormant' | 'critical'; fluxLevel: number; }
+
+// Parent Component (simulated, assume it fetches data and passes it down)
+function NexusMonitor({ allConduitData }: { allConduitData: ConduitData[] }) {
+  // ... (some state or props might cause re-renders here)
+  return (
+    <div>
+      {allConduitData.map(data => (
+        <ConduitPanel key={data.id} conduitData={data} onClick={() => console.log('clicked', data.id)} />
+      ))}
+    </div>
+  );
+}
+
+// Target Child Component for Optimization
+function ConduitPanel({ conduitData, onClick }: { conduitData: ConduitData; onClick: () => void }) {
+  console.log(\`Rendering ConduitPanel \${conduitData.id}\`);
+  return (
+    <div onClick={onClick}>
+      <h3>Conduit ID: {conduitData.id}</h3>
+      <p>Status: {conduitData.status}</p>
+      <p>Flux Level: {conduitData.fluxLevel}</p>
+    </div>
+  );
+}`
   }
 ];

@@ -5,6 +5,35 @@ import { useProgression } from '../hooks/useProgression';
 export function ParticleBackground() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { state } = useProgression();
+  const colorRef = useRef('148, 163, 184');
+
+  // Dynamically compute particle colors based on level progress and active theme
+  useEffect(() => {
+    const levels = state.level;
+    let maxLevel = -1;
+    let bestPillar: Pillar = 'Study';
+    for (const p of ['Study', 'Health', 'Finance', 'Mind'] as Pillar[]) {
+      if (levels && levels[p] > maxLevel) {
+        maxLevel = levels[p];
+        bestPillar = p;
+      }
+    }
+
+    let colorRGB = '148, 163, 184'; // default slate-400
+    if (maxLevel > 1) { // Gamified coloring if leveled up
+      if (bestPillar === 'Study') colorRGB = '59, 130, 246'; // blue-500
+      if (bestPillar === 'Health') colorRGB = '16, 185, 129'; // emerald-500
+      if (bestPillar === 'Finance') colorRGB = '245, 158, 11'; // amber-500
+      if (bestPillar === 'Mind') colorRGB = '168, 85, 247'; // purple-500
+    } else {
+      // Fallback to active theme color from document styling
+      const primaryColor = getComputedStyle(document.documentElement).getPropertyValue('--color-primary').trim();
+      if (primaryColor) {
+        colorRGB = primaryColor.replace(/\s+/g, ', ');
+      }
+    }
+    colorRef.current = colorRGB;
+  }, [state.level, state.theme]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -22,25 +51,6 @@ export function ParticleBackground() {
     const particleCount = Math.floor((width * height) / 15000);
 
     let mouse = { x: -1000, y: -1000 };
-
-    // Determine highest pillar color
-    const levels = state.level;
-    let maxLevel = -1;
-    let bestPillar: Pillar = 'Study';
-    for (const p of ['Study', 'Health', 'Finance', 'Mind'] as Pillar[]) {
-      if (levels[p] > maxLevel) {
-        maxLevel = levels[p];
-        bestPillar = p;
-      }
-    }
-
-    let colorRGB = '148, 163, 184'; // default slate-400
-    if (maxLevel > 1) { // Only color if leveled up
-      if (bestPillar === 'Study') colorRGB = '59, 130, 246'; // blue-500
-      if (bestPillar === 'Health') colorRGB = '16, 185, 129'; // emerald-500
-      if (bestPillar === 'Finance') colorRGB = '245, 158, 11'; // amber-500
-      if (bestPillar === 'Mind') colorRGB = '168, 85, 247'; // purple-500
-    }
 
     class Particle {
       x: number;
@@ -69,13 +79,13 @@ export function ParticleBackground() {
         if (this.x < 0 || this.x > width) this.vx *= -1;
         if (this.y < 0 || this.y > height) this.vy *= -1;
 
-        // Mouse interaction (repel)
+        // Mouse interaction (repel) with guard for division-by-zero
         const dx = mouse.x - this.x;
         const dy = mouse.y - this.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
         const maxDist = 200;
 
-        if (distance < maxDist) {
+        if (distance < maxDist && distance > 0) {
           const force = (maxDist - distance) / maxDist;
           this.x -= (dx / distance) * force * 4;
           this.y -= (dy / distance) * force * 4;
@@ -84,7 +94,7 @@ export function ParticleBackground() {
 
       draw() {
         if (!ctx) return;
-        ctx.fillStyle = `rgba(${colorRGB}, 0.6)`; // dynamic
+        ctx.fillStyle = `rgba(${colorRef.current}, 0.6)`; // dynamic
         ctx.beginPath();
         ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
         ctx.fill();
@@ -94,6 +104,8 @@ export function ParticleBackground() {
     for (let i = 0; i < particleCount; i++) {
       particles.push(new Particle());
     }
+
+    let animationFrameId: number;
 
     const animate = () => {
       ctx.clearRect(0, 0, width, height);
@@ -110,7 +122,7 @@ export function ParticleBackground() {
           
           if (dist < 100) {
             ctx.beginPath();
-            ctx.strokeStyle = `rgba(${colorRGB}, ${0.15 * (1 - dist / 100)})`;
+            ctx.strokeStyle = `rgba(${colorRef.current}, ${0.15 * (1 - dist / 100)})`;
             ctx.lineWidth = 0.5;
             ctx.moveTo(particles[i].x, particles[i].y);
             ctx.lineTo(particles[j].x, particles[j].y);
@@ -126,7 +138,7 @@ export function ParticleBackground() {
           
           if (mdist < 250) {
             ctx.beginPath();
-            ctx.strokeStyle = `rgba(${colorRGB}, ${0.6 * (1 - mdist / 250)})`;
+            ctx.strokeStyle = `rgba(${colorRef.current}, ${0.6 * (1 - mdist / 250)})`;
             ctx.lineWidth = 1.5;
             ctx.moveTo(particles[i].x, particles[i].y);
             ctx.lineTo(mouse.x, mouse.y);
@@ -134,7 +146,7 @@ export function ParticleBackground() {
           }
         }
       }
-      requestAnimationFrame(animate);
+      animationFrameId = requestAnimationFrame(animate);
     };
 
     animate();
@@ -161,6 +173,7 @@ export function ParticleBackground() {
     window.addEventListener('mouseout', handleMouseLeave);
 
     return () => {
+      cancelAnimationFrame(animationFrameId);
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseout', handleMouseLeave);
@@ -170,7 +183,7 @@ export function ParticleBackground() {
   return (
     <canvas 
       ref={canvasRef} 
-      className="fixed inset-0 pointer-events-none z-[-1]"
+      className="fixed inset-0 pointer-events-none z-0"
     />
   );
 }

@@ -145,17 +145,35 @@ Analyze the user's solution. If the question category is ABAP or Logic, check if
 /**
  * Sends a chat message query to the Gemini AI Counsel with structured history.
  */
-export async function queryCounselChat(history: ChatMessage[], nextMessage: string): Promise<string> {
+export async function queryCounselChat(history: ChatMessage[], nextMessage: string, appData?: any): Promise<string> {
   const apiKey = getGeminiApiKey();
   if (!apiKey) {
     throw new Error('API Key missing. Enter your Gemini API key in settings.');
   }
 
-  const systemInstruction = `You are the Neural Counsel of the Quantum Growth OS—a highly sophisticated, futuristic AI strategic coach and performance advisor.
+  let systemInstruction = `You are the Neural Counsel of the Quantum Growth OS—a highly sophisticated, futuristic AI strategic coach and performance advisor.
 Your primary role is to guide the user to optimize their routines, levels, habits, and career path progression.
 Keep your tone highly professional, encouraging, slightly tech-sci-fi, and extremely punchy. Use short paragraphs, bullet points, and high-impact strategic terms.
 Avoid fluff. Always ground advice in high-yield execution habits.
 Always converse in the context of the four growth pillars: Study (learning/code), Health (movement/fitness), Finance (ledgers/wealth), and Mind (meditation/discipline).`;
+
+  if (appData) {
+    systemInstruction += `\n\n[SYNCED ACTIVE SYSTEM DATA - LIVE TELEMETRY CONTEXT]:
+- Display Name: ${appData.displayName || 'Agent'}
+- Strategic Archetype: ${appData.archetype || 'None'}
+- Streak Count: ${appData.streakCount || 0} consecutive days
+- Set Life Goals: "${appData.goals || 'None scheduled'}"
+- Current Progression Levels & XP:
+  * Study (Code/Learning): Level ${appData.levels?.Study || 1} (XP: ${appData.xp?.Study || 0})
+  * Health (Movement/Fitness): Level ${appData.levels?.Health || 1} (XP: ${appData.xp?.Health || 0})
+  * Finance (Ledgers/Wealth): Level ${appData.levels?.Finance || 1} (XP: ${appData.xp?.Finance || 0})
+  * Mind (Meditation/Discipline): Level ${appData.levels?.Mind || 1} (XP: ${appData.xp?.Mind || 0})
+- Timetable Tasks Scheduled Today: ${appData.timetableTasks && appData.timetableTasks.length > 0 ? appData.timetableTasks.map((t: any) => `"${t.name || t.title}" [${t.pillar || 'General'}] (${t.start_time || 'No start'})`).join(', ') : 'None scheduled'}
+- Skill Investments logged in Ledger: ${appData.investments && appData.investments.length > 0 ? appData.investments.map((i: any) => `"${i.title}" (₹${i.amount})`).join(', ') : 'None logged'}
+- Completed Habits/Ready Score: ${appData.completedHabitsCount || 0}/${appData.totalHabitsCount || 0} habits completed. Bio-sync readiness score is ${appData.readinessScore || 100}/100.
+
+Analyze this active telemetry data. When the user asks questions or requests assistance, identify potential bottlenecks (e.g. lagging pillars, empty schedules, low readiness score) and construct direct, actionable real-world suggestions, habits, or schedule adjustments to help them balance their active progression matrix.`;
+  }
 
   // Format history for API consumption
   const url = `${GEMINI_API_URL}?key=${apiKey}`;
@@ -283,7 +301,7 @@ Reconstruct these into an optimized structure with balanced breaks, deep focus p
 /**
  * Generates a dynamic CS/ABAP question using the Gemini API.
  */
-export async function generateAIQuestion(category: string, difficulty: string, currentLevel: number): Promise<Question> {
+export async function generateAIQuestion(category: string, difficulty: string, currentLevel: number, topicPrompt?: string): Promise<Question> {
   const systemInstruction = `You are the Neural Protocol Architect of the Quantum Growth OS. Your role is to generate a highly tailored, immersive sci-fi-themed computer science, system logic, or ABAP programming quest.
 You must return ONLY a valid JSON object matching the following TypeScript interface:
 interface Question {
@@ -305,8 +323,9 @@ Do NOT include any markdown code blocks (like \`\`\`json) or conversational text
 - Category: ${category === 'All' || category === 'Training' ? 'ABAP' : category}
 - Difficulty: ${difficulty === 'All' ? 'Medium' : difficulty}
 - Target Progression Threshold: Level ${currentLevel}
+${topicPrompt ? `- Custom Focus Topic/Concept requested by user: "${topicPrompt}"` : ''}
 
-Ensure the question is extremely creative, immersive (cyberpunk/sci-fi framing like "Intercepting high-latency memory packets" or "Defending defensive firewalls"), and testing actual logical concepts suited for Level ${currentLevel}. Output the raw JSON structure.`;
+Ensure the question is extremely creative, immersive (cyberpunk/sci-fi framing like "Intercepting high-latency memory packets" or "Defending defensive firewalls"), and testing actual logical concepts suited for Level ${currentLevel}${topicPrompt ? ` focusing directly on the custom requested topic: ${topicPrompt}` : ''}. Output the raw JSON structure.`;
 
   try {
     const rawResponse = await callGemini(prompt, systemInstruction, true);

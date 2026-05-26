@@ -109,7 +109,7 @@ function AppContent({ currentView, setCurrentView, isPortfolioMode, setIsPortfol
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.98 }}
               transition={{ duration: 0.3 }}
-              className="flex-1 h-full overflow-hidden bg-background"
+              className="flex-1 h-full overflow-hidden bg-transparent"
             >
               <AiCounsel />
             </motion.div>
@@ -120,7 +120,7 @@ function AppContent({ currentView, setCurrentView, isPortfolioMode, setIsPortfol
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.98 }}
               transition={{ duration: 0.3 }}
-              className="flex-1 h-full overflow-hidden bg-background"
+              className="flex-1 h-full overflow-hidden bg-transparent"
             >
               <ControlRoom />
             </motion.div>
@@ -131,7 +131,7 @@ function AppContent({ currentView, setCurrentView, isPortfolioMode, setIsPortfol
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.98 }}
               transition={{ duration: 0.3 }}
-              className="flex-1 h-full overflow-hidden bg-background"
+              className="flex-1 h-full overflow-hidden bg-transparent"
             >
               <AnalyticsMatrix />
             </motion.div>
@@ -142,7 +142,7 @@ function AppContent({ currentView, setCurrentView, isPortfolioMode, setIsPortfol
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.98 }}
               transition={{ duration: 0.3 }}
-              className="flex-1 h-full overflow-hidden bg-background"
+              className="flex-1 h-full overflow-hidden bg-transparent"
             >
               <EngagementHub onNavigateToRank={() => setCurrentView('rank')} />
             </motion.div>
@@ -153,7 +153,7 @@ function AppContent({ currentView, setCurrentView, isPortfolioMode, setIsPortfol
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.98 }}
               transition={{ duration: 0.3 }}
-              className="flex-1 h-full overflow-hidden bg-background"
+              className="flex-1 h-full overflow-hidden bg-transparent"
             >
               <AdminDashboard />
             </motion.div>
@@ -164,7 +164,7 @@ function AppContent({ currentView, setCurrentView, isPortfolioMode, setIsPortfol
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.98 }}
               transition={{ duration: 0.3 }}
-              className="flex-1 h-full overflow-hidden bg-background"
+              className="flex-1 h-full overflow-hidden bg-transparent"
             >
               <Vault />
             </motion.div>
@@ -175,7 +175,7 @@ function AppContent({ currentView, setCurrentView, isPortfolioMode, setIsPortfol
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.98 }}
               transition={{ duration: 0.3 }}
-              className="flex-1 h-full overflow-hidden bg-background"
+              className="flex-1 h-full overflow-hidden bg-transparent"
             >
               <TheLab />
             </motion.div>
@@ -186,7 +186,7 @@ function AppContent({ currentView, setCurrentView, isPortfolioMode, setIsPortfol
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.98 }}
               transition={{ duration: 0.3 }}
-              className="flex-1 h-full overflow-hidden bg-background"
+              className="flex-1 h-full overflow-hidden bg-transparent"
             >
               <SuperAdmin />
             </motion.div>
@@ -197,7 +197,7 @@ function AppContent({ currentView, setCurrentView, isPortfolioMode, setIsPortfol
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.98 }}
               transition={{ duration: 0.3 }}
-              className="flex-1 h-full overflow-hidden bg-background overflow-y-auto"
+              className="flex-1 h-full overflow-hidden bg-transparent overflow-y-auto"
             >
               <RankAndRewards />
             </motion.div>
@@ -208,7 +208,7 @@ function AppContent({ currentView, setCurrentView, isPortfolioMode, setIsPortfol
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.98 }}
               transition={{ duration: 0.3 }}
-              className="flex-1 h-full overflow-hidden bg-background"
+              className="flex-1 h-full overflow-hidden bg-transparent"
             >
               <StrategicControl />
             </motion.div>
