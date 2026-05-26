@@ -355,3 +355,29 @@ Ensure the protocols are innovative, highly biological, scientifically sound (e.
     throw new Error(e.message || 'Bio-Mission synthesis failed.');
   }
 }
+
+/**
+ * Synthesizes dynamic, personalized ascension calibration insights for the Rank & Rewards workspace.
+ */
+export async function generateRankCalibrationInsights(
+  archetype: string,
+  currentLevel: number,
+  baselineOffset: number,
+  goals: string
+): Promise<string> {
+  const systemInstruction = `You are the Neural Ascension Strategist of the Quantum Growth OS. Your role is to analyze the user's calibration profile, active rank standing, and growth velocity to compile a highly futuristic, motivating "Synaptic Ascension & Rank Strategy Dossier" in Markdown.
+Keep your tone extremely premium, slightly tech-cyberpunk, and highly strategic. Limit fluff. Output brief actionable growth instructions.`;
+
+  const prompt = `Synthesize a Synaptic Ascension & Rank Strategy Dossier for:
+- Strategic Archetype: ${archetype}
+- Current Active Rank Level: Level ${currentLevel}
+- Selected Baseline Starting Offset: ${baselineOffset >= 0 ? '+' : ''}${baselineOffset}
+- User Defined Growth Milestones: "${goals || 'None specified'}"
+
+The strategy dossier MUST include:
+1. **🧬 Synaptic Calibrator Status**: Analyze their active rank, starting offset, and raw level progress. Highlight their courage if they started from a negative baseline ("climbing out of the Void/Abyss").
+2. **⚔️ High-Yield Ascension Directives**: Provide 3 distinct, high-impact tactical exercises matching their archetype to accelerate their leveling speed.
+3. **🚀 Tactical System Projection**: A futuristic diagnostic prediction on how their progress will compound, concluding with a custom cyberpunk motivational mantra or quote (e.g. "Let the Neural Core align with your actions").`;
+
+  return callGemini(prompt, systemInstruction, false);
+}

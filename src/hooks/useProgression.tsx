@@ -6,16 +6,23 @@ import confetti from 'canvas-confetti';
 
 export type Pillar = 'Study' | 'Health' | 'Finance' | 'Mind';
 
-// Option A baseline fix: baseline is a DISPLAY-ONLY label shift.
-// Raw level always starts at 1 from 0 XP — same formula for everyone.
-// baselineOffset is ADDED to the display label only.
-// e.g. baseline=-500, 0XP => displayed as level -499 (not affecting XP math)
 function rawLevel(xp: number): number {
   if (xp <= 0) return 1;
   return Math.floor(Math.pow(xp / 100, 1 / 1.5)) + 1;
 }
 function calculateLevel(xp: number, baselineOffset: number = 0): number {
-  return rawLevel(xp) + baselineOffset;
+  const rLvl = rawLevel(xp);
+  if (baselineOffset >= 0) {
+    return rLvl + baselineOffset;
+  } else {
+    // Proportional scaling for negative baseline offset.
+    // Gaining 100 raw levels reaches display level 0, then progresses normally.
+    if (rLvl <= 100) {
+      return baselineOffset + Math.floor((rLvl - 1) * (-baselineOffset / 99));
+    } else {
+      return rLvl - 100;
+    }
+  }
 }
 // ── Badge definitions — auto-awarded when totalXp / totalLevel hits threshold ─
 export interface Badge { id: string; name: string; desc: string; icon: string; }
@@ -152,6 +159,7 @@ interface ProgressionState {
   buffs: Buff[];
   theme: string;
   baselineLevel: number;
+  timetableXpClaims: Record<string, string[]>;
 }
 
 interface ProgressionContextType {
@@ -165,6 +173,7 @@ interface ProgressionContextType {
   levelUpData: { pillar: Pillar | 'Global'; newLevel: number; newRank?: string } | null;
   closeLevelUp: () => void;
   loading: boolean;
+  claimTimetableTaskXp: (taskId: string, pillar: Pillar, label: string, baseAmount: number) => Promise<{ awarded: boolean; xpEarned: number }>;
 }
 
 const ProgressionContext = createContext<ProgressionContextType | null>(null);
@@ -228,6 +237,7 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [baselineLevel, setBaselineLevel] = useState(0);
   const [earnedBadgeIds, setEarnedBadgeIds] = useState<string[]>([]);
+  const [timetableXpClaims, setTimetableXpClaims] = useState<Record<string, string[]>>({});
 
   // Refs — always hold latest values, addXp reads from here to avoid stale closures
   const pillarXpRef = useRef(EMPTY_PILLAR_XP);
@@ -239,6 +249,7 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
   const buffsRef = useRef<Buff[]>([]);
   const baselineLevelRef = useRef(0);
   const earnedBadgeIdsRef = useRef<string[]>([]);
+  const timetableXpClaimsRef = useRef<Record<string, string[]>>({});
 
   useEffect(() => { pillarXpRef.current = pillarXp; }, [pillarXp]);
   useEffect(() => { totalXpRef.current = totalXp; }, [totalXp]);
@@ -248,6 +259,7 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
   useEffect(() => { buffsRef.current = buffs; }, [buffs]);
   useEffect(() => { baselineLevelRef.current = baselineLevel; }, [baselineLevel]);
   useEffect(() => { earnedBadgeIdsRef.current = earnedBadgeIds; }, [earnedBadgeIds]);
+  useEffect(() => { timetableXpClaimsRef.current = timetableXpClaims; }, [timetableXpClaims]);
 
   // ── Load profile on mount ─────────────────────────────────────────────────
   useEffect(() => {
@@ -284,6 +296,7 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
         const dbSettings = (profile as any).settings || {};
         const dbTheme = dbSettings.theme || localStorage.getItem(`quantum_theme_${user.id}`) || 'quantum';
         const dbBaselineLevel = Number(dbSettings.baselineLevel) || 0;
+        const dbXpClaims = dbSettings.timetableXpClaims || JSON.parse(localStorage.getItem(`quantum_xp_claims_${user.id}`) || '{}');
 
         setTotalXp(dbTotalXp);
         setPillarXp(dbPillarXp);
@@ -297,6 +310,32 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
         setBuffs(localBuffs.filter((b: Buff) => b.expiresAt > Date.now()));
         setThemeState(dbTheme);
         setBaselineLevel(dbBaselineLevel);
+        setTimetableXpClaims(dbXpClaims);
+        timetableXpClaimsRef.current = dbXpClaims;
+
+        // Load earned badges from Supabase (ignoring error or falling back offline)
+        let badgeIds: string[] = [];
+        try {
+          const { data: dbBadges, error: badgeError } = await supabase
+            .from('user_earned_badges')
+            .select('badge_id')
+            .eq('user_id', user.id);
+          
+          if (!badgeError && dbBadges) {
+            badgeIds = dbBadges.map((b: any) => b.badge_id);
+          } else {
+            const local = localStorage.getItem(`quantum_badges_${user.id}`);
+            if (local) badgeIds = JSON.parse(local);
+          }
+        } catch (e) {
+          const local = localStorage.getItem(`quantum_badges_${user.id}`);
+          if (local) {
+            try { badgeIds = JSON.parse(local); } catch (err) {}
+          }
+        }
+        setEarnedBadgeIds(badgeIds);
+        earnedBadgeIdsRef.current = badgeIds;
+        localStorage.setItem(`quantum_badges_${user.id}`, JSON.stringify(badgeIds));
 
         // Prime refs so addXp works immediately without waiting for re-render
         totalXpRef.current = dbTotalXp;
@@ -416,7 +455,8 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
       streak: currentStreak,
       actionType,
     };
-    const newlyEarned = BADGES.filter(b => checkBadgeTriggers(b.id, badgeOpts));
+    const currentEarnedBadges = earnedBadgeIdsRef.current || [];
+    const newlyEarned = BADGES.filter(b => !currentEarnedBadges.includes(b.id) && checkBadgeTriggers(b.id, badgeOpts));
     if (newlyEarned.length > 0 && supabase) {
       // Optimistic toast notifications
       newlyEarned.forEach(b => {
@@ -424,6 +464,11 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
           toast.success(`${b.icon} Badge Unlocked: ${b.name}!`, { duration: 5000 });
         });
       });
+      const newIds = [...currentEarnedBadges, ...newlyEarned.map(b => b.id)];
+      setEarnedBadgeIds(newIds);
+      earnedBadgeIdsRef.current = newIds;
+      localStorage.setItem(`quantum_badges_${userId}`, JSON.stringify(newIds));
+
       // Persist to user_earned_badges (insert ignoring duplicates)
       void supabase.from('user_earned_badges')
         .upsert(
@@ -503,6 +548,57 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
     return finalAmount;
   }, []);
 
+  // Secure Timetable XP Claiming Ledger - awards task completion XP strictly once per task per day.
+  const claimTimetableTaskXp = useCallback(async (
+    taskId: string,
+    pillar: Pillar,
+    label: string,
+    baseAmount: number
+  ): Promise<{ awarded: boolean; xpEarned: number }> => {
+    const today = format(new Date(), 'yyyy-MM-dd');
+    const claims = { ...timetableXpClaimsRef.current };
+    const todayClaims = claims[today] ? [...claims[today]] : [];
+
+    const stringTaskId = String(taskId);
+
+    if (todayClaims.includes(stringTaskId)) {
+      // Already claimed today!
+      return { awarded: false, xpEarned: 0 };
+    }
+
+    // Unclaimed! Award XP
+    const newClaims = {
+      ...claims,
+      [today]: [...todayClaims, stringTaskId]
+    };
+
+    setTimetableXpClaims(newClaims);
+    timetableXpClaimsRef.current = newClaims;
+
+    const uid = userIdRef.current || 'default';
+    localStorage.setItem(`quantum_xp_claims_${uid}`, JSON.stringify(newClaims));
+
+    // Award the XP through the normal addXp path (which applies weekend/streak multipliers!)
+    const earned = await addXp(pillar, label, baseAmount);
+
+    // Sync to Supabase
+    if (supabase && uid !== 'default') {
+      try {
+        const { data } = await supabase.from('profiles').select('settings').eq('id', uid).single();
+        const currentSettings = data?.settings || {};
+        const updatedSettings = {
+          ...currentSettings,
+          timetableXpClaims: newClaims
+        };
+        await supabase.from('profiles').update({ settings: updatedSettings }).eq('id', uid);
+      } catch (e) {
+        console.error('[useProgression] Failed to sync timetable XP claims:', e);
+      }
+    }
+
+    return { awarded: true, xpEarned: earned };
+  }, [addXp]);
+
   const closeLevelUp = useCallback(() => {
     setShowLevelUp(false);
     setLevelUpData(null);
@@ -535,9 +631,11 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
           archetype,
           goals,
           theme,
-          baselineLevel
+          baselineLevel,
+          timetableXpClaims
         },
         addXp,
+        claimTimetableTaskXp,
         addBuff: (buff: Buff) => {
           const newBuffs = [...buffs, buff];
           setBuffs(newBuffs);

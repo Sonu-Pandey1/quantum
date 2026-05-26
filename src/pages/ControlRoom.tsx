@@ -43,6 +43,9 @@ interface TodoItem {
   isOneOff?: boolean;
   completed?: boolean;
   completedDates?: string[];
+  task_target?: 'High' | 'Medium' | 'Low';
+  xpAwarded?: boolean;
+  xpAwardedDates?: string[];
 }
 
 const defaultTasks: TimetableTask[] = [
@@ -83,6 +86,7 @@ export function ControlRoom() {
   const [newTodoPillar, setNewTodoPillar] = useState<'Study' | 'Health' | 'Finance' | 'Mind'>('Study');
   const [newTodoTime, setNewTodoTime] = useState('');
   const [newTodoIsOneOff, setNewTodoIsOneOff] = useState(false);
+  const [newTodoPriority, setNewTodoPriority] = useState<'High' | 'Medium' | 'Low'>('Medium');
 
   useEffect(() => {
     async function loadUserConfig() {
@@ -103,22 +107,69 @@ export function ControlRoom() {
 
           if (data && data.settings) {
             const s = data.settings;
-            if (s.timetable) setTasks(s.timetable);
-            if (s.habits) setHabits(s.habits);
-            if (s.roadmap) setRoadmap(s.roadmap);
-            if (s.todos) setTodos(s.todos);
-            if (s.weightGoal) setWeightGoal(s.weightGoal.toString());
-            if (s.sapTarget) setSapTarget(s.sapTarget);
-            if (s.sundayRest !== undefined) setSundayRest(s.sundayRest);
+            
+            // 1. Timetable loading
+            if (s.timetable) {
+              setTasks(s.timetable);
+              localStorage.setItem(`quantum_timetable_${uid}`, JSON.stringify(s.timetable));
+            } else {
+              const t = localStorage.getItem(`quantum_timetable_${uid}`);
+              if (t && t !== "undefined") { try { setTasks(JSON.parse(t)); } catch(e){} }
+            }
 
-            // Sync to local for offline support (with safety checks)
-            if (s.timetable) localStorage.setItem(`quantum_timetable_${uid}`, JSON.stringify(s.timetable));
-            if (s.habits) localStorage.setItem(`quantum_habits_${uid}`, JSON.stringify(s.habits));
-            if (s.roadmap) localStorage.setItem(`quantum_roadmap_${uid}`, JSON.stringify(s.roadmap));
-            if (s.todos) localStorage.setItem(`quantum_todos_${uid}`, JSON.stringify(s.todos));
-            if (s.weightGoal !== undefined) localStorage.setItem(`quantum_weight_goal_${uid}`, s.weightGoal.toString());
-            if (s.sapTarget) localStorage.setItem(`quantum_sap_target_${uid}`, s.sapTarget);
-            localStorage.setItem(`quantum_sunday_rest_${uid}`, (s.sundayRest ?? true).toString());
+            // 2. Habits loading
+            if (s.habits) {
+              setHabits(s.habits);
+              localStorage.setItem(`quantum_habits_${uid}`, JSON.stringify(s.habits));
+            } else {
+              const h = localStorage.getItem(`quantum_habits_${uid}`);
+              if (h && h !== "undefined") { try { setHabits(JSON.parse(h)); } catch(e){} }
+            }
+
+            // 3. Roadmap loading
+            if (s.roadmap) {
+              setRoadmap(s.roadmap);
+              localStorage.setItem(`quantum_roadmap_${uid}`, JSON.stringify(s.roadmap));
+            } else {
+              const r = localStorage.getItem(`quantum_roadmap_${uid}`);
+              if (r && r !== "undefined") { try { setRoadmap(JSON.parse(r)); } catch(e){} }
+            }
+
+            // 4. Todos loading - Crucial fallback to prevent losing newly created todos
+            if (s.todos) {
+              setTodos(s.todos);
+              localStorage.setItem(`quantum_todos_${uid}`, JSON.stringify(s.todos));
+            } else {
+              const td = localStorage.getItem(`quantum_todos_${uid}`);
+              if (td && td !== "undefined") { try { setTodos(JSON.parse(td)); } catch(e){} }
+            }
+
+            // 5. Weight Goal loading
+            if (s.weightGoal) {
+              setWeightGoal(s.weightGoal.toString());
+              localStorage.setItem(`quantum_weight_goal_${uid}`, s.weightGoal.toString());
+            } else {
+              const w = localStorage.getItem(`quantum_weight_goal_${uid}`);
+              if (w) setWeightGoal(w);
+            }
+
+            // 6. Big Goal loading
+            if (s.sapTarget) {
+              setSapTarget(s.sapTarget);
+              localStorage.setItem(`quantum_sap_target_${uid}`, s.sapTarget);
+            } else {
+              const sg = localStorage.getItem(`quantum_sap_target_${uid}`);
+              if (sg) setSapTarget(sg);
+            }
+
+            // 7. Sunday Rest loading
+            if (s.sundayRest !== undefined) {
+              setSundayRest(s.sundayRest);
+              localStorage.setItem(`quantum_sunday_rest_${uid}`, s.sundayRest.toString());
+            } else {
+              const sr = localStorage.getItem(`quantum_sunday_rest_${uid}`);
+              if (sr) setSundayRest(sr !== 'false');
+            }
             return;
           }
         } catch (e) {
@@ -302,7 +353,7 @@ export function ControlRoom() {
 
 
 
-  const addTodo = () => {
+  const addTodo = async () => {
     if (!newTodoTitle.trim()) return;
     const newId = todos.length > 0 ? Math.max(...todos.map(t => t.id)) + 1 : 1;
     const item: TodoItem = {
@@ -313,17 +364,59 @@ export function ControlRoom() {
       isOneOff: newTodoIsOneOff,
       completed: false,
       completedDates: [],
+      xpAwarded: false,
+      xpAwardedDates: [],
+      task_target: newTodoPriority,
       time: newTodoTime || undefined
     };
-    setTodos([...todos, item]);
+    const updated = [...todos, item];
+    setTodos(updated);
+    
+    // Auto-save immediately to prevent missing tasks in the Bento Checklist
+    const uid = userId || 'default';
+    localStorage.setItem(`quantum_todos_${uid}`, JSON.stringify(updated));
+    if (uid !== 'default' && supabase) {
+      try {
+        const { data } = await supabase.from('profiles').select('settings').eq('id', uid).single();
+        const currentSettings = data?.settings || {};
+        const updatedSettings = {
+          ...currentSettings,
+          todos: updated,
+        };
+        await supabase.from('profiles').update({ settings: updatedSettings }).eq('id', uid);
+      } catch (e) {
+        console.error("Auto-save todo failed:", e);
+      }
+    }
+    
     setNewTodoTitle('');
     setNewTodoTime('');
     setNewTodoIsOneOff(false);
+    setNewTodoPriority('Medium');
     audio.playSuccess();
   };
 
-  const removeTodo = (id: number) => {
-    setTodos(todos.filter(t => t.id !== id));
+  const removeTodo = async (id: number) => {
+    const updated = todos.filter(t => t.id !== id);
+    setTodos(updated);
+    
+    // Auto-save immediately to prevent missing tasks in the Bento Checklist
+    const uid = userId || 'default';
+    localStorage.setItem(`quantum_todos_${uid}`, JSON.stringify(updated));
+    if (uid !== 'default' && supabase) {
+      try {
+        const { data } = await supabase.from('profiles').select('settings').eq('id', uid).single();
+        const currentSettings = data?.settings || {};
+        const updatedSettings = {
+          ...currentSettings,
+          todos: updated,
+        };
+        await supabase.from('profiles').update({ settings: updatedSettings }).eq('id', uid);
+      } catch (e) {
+        console.error("Auto-save remove todo failed:", e);
+      }
+    }
+    
     audio.playClick();
   };
 
@@ -607,7 +700,9 @@ export function ControlRoom() {
                             </button>
                           </div>
                         </div>
-                      </mot                  } else {
+                      </motion.div>
+                    );
+                  } else {
                     return (
                       <motion.div 
                         key={task.id}
@@ -714,7 +809,6 @@ export function ControlRoom() {
                             <Check size={12} /> Apply Changes
                           </button>
                         </div>
-                      </motion.div>      </div>
                       </motion.div>
                     );
                   }
@@ -809,7 +903,7 @@ export function ControlRoom() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="text-[10px] font-black text-textMuted uppercase tracking-widest block mb-1 opacity-60">Time (Optional)</label>
                   <input 
@@ -830,6 +924,18 @@ export function ControlRoom() {
                     <option value="Health">💪 Health</option>
                     <option value="Finance">💼 Finance</option>
                     <option value="Mind">🧘 Mind</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-black text-textMuted uppercase tracking-widest block mb-1 opacity-60">Priority / XP</label>
+                  <select
+                    value={newTodoPriority}
+                    onChange={(e) => setNewTodoPriority(e.target.value as any)}
+                    className="w-full bg-background border border-border rounded-xl px-2 py-1.5 text-sm text-textMain font-bold outline-none focus:border-primary"
+                  >
+                    <option value="High">🔴 High (100 XP)</option>
+                    <option value="Medium">🟡 Medium (60 XP)</option>
+                    <option value="Low">🔵 Low (40 XP)</option>
                   </select>
                 </div>
               </div>
@@ -901,12 +1007,22 @@ export function ControlRoom() {
                             </p>
                           </div>
 
-                          <button
-                            onClick={() => removeTodo(todo.id)}
-                            className="p-1.5 text-textMuted hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
-                          >
-                            <Trash2 size={13} />
-                          </button>
+                          <div className="flex items-center gap-2.5 shrink-0">
+                            <span className={cn(
+                              "text-[8px] font-black uppercase px-2 py-0.5 rounded border shrink-0",
+                              todo.task_target === 'High' ? 'text-red-400 border-red-500/20 bg-red-500/10' :
+                              todo.task_target === 'Low' ? 'text-blue-400 border-blue-500/20 bg-blue-500/10' :
+                              'text-amber-400 border-amber-500/20 bg-amber-500/10'
+                            )}>
+                              {todo.task_target === 'High' ? '100 XP' : todo.task_target === 'Low' ? '40 XP' : '60 XP'}
+                            </span>
+                            <button
+                              onClick={() => removeTodo(todo.id)}
+                              className="p-1.5 text-textMuted hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-colors shrink-0"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
                         </motion.div>
                       );
                     })}

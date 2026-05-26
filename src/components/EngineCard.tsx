@@ -48,7 +48,7 @@ function calculateEndTime(startTime: string, durationMinutes: number): string {
 }
 
 export function EngineCard() {
-  const { addXp } = useProgression();
+  const { claimTimetableTaskXp } = useProgression();
   const [currentTime, setCurrentTime] = useState(new Date());
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [progress, setProgress] = useState(0);
@@ -121,19 +121,37 @@ export function EngineCard() {
         
         try {
           console.log("[EngineCard] Loading executions for user:", uid, "date:", todayStr);
-          const { data, error } = await supabase
+          let execs: string[] = [];
+          
+          const { data: execData, error: execError } = await supabase
             .from('executions')
-            .select('*')
+            .select('task_id')
             .eq('user_id', uid)
             .eq('date_string', todayStr);
 
-          if (error) {
-            console.error("[EngineCard] Supabase executions fetch failed:", error);
+          if (execError) {
+            console.error("[EngineCard] Supabase executions fetch failed:", execError);
+          } else if (execData) {
+            execs = execData.map(d => String(d.task_id));
           }
 
-          if (data && data.length > 0) {
-            console.log("[EngineCard] Loaded executions from cloud:", data);
-            setExecutedTaskIds(data.map(d => d.task_id));
+          const { data: compData, error: compError } = await supabase
+            .from('daily_completions')
+            .select('task_id')
+            .eq('user_id', uid)
+            .eq('date', todayStr)
+            .eq('completed', true);
+
+          if (compError) {
+            console.error("[EngineCard] Supabase daily_completions fetch failed:", compError);
+          } else if (compData) {
+            const compIds = compData.map(d => String(d.task_id));
+            execs = Array.from(new Set([...execs, ...compIds]));
+          }
+
+          if (execs.length > 0) {
+            console.log("[EngineCard] Loaded merged executions:", execs);
+            setExecutedTaskIds(execs);
           } else {
             const execStr = localStorage.getItem(`quantum_exec_${uid}_${todayStr}`);
             console.log("[EngineCard] Loaded executions fallback from local storage:", execStr);
@@ -179,9 +197,14 @@ export function EngineCard() {
     const timer = setInterval(() => {
       const now = new Date();
       setCurrentTime(now);
+      const todayDow = now.getDay();
 
       // Find active task
       const current = schedule.find(t => {
+        // Filter by day of week
+        const tDow = (t as any).dayOfWeek !== undefined ? (t as any).dayOfWeek : (t as any).day_of_week;
+        if (tDow !== undefined && tDow !== todayDow) return false;
+
         const tStart = (t as any).start || (t as any).timeStart;
         const tEnd = (t as any).end || (t as any).timeEnd;
         if (!tStart || !tEnd) return false;
@@ -212,6 +235,9 @@ export function EngineCard() {
           // If we are more than 50% through and not executed, maybe we are just 'idle' or running.
           // Let's mark as optimal if we are keeping up, behind if we missed a previous one.
           const previousTasks = schedule.filter(t => {
+             const tDow = (t as any).dayOfWeek !== undefined ? (t as any).dayOfWeek : (t as any).day_of_week;
+             if (tDow !== undefined && tDow !== todayDow) return false;
+
              const tE = (t as any).end || (t as any).timeEnd;
              return tE ? parseTime(tE) < now : false;
           });
@@ -224,6 +250,9 @@ export function EngineCard() {
         setTimeRemaining('Awaiting next sequence...');
 
         const previousTasks = schedule.filter(t => {
+             const tDow = (t as any).dayOfWeek !== undefined ? (t as any).dayOfWeek : (t as any).day_of_week;
+             if (tDow !== undefined && tDow !== todayDow) return false;
+
              const tE = (t as any).end || (t as any).timeEnd;
              return tE ? parseTime(tE) < now : false;
         });
@@ -253,19 +282,22 @@ export function EngineCard() {
     audio.playSuccess();
     if (!activeTask) return;
 
-    let xpAmount = 5; // Fallback
+    let baseXp = 30;
     const tTarget = (activeTask as any).task_target;
-    if (tTarget === 'High') xpAmount = 100;
-    else if (tTarget === 'Medium') xpAmount = 60;
-    else if (tTarget === 'Low') xpAmount = 40;
-    else xpAmount = 30;
+    if (tTarget === 'High') baseXp = 100;
+    else if (tTarget === 'Medium') baseXp = 60;
+    else if (tTarget === 'Low') baseXp = 40;
 
-    const isWknd = new Date().getDay() === 0 || new Date().getDay() === 6;
-    if (isWknd) {
-      xpAmount *= 2;
+    const { awarded } = await claimTimetableTaskXp(
+      String(activeTask.id),
+      (activeTask as any).pillar || 'Mind',
+      `Routine Task: ${activeTask.title}`,
+      baseXp
+    );
+
+    if (awarded) {
+      // XP successfully awarded for this cycle!
     }
-
-    addXp((activeTask as any).pillar || 'Mind', `Routine Task: ${activeTask.title}`, xpAmount);
 
     const todayStr = getTodayString();
     
@@ -294,14 +326,25 @@ export function EngineCard() {
       };
       console.log("[EngineCard] Syncing execution to Supabase with payload:", payload);
       
-      const { error } = await supabase.from('executions').insert([payload]);
-      if (error) {
-        console.error("[EngineCard] Supabase sync failed:", error);
-        import('react-hot-toast').then(({ default: toast }) => {
-          toast.error(`Cloud Sync Failed: ${error.message}`);
-        });
-      } else {
-        console.log("[EngineCard] Supabase sync succeeded.");
+      const { error: execErr } = await supabase.from('executions').insert([payload]);
+      if (execErr) {
+        console.error("[EngineCard] Supabase executions sync failed:", execErr);
+      }
+
+      // Sync to daily_completions too so it shows done on TimetableHub!
+      try {
+        const { error: compErr } = await supabase.from('daily_completions').insert([{
+          user_id: activeUid,
+          date: todayStr,
+          task_id: String(activeTask.id),
+          completed: true,
+          completed_at: new Date().toISOString()
+        }]);
+        if (compErr) {
+          console.error("[EngineCard] Supabase daily_completions sync failed:", compErr);
+        }
+      } catch (e) {
+        console.error("Failed to sync to daily_completions:", e);
       }
     }
 
@@ -488,7 +531,14 @@ export function EngineCard() {
                 {currentTime.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' })}
               </div>
             </div>
-            <h3 className="text-lg md:text-2xl font-bold text-textMain line-clamp-1">{activeTask ? activeTask.title : 'No Active Task'}</h3>
+            <div className="flex items-center gap-3 mb-1 flex-wrap">
+              <h3 className="text-lg md:text-2xl font-bold text-textMain line-clamp-1">{activeTask ? activeTask.title : 'No Active Task'}</h3>
+              {activeTask && (
+                <span className="text-[10px] md:text-xs font-mono font-black text-primary px-2.5 py-0.5 bg-primary/10 border border-primary/25 rounded-lg shrink-0">
+                  {activeTask.start} - {activeTask.end}
+                </span>
+              )}
+            </div>
             <p className="text-xs md:text-lg font-bold text-primary animate-pulse mt-1 md:mt-2 bg-primary/10 inline-block px-2 py-0.5 md:px-3 md:py-1 rounded-md w-max border border-primary/20">
               {timeRemaining}
             </p>

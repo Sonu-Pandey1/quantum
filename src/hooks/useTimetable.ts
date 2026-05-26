@@ -152,10 +152,14 @@ export function useTimetable(userId: string | null) {
   const todayTasks = tasks.filter(t => t.day_of_week === todayDow);
 
   // ── Toggle task completion ─────────────────────────────────────────────────
-  const toggleCompletion = useCallback(async (taskId: string) => {
+  const toggleCompletion = useCallback(async (
+    taskId: string,
+    claimXpFn?: (taskId: string, pillar: 'Study' | 'Health' | 'Finance' | 'Mind', label: string, baseAmount: number) => Promise<{ awarded: boolean; xpEarned: number }>
+  ) => {
     if (!supabase || !userId) return;
 
     const existing = completions.find(c => c.task_id === taskId && c.date === today);
+    const currentlyCompleted = existing ? existing.completed : false;
 
     if (existing) {
       // Toggle off
@@ -176,7 +180,33 @@ export function useTimetable(userId: string | null) {
         .single();
       if (data) setCompletions(prev => [...prev, data]);
     }
-  }, [completions, today, userId]);
+
+    // Award XP if completing for the first time today!
+    if (!currentlyCompleted && claimXpFn) {
+      const task = tasks.find(t => t.id === taskId);
+      if (task) {
+        const getBaseXp = (target?: string) => {
+          if (target === 'High') return 100;
+          if (target === 'Low') return 40;
+          return 60; // Medium / Default
+        };
+        const base = getBaseXp(task.task_target);
+        
+        const { awarded, xpEarned } = await claimXpFn(
+          taskId,
+          task.pillar || 'Mind',
+          `Routine Task: ${task.name}`,
+          base
+        );
+
+        if (awarded) {
+          import('react-hot-toast').then(({ default: toast }) => {
+            toast.success(`🎉 Routine Mastered! +${xpEarned} XP`);
+          });
+        }
+      }
+    }
+  }, [completions, today, userId, tasks]);
 
   // ── Today's stats ──────────────────────────────────────────────────────────
   const todayStats: DailyStats = (() => {

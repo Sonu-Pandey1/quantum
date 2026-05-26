@@ -15,6 +15,9 @@ interface TodoItem {
   isOneOff?: boolean;
   completed?: boolean;
   completedDates?: string[];
+  task_target?: 'High' | 'Medium' | 'Low';
+  xpAwarded?: boolean;
+  xpAwardedDates?: string[];
 }
 
 const DAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -156,26 +159,50 @@ export function TodoChecklistCard({ onNavigate }: { onNavigate?: (view: string) 
     const currentlyDone = isCompleted(todo);
     const updatedTodos = [...todos];
 
+    const todayStr = new Date().toISOString().split('T')[0];
+    const todayDay = new Date().getDay();
+    const isWeekend = todayDay === 0 || todayDay === 6;
+
+    let shouldAwardXp = false;
+
+    // Exploit Protection Logic: 
+    // Ensure we only record one XP award per calendar day (for recurring) or once ever (for one-off).
+    if (!currentlyDone) {
+      if (todo.isOneOff) {
+        if (!todo.xpAwarded) {
+          shouldAwardXp = true;
+        }
+      } else {
+        const awardedDates = todo.xpAwardedDates ? [...todo.xpAwardedDates] : [];
+        if (!awardedDates.includes(todayStr)) {
+          shouldAwardXp = true;
+        }
+      }
+    }
+
     if (todo.isOneOff) {
       updatedTodos[todoIndex] = {
         ...todo,
         completed: !currentlyDone,
+        xpAwarded: todo.xpAwarded || shouldAwardXp,
       };
     } else {
       const targetDate = getMostRecentDateForDay(todo.dayOfWeek);
       const dates = todo.completedDates ? [...todo.completedDates] : [];
+      const awardedDates = todo.xpAwardedDates ? [...todo.xpAwardedDates] : [];
       
       if (currentlyDone) {
-        // Remove completion date
+        // Remove completion date (uncheck), but KEEP xpAwardedDates intact to prevent farming
         updatedTodos[todoIndex] = {
           ...todo,
           completedDates: dates.filter(d => d !== targetDate),
         };
       } else {
-        // Add completion date
+        // Add completion date (check) and record XP award date persistently
         updatedTodos[todoIndex] = {
           ...todo,
           completedDates: [...dates, targetDate],
+          xpAwardedDates: shouldAwardXp ? [...awardedDates, todayStr] : awardedDates,
         };
       }
     }
@@ -185,12 +212,24 @@ export function TodoChecklistCard({ onNavigate }: { onNavigate?: (view: string) 
     saveTodos(updatedTodos);
 
     if (!currentlyDone) {
-      // Just completed! Award XP
       audio.playSuccess();
-      const todayDay = new Date().getDay();
-      const isWeekend = todayDay === 0 || todayDay === 6;
-      const xpValue = isWeekend ? 80 : 40;
-      await addXp(todo.pillar, 'Todo Completed', xpValue);
+      if (shouldAwardXp) {
+        // Award XP strictly based on the configured priority of this todo
+        const getBaseXp = (target?: string) => {
+          if (target === 'High') return 100;
+          if (target === 'Low') return 40;
+          return 60; // Medium / Default
+        };
+        const base = getBaseXp(todo.task_target);
+        const xpValue = isWeekend ? base * 2 : base;
+
+        await addXp(todo.pillar, `Todo Completed: ${todo.title}`, xpValue);
+      } else {
+        // Already claimed XP for this cycle
+        import('react-hot-toast').then(({ default: toast }) => {
+          toast.success("Objective Completed (XP already logged for this cycle)", { id: `dup-xp-${todo.id}`, duration: 2000 });
+        });
+      }
     } else {
       // Unchecked
       audio.playClick();
@@ -441,11 +480,20 @@ export function TodoChecklistCard({ onNavigate }: { onNavigate?: (view: string) 
                     </div>
 
                     {/* XP Indicator */}
-                    {!done && (
-                      <div className="ml-2 py-0.5 px-1.5 bg-primary/10 border border-primary/20 text-[9px] font-black text-primary rounded-md shrink-0 opacity-0 group-hover/item:opacity-100 transition-opacity duration-300">
-                        +{isWeekend ? '80' : '40'} XP
-                      </div>
-                    )}
+                    {!done && (() => {
+                      const getBaseXp = (target?: string) => {
+                        if (target === 'High') return 100;
+                        if (target === 'Low') return 40;
+                        return 60; // Medium / Default
+                      };
+                      const base = getBaseXp(todo.task_target);
+                      const displayXp = isWeekend ? base * 2 : base;
+                      return (
+                        <div className="ml-2 py-0.5 px-1.5 bg-primary/10 border border-primary/20 text-[9px] font-black text-primary rounded-md shrink-0 opacity-0 group-hover/item:opacity-100 transition-opacity duration-300">
+                          +{displayXp} XP
+                        </div>
+                      );
+                    })()}
                   </motion.div>
                 );
               })}

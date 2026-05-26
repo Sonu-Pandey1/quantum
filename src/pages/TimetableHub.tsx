@@ -45,7 +45,7 @@ const BADGE_LABELS: Record<string, string> = {
 };
 
 export function TimetableHub() {
-  const { addXp } = useProgression();
+  const { addXp, claimTimetableTaskXp } = useProgression();
 
   // Get userId from supabase session via progression context workaround
   const [supaUserId] = useState<string | null>(() => {
@@ -354,7 +354,7 @@ export function TimetableHub() {
                     >
                       {isToday && (
                         <button
-                          onClick={() => toggleCompletion(task.id)}
+                          onClick={() => toggleCompletion(task.id, claimTimetableTaskXp)}
                           className={`shrink-0 w-7 h-7 rounded-full border-2 flex items-center justify-center transition-all ${
                             isCompleted
                               ? 'bg-emerald-500 border-emerald-500 text-white'
