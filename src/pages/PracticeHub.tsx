@@ -12,7 +12,7 @@ import { QUESTIONS } from '../lib/questions';
 import type { Question } from '../lib/questions';
 import { formatDistanceToNow, parseISO, isAfter, addDays } from 'date-fns';
 import { ListSkeleton } from '../components/Skeleton';
-import { gradeAnswerWithAI, isApiKeyConfigured, generateAIQuestion } from '../lib/aiService';
+import { gradeAnswerWithAI, isApiKeyConfigured, generateAIQuestion, getDetailedSolutionWithAI } from '../lib/aiService';
 import type { AIGradeResult } from '../lib/aiService';
 import { cn } from '../lib/utils';
 
@@ -76,13 +76,16 @@ interface Submission {
 }
 
 export function PracticeHub({ onBack }: { onBack: () => void }) {
-  const [activeTab, setActiveTab] = useState<'All' | 'Pattern' | 'Logic' | 'HR' | 'ABAP' | 'Training'>('All');
+  const [activeTab, setActiveTab] = useState<'All' | 'Logic' | 'ABAP' | 'Daily'>('All');
   const [difficultyFilter] = useState<'All' | 'Easy' | 'Medium' | 'Hard'>('All');
   const [search, setSearch] = useState('');
   const [submissions, setSubmissions] = useState<Record<string, Submission>>({});
   const [selectedQuestion, setSelectedQuestion] = useState<Question | null>(null);
   const selectedQuestionRef = useRef<Question | null>(null);
   const [userAnswer, setUserAnswer] = useState('');
+  const [wrongAttempts, setWrongAttempts] = useState<Record<string, number>>({});
+  const [revealedSolutions, setRevealedSolutions] = useState<Record<string, string>>({});
+  const [loadingSolution, setLoadingSolution] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error', message: string, bonus?: number } | null>(null);
   const [aiResult, setAiResult] = useState<AIGradeResult | null>(null);
   const [loading, setLoading] = useState(true);
@@ -322,10 +325,17 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
   const handleSolve = async () => {
     if (!selectedQuestion || submitting) return;
 
+    const currentWrong = wrongAttempts[selectedQuestion.id] || 0;
+    const shouldBypassOfflineVal = currentWrong >= 2 && isApiKeyConfigured();
+
     // Enforce basic offline validation checks first
-    const offlineVal = validateAnswer(selectedQuestion, userAnswer);
+    const offlineVal = shouldBypassOfflineVal ? { isValid: true, message: '' } : validateAnswer(selectedQuestion, userAnswer);
     if (!offlineVal.isValid) {
       setFeedback({ type: 'error', message: offlineVal.message });
+      setWrongAttempts(prev => ({
+        ...prev,
+        [selectedQuestion.id]: (prev[selectedQuestion.id] || 0) + 1
+      }));
       audio.playClick();
       return;
     }
@@ -354,7 +364,12 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
     if (isApiKeyConfigured()) {
       try {
         setFeedback({ type: 'success', message: 'Initiating Holographic Code Assessment via Gemini...' });
-        const gradeResult = await gradeAnswerWithAI(selectedQuestion, userAnswer, isSandboxMode ? sandboxConsoleLogs : undefined);
+        const gradeResult = await gradeAnswerWithAI(
+          selectedQuestion,
+          userAnswer,
+          isSandboxMode ? sandboxConsoleLogs : undefined,
+          currentWrong >= 2
+        );
         setAiResult(gradeResult);
         isAiGraded = true;
         aiGradeScore = gradeResult.score;
@@ -364,6 +379,10 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
             type: 'error', 
             message: `Holographic Analysis Rejected (Score: ${gradeResult.score}/100). Review suggestions below.` 
           });
+          setWrongAttempts(prev => ({
+            ...prev,
+            [selectedQuestion.id]: (prev[selectedQuestion.id] || 0) + 1
+          }));
           audio.playClick();
           setSubmitting(false);
           return;
@@ -382,6 +401,10 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
     }
 
     audio.playSuccess();
+    setWrongAttempts(prev => ({
+      ...prev,
+      [selectedQuestion.id]: 0
+    }));
     const isRepeat = !!sub;
     let xpGained = isRepeat ? selectedQuestion.xpRepeatSolve : selectedQuestion.xpFirstSolve;
     
@@ -503,7 +526,7 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
       const latestSubs = submissionsRef.current;
       const latestTab  = activeTabRef.current;
       // Re-compute filtered list from scratch using latest tab (no stale closure)
-      const candidateList = latestTab === 'Training' ? QUESTIONS : QUESTIONS.filter(q => {
+      const candidateList = latestTab === 'Daily' ? getDailyPracticeQuestions() : QUESTIONS.filter(q => {
         if (latestTab !== 'All' && q.category !== latestTab) return false;
         return true;
       });
@@ -532,75 +555,50 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
   // Hard questions are open to everyone — no prerequisite gate
   const isHardLocked = (_q: Question) => false;
 
-  const getDailyTraining = () => {
-    const daily: Question[] = [];
-    const dayOffset = new Date().getDate();
-    const todayStr = new Date().toISOString().split('T')[0];
+  const getDailyPracticeQuestions = useCallback(() => {
+    const logicQuests = QUESTIONS.filter(q => q.category === 'Logic');
+    const abapQuests = QUESTIONS.filter(q => q.category === 'ABAP');
 
-    // Helper to check if a question was solved today
-    const isSolvedToday = (qId: string) => {
-      const sub = submissions[qId];
-      if (!sub) return false;
-      const solvedDateStr = new Date(sub.last_solved_at).toISOString().split('T')[0];
-      return solvedDateStr === todayStr;
-    };
-
-    // We must always include logic-019 (Render Discipline) in the daily pool
-    const renderDisciplineQuest = QUESTIONS.find(q => q.id === 'logic-019');
-    if (renderDisciplineQuest) {
-      daily.push(renderDisciplineQuest);
+    // 2 Logic questions sequence-wise (first unsolved)
+    let unsolvedLogic = logicQuests.filter(q => !submissions[q.id]);
+    if (unsolvedLogic.length < 2) {
+      const solvedLogic = logicQuests.filter(q => submissions[q.id]);
+      unsolvedLogic = [...unsolvedLogic, ...solvedLogic];
     }
+    const dailyLogic = unsolvedLogic.slice(0, 2);
 
-    const selectForDifficulty = (diff: 'Easy' | 'Medium' | 'Hard', count: number) => {
-      // Find questions of this difficulty that are:
-      // 1. Solved today (keep showing them)
-      // 2. OR not locked at all
-      let available = QUESTIONS.filter(q => {
-        if (q.difficulty !== diff) return false;
-        if (isHardLocked(q)) return false;
-        if (isSolvedToday(q.id)) return true;
-        return !getLockInfo(q.id);
+    // 1 ABAP topic question sequence-wise (first unsolved)
+    let unsolvedAbap = abapQuests.filter(q => !submissions[q.id]);
+    if (unsolvedAbap.length < 1) {
+      const solvedAbap = abapQuests.filter(q => submissions[q.id]);
+      unsolvedAbap = [...unsolvedAbap, ...solvedAbap];
+    }
+    const dailyAbap = unsolvedAbap.slice(0, 1);
+
+    return [...dailyLogic, ...dailyAbap];
+  }, [submissions]);
+
+  const handleRevealSolution = async () => {
+    if (!selectedQuestion) return;
+    setLoadingSolution(true);
+    try {
+      const solution = await getDetailedSolutionWithAI(selectedQuestion, userAnswer);
+      setRevealedSolutions(prev => ({
+        ...prev,
+        [selectedQuestion.id]: solution
+      }));
+    } catch (err: any) {
+      console.error(err);
+      import('react-hot-toast').then(({ default: toast }) => {
+        toast.error(err.message || "Failed to retrieve AI solution.");
       });
-
-      // Fallback: if not enough available, allow previously solved/locked questions
-      if (available.length < count) {
-        available = QUESTIONS.filter(q => q.difficulty === diff && !isHardLocked(q));
-      }
-
-      if (available.length === 0) return;
-
-      let added = 0;
-      // Adjust target count if logic-019 (Medium) was already added to this pool
-      const targetCount = (diff === 'Medium' && renderDisciplineQuest) ? count - 1 : count;
-
-      for (let i = 0; i < available.length && added < targetCount; i++) {
-        const qIndex = (dayOffset + i) % available.length;
-        const selected = available[qIndex];
-        if (!daily.some(d => d.id === selected.id)) {
-          daily.push(selected);
-          added++;
-        }
-      }
-    };
-
-    selectForDifficulty('Easy', 5);
-    selectForDifficulty('Medium', 10);
-    selectForDifficulty('Hard', 5);
-
-    // Final fallback to fill up to exactly 20 questions
-    if (daily.length < 20) {
-      const remainingCount = 20 - daily.length;
-      const allPossible = QUESTIONS.filter(q => !isHardLocked(q) && !daily.some(d => d.id === q.id));
-      for (let i = 0; i < remainingCount && i < allPossible.length; i++) {
-        daily.push(allPossible[i]);
-      }
+    } finally {
+      setLoadingSolution(false);
     }
-
-    return daily;
   };
 
   const allAvailableQuestions = [...dynamicQuestions, ...QUESTIONS];
-  let filtered = activeTab === 'Training' ? getDailyTraining() : allAvailableQuestions.filter(q => {
+  let filtered = activeTab === 'Daily' ? getDailyPracticeQuestions() : allAvailableQuestions.filter(q => {
     if (activeTab !== 'All' && q.category !== activeTab) return false;
     if (difficultyFilter !== 'All' && q.difficulty !== difficultyFilter) return false;
     return true;
@@ -722,15 +720,19 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
         </div>
 
         <div className="flex border-b border-border px-2 overflow-x-auto no-scrollbar shrink-0">
-          {['All', 'Training', 'Pattern', 'Logic', 'HR', 'ABAP'].map((tab) => (
+          {(['All', 'Logic', 'ABAP', 'Daily'] as const).map((tab) => (
             <button
               key={tab}
-              onClick={() => setActiveTab(tab as any)}
+              onClick={() => {
+                setActiveTab(tab);
+                setFeedback(null);
+                setAiResult(null);
+              }}
               className={`px-4 py-3 text-[10px] font-bold uppercase tracking-widest whitespace-nowrap transition-all relative ${
                 activeTab === tab ? 'text-primary' : 'text-textMuted hover:text-primary'
               }`}
             >
-              {tab === 'Training' ? '🎯 Daily' : tab}
+              {tab === 'All' ? 'All' : tab === 'Logic' ? 'Logic' : tab === 'ABAP' ? 'ABAP & RAP' : '🎯 Daily Practice'}
               {activeTab === tab && <motion.div layoutId="tab-underline" className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />}
             </button>
           ))}
@@ -974,8 +976,58 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
                         <div className="text-xs font-medium leading-relaxed max-h-[160px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-white/5 scrollbar-track-transparent whitespace-pre-line text-textMain/90 border-t border-white/5 pt-2">
                           {aiResult.feedback}
                         </div>
+
+                        {!aiResult.isValid && (wrongAttempts[selectedQuestion.id] || 0) >= 2 && (selectedQuestion.correctAnswer || selectedQuestion.logic) && (
+                          <div className="mt-2 border-t border-white/10 pt-2 space-y-1">
+                            <span className="text-[9px] font-black uppercase tracking-widest text-emerald-400 block">
+                              🔑 Target Correct Solution Code / Output
+                            </span>
+                            <pre className="p-3 rounded-xl bg-black/40 border border-white/5 font-mono text-xs text-emerald-300 overflow-x-auto whitespace-pre-wrap select-all">
+                              {selectedQuestion.correctAnswer || selectedQuestion.logic}
+                            </pre>
+                          </div>
+                        )}
                       </motion.div>
                     )}
+
+                    {revealedSolutions[selectedQuestion.id] ? (
+                      <div className="mt-4 p-4 rounded-xl border border-primary/20 bg-primary/5 text-textMain relative overflow-hidden">
+                        <div className="flex items-center space-x-2 mb-2">
+                          <Sparkles size={14} className="text-primary animate-pulse" />
+                          <span className="text-[10px] font-black uppercase tracking-wider text-primary">AI Diagnostic & Solution Dossier</span>
+                        </div>
+                        <div className="text-xs font-medium leading-relaxed max-h-[300px] overflow-y-auto pr-1 scrollbar-thin whitespace-pre-line text-textMain/90 border-t border-white/5 pt-2 font-mono">
+                          {revealedSolutions[selectedQuestion.id]}
+                        </div>
+                      </div>
+                    ) : (wrongAttempts[selectedQuestion.id] || 0) >= 2 ? (
+                      <div className="mt-4 p-4 rounded-xl border border-amber-500/20 bg-amber-500/5 flex flex-col space-y-2">
+                        <div className="flex items-center space-x-2 text-amber-500">
+                          <BrainCircuit size={14} />
+                          <span className="text-[10px] font-bold uppercase tracking-wider">Diagnostic Help Available</span>
+                        </div>
+                        <p className="text-[10px] text-textMuted leading-relaxed">
+                          You have made {wrongAttempts[selectedQuestion.id]} unsuccessful attempts. You can now unlock the detailed solution code and tutor explanation.
+                        </p>
+                        <button
+                          onClick={handleRevealSolution}
+                          disabled={loadingSolution}
+                          className="w-full py-2.5 px-3 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 hover:border-amber-500/50 text-amber-400 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all flex items-center justify-center space-x-2 cursor-pointer shadow-inner active:scale-95"
+                        >
+                          {loadingSolution ? (
+                            <>
+                              <RefreshCw size={11} className="animate-spin" />
+                              <span>Decoding Solution Matrix...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Sparkles size={11} />
+                              <span>💡 Generate Detailed AI Solution & Explanation</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    ) : null}
 
                     <div className="mt-4 md:mt-6">
                       <button
@@ -1048,14 +1100,14 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">
-                  {(['Pattern','Logic','HR','ABAP'] as const).map(cat => {
+                  {(['Logic','ABAP'] as const).map(cat => {
                     const solved = solvedByCategory(cat);
                     const total  = totalByCategory(cat);
                     const pct    = total > 0 ? Math.round((solved / total) * 100) : 0;
                     return (
                       <div key={cat} className="p-3 rounded-xl bg-white/[0.03] border border-white/5">
                         <div className="flex items-center justify-between mb-1.5">
-                          <span className="text-[10px] font-black text-textMuted uppercase">{cat}</span>
+                          <span className="text-[10px] font-black text-textMuted uppercase">{cat === 'ABAP' ? 'ABAP & RAP' : 'Logic'}</span>
                           <span className="text-[10px] font-black text-primary">{solved}/{total}</span>
                         </div>
                         <div className="w-full h-1 bg-white/5 rounded-full overflow-hidden">

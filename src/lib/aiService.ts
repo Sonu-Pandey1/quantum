@@ -102,13 +102,13 @@ async function callGemini(prompt: string, systemInstruction?: string, jsonMode: 
 /**
  * Evaluates a practice coding answer using the Gemini API.
  */
-export async function gradeAnswerWithAI(question: Question, userInput: string, sandboxLogs?: string[]): Promise<AIGradeResult> {
+export async function gradeAnswerWithAI(question: Question, userInput: string, sandboxLogs?: string[], includeSolution: boolean = false): Promise<AIGradeResult> {
   const systemInstruction = `You are a strict, elite Computer Science Professor, senior ABAP Architect, and tech recruiter. Your job is to strictly grade and evaluate the user's coding/text submission for a given practice objective.
 You must return ONLY a valid JSON object matching the following TypeScript interface:
 interface AIGradeResult {
   isValid: boolean;  // Must be true if the user's code/answer is semantically correct, logically viable, and answers the objective. Be extremely strict for Hard questions! Mark false if the solution is generic filler, boilerplate, or placeholder code.
   score: number;      // A score between 0 and 100 based on logical correctness, efficiency, style, and structure.
-  feedback: string;   // A constructive code review and feedback in Markdown format. Highlight positive aspects of their approach and provide concrete recommendations for improvement. Do not just state the answer—help them learn how to write it.
+  feedback: string;   // A constructive code review and feedback in Markdown format. Highlight positive aspects of their approach and provide concrete recommendations for improvement. ${includeSolution ? "Since the user has failed this question multiple times, you MUST include a section titled '### 💡 Correct Solution Code' at the end of your feedback containing the exact correct answer/code and a detailed step-by-step explanation of what is right so they can see the correct solution, learn, and retry." : "Do not just state the answer—help them learn how to write it."}
 }
 Do NOT include any markdown code blocks (like \`\`\`json) or conversational text around your JSON output. Return ONLY the raw JSON string.`;
 
@@ -400,3 +400,33 @@ The strategy dossier MUST include:
 
   return callGemini(prompt, systemInstruction, false);
 }
+
+/**
+ * Generates a detailed solution and explanation for a question when the user fails to solve it.
+ */
+export async function getDetailedSolutionWithAI(question: Question, userAnswer: string): Promise<string> {
+  const systemInstruction = `You are a world-class ABAP and Computer Science educator. Your goal is to help the user master logical programming and ABAP/RAP development.
+Provide a clear, detailed, and professional explanation of the question's objective, show the correct solution code, and analyze why their attempt might have failed.
+Format your response beautifully in clean, premium Markdown. Use subheadings, bold texts, and syntax-highlighted code blocks. Keep the tone inspiring and clear.`;
+
+  const prompt = `Objective Question Details:
+- Title: "${question.title}"
+- Category: ${question.category}
+- Difficulty: ${question.difficulty}
+- Description: "${question.description}"
+${question.pseudoCode ? `- Boilerplate / Helper logic:\n\`\`\`\n${question.pseudoCode}\n\`\`\`` : ''}
+${question.correctAnswer ? `- Reference Target Keyword/Code: "${question.correctAnswer}"` : ''}
+
+User's Attempted Answer:
+\`\`\`
+${userAnswer || '(Empty submission)'}
+\`\`\`
+
+Please construct a comprehensive tutor report containing:
+1. **💡 Correct Solution Code**: Provide the exact, correct code or explanation that resolves this objective.
+2. **📖 Educational Breakdown**: Explain step-by-step how the solution works and the underlying ABAP/logical principles.
+3. **🔍 Code Review & Diagnostic**: Explain why the user's attempt was incorrect or how it can be improved. Provide constructive recommendations.`;
+
+  return callGemini(prompt, systemInstruction, false);
+}
+
