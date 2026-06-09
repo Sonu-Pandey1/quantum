@@ -97,7 +97,7 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
   const [isSandboxMode, setIsSandboxMode] = useState(false);
   const [sandboxConsoleLogs, setSandboxConsoleLogs] = useState<string[]>([]);
   const [sandboxExecutionSuccess, setSandboxExecutionSuccess] = useState<boolean | null>(null);
-  const { addXp, state } = useProgression();
+  const { addXp, state, updateProfile } = useProgression();
   const submissionsRef = useRef<Record<string, Submission>>({});
   const activeTabRef   = useRef<string>('All');
 
@@ -110,24 +110,25 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
   // Load and filter dynamic quests and daily solved quest counts on mount
   useEffect(() => {
     if (userId && userId !== 'default') {
-      // 1. Filter out expired dynamic questions (older than 24 hours)
-      const savedQuests = localStorage.getItem(`quantum_dynamic_quests_${userId}`);
-      if (savedQuests) {
-        try {
-          const parsed = JSON.parse(savedQuests);
-          const now = Date.now();
-          const valid = parsed.filter((q: any) => {
-            if (!q.expiresAt) return true; // keep if no expiry
-            return new Date(q.expiresAt).getTime() > now;
-          });
-          setDynamicQuestions(valid);
-          localStorage.setItem(`quantum_dynamic_quests_${userId}`, JSON.stringify(valid));
-        } catch (e) {
-          console.error("Failed to parse local dynamic quests", e);
+      const dbSettings = state.settings || {};
+      let savedQuestsList = [];
+      if (dbSettings.dynamicQuests) {
+        savedQuestsList = dbSettings.dynamicQuests;
+      } else {
+        const savedQuests = localStorage.getItem(`quantum_dynamic_quests_${userId}`);
+        if (savedQuests) {
+          try { savedQuestsList = JSON.parse(savedQuests); } catch (e) {}
         }
       }
 
-      // 2. Load daily solved count
+      const now = Date.now();
+      const valid = savedQuestsList.filter((q: any) => {
+        if (!q.expiresAt) return true;
+        return new Date(q.expiresAt).getTime() > now;
+      });
+      setDynamicQuestions(valid);
+      localStorage.setItem(`quantum_dynamic_quests_${userId}`, JSON.stringify(valid));
+
       const todayStr = new Date().toISOString().split('T')[0];
       const solvesKey = `quantum_ai_solves_today_${userId}_${todayStr}`;
       const savedSolves = localStorage.getItem(solvesKey);
@@ -137,11 +138,19 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
         setAiSolvesCountToday(0);
       }
     }
-  }, [userId]);
+  }, [userId, state.settings]);
 
-  const saveHardStreak = (newStreak: number) => {
+  const saveHardStreak = async (newStreak: number) => {
     setHardStreak(newStreak);
     localStorage.setItem(`quantum_hard_streak_${userId}`, newStreak.toString());
+    if (userId !== 'default' && supabase) {
+      await updateProfile({
+        settings: {
+          ...state.settings,
+          hardStreak: newStreak
+        }
+      });
+    }
   };
 
   // Keep refs in sync with state for use inside closures/setTimeout
@@ -171,8 +180,13 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
     const uid = session?.user?.id || 'default';
     setUserId(uid);
 
-    const saved = localStorage.getItem(`quantum_hard_streak_${uid}`);
-    if (saved) setHardStreak(parseInt(saved));
+    const dbSettings = state?.settings || {};
+    if (dbSettings.hardStreak !== undefined) {
+      setHardStreak(dbSettings.hardStreak);
+    } else {
+      const saved = localStorage.getItem(`quantum_hard_streak_${uid}`);
+      if (saved) setHardStreak(parseInt(saved));
+    }
 
     if (!session) {
       setLoading(false);
@@ -247,6 +261,14 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
       const updatedQuests = [dynamicQuest, ...dynamicQuestions];
       setDynamicQuestions(updatedQuests);
       localStorage.setItem(`quantum_dynamic_quests_${userId}`, JSON.stringify(updatedQuests));
+      if (userId !== 'default' && supabase) {
+        await updateProfile({
+          settings: {
+            ...state.settings,
+            dynamicQuests: updatedQuests
+          }
+        });
+      }
       
       // Select the question automatically
       setSelectedQuestion(dynamicQuest);

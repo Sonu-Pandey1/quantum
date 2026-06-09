@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { CheckCircle2, Circle, Clock, Sparkles, ExternalLink, ListTodo, Flame } from 'lucide-react';
+import { CheckCircle2, Circle, Clock, Sparkles, ExternalLink, ListTodo, Flame, Calendar } from 'lucide-react';
 import { audio } from '../lib/audio';
 import { supabase } from '../lib/supabaseClient';
 import { useProgression } from '../hooks/useProgression';
@@ -18,6 +18,7 @@ interface TodoItem {
   task_target?: 'High' | 'Medium' | 'Low';
   xpAwarded?: boolean;
   xpAwardedDates?: string[];
+  recurrence?: 'daily' | 'weekly' | 'monthly' | 'one-off';
 }
 
 const DAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -120,12 +121,27 @@ export function TodoChecklistCard({ onNavigate }: { onNavigate?: (view: string) 
     return targetDate.toISOString().split('T')[0];
   };
 
+  // Helper to resolve recurrence in a backward-compatible way
+  const getRecurrence = (todo: TodoItem): 'daily' | 'weekly' | 'monthly' | 'one-off' => {
+    if (todo.recurrence) return todo.recurrence;
+    return todo.isOneOff ? 'one-off' : 'weekly';
+  };
+
   // Check if a specific todo is completed
   const isCompleted = (todo: TodoItem): boolean => {
-    if (todo.isOneOff) {
+    const rec = getRecurrence(todo);
+    if (rec === 'one-off') {
       return !!todo.completed;
     }
-    // For recurring, check if completed on the most recent scheduled date
+    if (rec === 'daily') {
+      const todayStr = new Date().toISOString().split('T')[0];
+      return !!todo.completedDates?.includes(todayStr);
+    }
+    if (rec === 'monthly') {
+      const thisMonthStr = new Date().toISOString().substring(0, 7); // YYYY-MM
+      return !!todo.completedDates?.some(d => d.startsWith(thisMonthStr));
+    }
+    // 'weekly' (default)
     const targetDate = getMostRecentDateForDay(todo.dayOfWeek);
     return !!todo.completedDates?.includes(targetDate);
   };
@@ -160,45 +176,88 @@ export function TodoChecklistCard({ onNavigate }: { onNavigate?: (view: string) 
     const updatedTodos = [...todos];
 
     const todayStr = new Date().toISOString().split('T')[0];
+    const thisMonthStr = new Date().toISOString().substring(0, 7); // YYYY-MM
     const todayDay = new Date().getDay();
     const isWeekend = todayDay === 0 || todayDay === 6;
+    const rec = getRecurrence(todo);
 
     let shouldAwardXp = false;
 
     // Exploit Protection Logic: 
-    // Ensure we only record one XP award per calendar day (for recurring) or once ever (for one-off).
+    // Ensure we only record one XP award per cycle.
     if (!currentlyDone) {
-      if (todo.isOneOff) {
+      if (rec === 'one-off') {
         if (!todo.xpAwarded) {
           shouldAwardXp = true;
         }
-      } else {
+      } else if (rec === 'daily') {
         const awardedDates = todo.xpAwardedDates ? [...todo.xpAwardedDates] : [];
         if (!awardedDates.includes(todayStr)) {
+          shouldAwardXp = true;
+        }
+      } else if (rec === 'monthly') {
+        const awardedDates = todo.xpAwardedDates ? [...todo.xpAwardedDates] : [];
+        if (!awardedDates.some(d => d.startsWith(thisMonthStr))) {
+          shouldAwardXp = true;
+        }
+      } else {
+        // weekly
+        const targetDate = getMostRecentDateForDay(todo.dayOfWeek);
+        const awardedDates = todo.xpAwardedDates ? [...todo.xpAwardedDates] : [];
+        if (!awardedDates.includes(targetDate)) {
           shouldAwardXp = true;
         }
       }
     }
 
-    if (todo.isOneOff) {
+    if (rec === 'one-off') {
       updatedTodos[todoIndex] = {
         ...todo,
         completed: !currentlyDone,
         xpAwarded: todo.xpAwarded || shouldAwardXp,
       };
+    } else if (rec === 'daily') {
+      const dates = todo.completedDates ? [...todo.completedDates] : [];
+      const awardedDates = todo.xpAwardedDates ? [...todo.xpAwardedDates] : [];
+      if (currentlyDone) {
+        updatedTodos[todoIndex] = {
+          ...todo,
+          completedDates: dates.filter(d => d !== todayStr),
+        };
+      } else {
+        updatedTodos[todoIndex] = {
+          ...todo,
+          completedDates: [...dates, todayStr],
+          xpAwardedDates: shouldAwardXp ? [...awardedDates, todayStr] : awardedDates,
+        };
+      }
+    } else if (rec === 'monthly') {
+      const dates = todo.completedDates ? [...todo.completedDates] : [];
+      const awardedDates = todo.xpAwardedDates ? [...todo.xpAwardedDates] : [];
+      if (currentlyDone) {
+        updatedTodos[todoIndex] = {
+          ...todo,
+          completedDates: dates.filter(d => !d.startsWith(thisMonthStr)),
+        };
+      } else {
+        updatedTodos[todoIndex] = {
+          ...todo,
+          completedDates: [...dates, todayStr],
+          xpAwardedDates: shouldAwardXp ? [...awardedDates, todayStr] : awardedDates,
+        };
+      }
     } else {
+      // weekly
       const targetDate = getMostRecentDateForDay(todo.dayOfWeek);
       const dates = todo.completedDates ? [...todo.completedDates] : [];
       const awardedDates = todo.xpAwardedDates ? [...todo.xpAwardedDates] : [];
       
       if (currentlyDone) {
-        // Remove completion date (uncheck), but KEEP xpAwardedDates intact to prevent farming
         updatedTodos[todoIndex] = {
           ...todo,
           completedDates: dates.filter(d => d !== targetDate),
         };
       } else {
-        // Add completion date (check) and record XP award date persistently
         updatedTodos[todoIndex] = {
           ...todo,
           completedDates: [...dates, targetDate],
@@ -214,7 +273,6 @@ export function TodoChecklistCard({ onNavigate }: { onNavigate?: (view: string) 
     if (!currentlyDone) {
       audio.playSuccess();
       if (shouldAwardXp) {
-        // Award XP strictly based on the configured priority of this todo
         const getBaseXp = (target?: string) => {
           if (target === 'High') return 100;
           if (target === 'Low') return 40;
@@ -225,13 +283,11 @@ export function TodoChecklistCard({ onNavigate }: { onNavigate?: (view: string) 
 
         await addXp(todo.pillar, `Todo Completed: ${todo.title}`, xpValue);
       } else {
-        // Already claimed XP for this cycle
         import('react-hot-toast').then(({ default: toast }) => {
           toast.success("Objective Completed (XP already logged for this cycle)", { id: `dup-xp-${todo.id}`, duration: 2000 });
         });
       }
     } else {
-      // Unchecked
       audio.playClick();
     }
   };
@@ -248,10 +304,14 @@ export function TodoChecklistCard({ onNavigate }: { onNavigate?: (view: string) 
 
   // Filter todos according to active tab
   const filteredTodos = todos.filter(todo => {
+    const rec = getRecurrence(todo);
     if (activeTab === 'one-off') {
-      return !!todo.isOneOff;
+      return rec === 'one-off';
+    } else if (activeTab === 'monthly') {
+      return rec === 'monthly';
     } else {
-      return !todo.isOneOff && todo.dayOfWeek === parseInt(activeTab, 10);
+      const activeDay = parseInt(activeTab, 10);
+      return rec === 'daily' || (rec === 'weekly' && todo.dayOfWeek === activeDay);
     }
   });
 
@@ -333,7 +393,7 @@ export function TodoChecklistCard({ onNavigate }: { onNavigate?: (view: string) 
       <div className="mb-5 bg-white/5 border border-white/5 rounded-xl p-3.5 relative z-10 shadow-inner">
         <div className="flex justify-between items-baseline mb-2">
           <span className="text-[10px] font-black uppercase text-textMuted tracking-widest">
-            {activeTab === 'one-off' ? 'Objective Progress' : `${DAYS_SHORT[parseInt(activeTab, 10)]} Protocol Progress`}
+            {activeTab === 'one-off' ? 'Objective Progress' : activeTab === 'monthly' ? 'Monthly Objectives' : `${DAYS_SHORT[parseInt(activeTab, 10)]} Protocol Progress`}
           </span>
           <span className="text-xs font-black text-primary flex items-center space-x-1 font-mono">
             {completedCount}/{totalCount} ({progressPercent}%)
@@ -371,6 +431,28 @@ export function TodoChecklistCard({ onNavigate }: { onNavigate?: (view: string) 
           className="flex items-center space-x-1.5 overflow-x-auto no-scrollbar scroll-smooth w-full select-none"
         >
           {DAYS_SHORT.map((_, i) => renderTab(i))}
+          
+          {/* Monthly objectives tab */}
+          <button
+            onClick={() => {
+              audio.playClick();
+              setActiveTab('monthly');
+            }}
+            className={cn(
+              "relative py-1.5 px-3 rounded-lg text-xs font-bold transition-all duration-300 shrink-0 select-none flex items-center space-x-1 min-w-[70px]",
+              activeTab === 'monthly' ? "text-textMain font-extrabold" : "text-textMuted hover:text-textMain hover:bg-white/5"
+            )}
+          >
+            <Calendar size={12} className="text-primary" />
+            <span>Monthly</span>
+            {activeTab === 'monthly' && (
+              <motion.div
+                layoutId="activeTodoTab"
+                className="absolute inset-0 bg-primary/10 border border-primary/30 rounded-lg -z-10"
+                transition={{ type: 'spring', stiffness: 350, damping: 30 }}
+              />
+            )}
+          </button>
           
           {/* One off objectives tab */}
           <button

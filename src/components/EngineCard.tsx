@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Target, CheckCircle2, AlertTriangle, Image as ImageIcon, X, PauseCircle, CheckCircle, SkipForward, Bell } from 'lucide-react';
+import { Target, CheckCircle2, AlertTriangle, Image as ImageIcon, X, CheckCircle, SkipForward, Bell } from 'lucide-react';
 import { audio } from '../lib/audio';
 import { notifier } from '../lib/notifications';
 import { supabase } from '../lib/supabaseClient';
 import { useProgression } from '../hooks/useProgression';
 import { Skeleton } from './Skeleton';
+import { cn } from '../lib/utils';
 
 // Types
 interface Task {
@@ -48,11 +49,9 @@ function calculateEndTime(startTime: string, durationMinutes: number): string {
 }
 
 export function EngineCard() {
-  const { claimTimetableTaskXp } = useProgression();
+  const { state: progressionState, updateProfile, claimTimetableTaskXp } = useProgression();
   const [currentTime, setCurrentTime] = useState(new Date());
   const [activeTask, setActiveTask] = useState<Task | null>(null);
-  const [progress, setProgress] = useState(0);
-  const [timeRemaining, setTimeRemaining] = useState('');
 
   const [showCheckmark, setShowCheckmark] = useState(false);
   const [systemState, setSystemState] = useState<'optimal' | 'behind' | 'idle'>('idle');
@@ -63,10 +62,19 @@ export function EngineCard() {
   const [skipError, setSkipError] = useState('');
   const [isSkippedToday, setIsSkippedToday] = useState(false);
 
+  // Active Focus Session State
+  const [isSessionActive, setIsSessionActive] = useState(false);
+  const [sessionStartTime, setSessionStartTime] = useState<string | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [showEndModal, setShowEndModal] = useState(false);
+  const [endStatus, setEndStatus] = useState<'completed' | 'left_midway'>('completed');
+  const [endReason, setEndReason] = useState('');
+  const [endError, setEndError] = useState('');
+
   // Executed tasks for today (store IDs)
   const [executedTaskIds, setExecutedTaskIds] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [sundayRest] = useState(true);
+  const [followWeekendTimetable, setFollowWeekendTimetable] = useState(true);
   const [userId, setUserId] = useState<string>('default');
 
   const [schedule, setSchedule] = useState<Task[]>(SCHEDULE);
@@ -168,12 +176,28 @@ export function EngineCard() {
       }
       
       // Load skips scoped to uid
-      const skipsStr = localStorage.getItem(`quantum_skips_${uid}`);
-      if (skipsStr) {
-        const skips: SkipRecord[] = JSON.parse(skipsStr);
-        if (skips.some(s => s.date === todayStr)) {
-          setIsSkippedToday(true);
+      let skipsList: SkipRecord[] = [];
+      try {
+        if (supabase) {
+          const { data: profileData } = await supabase.from('profiles').select('settings').eq('id', uid).single();
+          const currentDbSettings = profileData?.settings || {};
+          if (currentDbSettings.skips) {
+            skipsList = currentDbSettings.skips;
+            localStorage.setItem(`quantum_skips_${uid}`, JSON.stringify(skipsList));
+          } else {
+            const skipsStr = localStorage.getItem(`quantum_skips_${uid}`);
+            if (skipsStr) skipsList = JSON.parse(skipsStr);
+          }
+        } else {
+          const skipsStr = localStorage.getItem(`quantum_skips_${uid}`);
+          if (skipsStr) skipsList = JSON.parse(skipsStr);
         }
+      } catch (e) {
+        const skipsStr = localStorage.getItem(`quantum_skips_${uid}`);
+        if (skipsStr) skipsList = JSON.parse(skipsStr);
+      }
+      if (skipsList.some(s => s.date === todayStr)) {
+        setIsSkippedToday(true);
       }
 
       // Fallback if no uid
@@ -187,6 +211,25 @@ export function EngineCard() {
           }
         }
       }
+
+      // Restore active session
+      const activeSessionKey = `quantum_active_session_${uid}`;
+      const savedSessionStr = localStorage.getItem(activeSessionKey);
+      if (savedSessionStr) {
+        try {
+          const savedSession = JSON.parse(savedSessionStr);
+          if (savedSession.date === todayStr) {
+            setIsSessionActive(true);
+            setSessionStartTime(savedSession.startTime);
+            const elapsed = Math.floor((Date.now() - new Date(savedSession.startTime).getTime()) / 1000);
+            setElapsedSeconds(elapsed > 0 ? elapsed : 0);
+          } else {
+            localStorage.removeItem(activeSessionKey);
+          }
+        } catch (e) {
+          console.error("Failed to restore active session", e);
+        }
+      }
     };
 
     loadExecutions().finally(() => setLoading(false));
@@ -198,10 +241,11 @@ export function EngineCard() {
       const now = new Date();
       setCurrentTime(now);
       const todayDow = now.getDay();
+      const isWknd = todayDow === 0 || todayDow === 6;
+      const skipBehindCheck = isWknd && !followWeekendTimetable;
 
       // Find active task
       const current = schedule.find(t => {
-        // Filter by day of week
         const tDow = (t as any).dayOfWeek !== undefined ? (t as any).dayOfWeek : (t as any).day_of_week;
         if (tDow !== undefined && tDow !== todayDow) return false;
 
@@ -215,98 +259,198 @@ export function EngineCard() {
 
       if (current) {
         setActiveTask(current);
-        const tStart = (current as any).start || (current as any).timeStart;
-        const tEnd = (current as any).end || (current as any).timeEnd;
-        const start = parseTime(tStart).getTime();
-        const end = parseTime(tEnd).getTime();
-        const total = end - start;
-        const passed = now.getTime() - start;
-        const prct = Math.min(100, Math.max(0, (passed / total) * 100));
-        setProgress(prct);
-
-        const msLeft = end - now.getTime();
-        const minsLeft = Math.floor(msLeft / 60000);
-        setTimeRemaining(`${minsLeft} minutes remaining in current protocol`);
-
-        // Check if executed early
         if (executedTaskIds.some(id => String(id) === String(current.id))) {
           setSystemState('optimal');
         } else {
-          // If we are more than 50% through and not executed, maybe we are just 'idle' or running.
-          // Let's mark as optimal if we are keeping up, behind if we missed a previous one.
-          const previousTasks = schedule.filter(t => {
-             const tDow = (t as any).dayOfWeek !== undefined ? (t as any).dayOfWeek : (t as any).day_of_week;
-             if (tDow !== undefined && tDow !== todayDow) return false;
+          if (skipBehindCheck) {
+            setSystemState('optimal');
+          } else {
+            const previousTasks = schedule.filter(t => {
+               const tDow = (t as any).dayOfWeek !== undefined ? (t as any).dayOfWeek : (t as any).day_of_week;
+               if (tDow !== undefined && tDow !== todayDow) return false;
 
-             const tE = (t as any).end || (t as any).timeEnd;
-             return tE ? parseTime(tE) < now : false;
-          });
-          const missedPrevious = previousTasks.some(t => !executedTaskIds.some(id => String(id) === String(t.id)));
-          setSystemState(missedPrevious ? 'behind' : 'optimal');
+               const tE = (t as any).end || (t as any).timeEnd;
+               return tE ? parseTime(tE) < now : false;
+            });
+            const missedPrevious = previousTasks.some(t => !executedTaskIds.some(id => String(id) === String(t.id)));
+            setSystemState(missedPrevious ? 'behind' : 'optimal');
+          }
         }
       } else {
         setActiveTask(null);
-        setProgress(0);
-        setTimeRemaining('Awaiting next sequence...');
+        if (skipBehindCheck) {
+          setSystemState('idle');
+        } else {
+          const previousTasks = schedule.filter(t => {
+               const tDow = (t as any).dayOfWeek !== undefined ? (t as any).dayOfWeek : (t as any).day_of_week;
+               if (tDow !== undefined && tDow !== todayDow) return false;
 
-        const previousTasks = schedule.filter(t => {
-             const tDow = (t as any).dayOfWeek !== undefined ? (t as any).dayOfWeek : (t as any).day_of_week;
-             if (tDow !== undefined && tDow !== todayDow) return false;
-
-             const tE = (t as any).end || (t as any).timeEnd;
-             return tE ? parseTime(tE) < now : false;
-        });
-        const missedPrevious = previousTasks.some(t => !executedTaskIds.some(id => String(id) === String(t.id)));
-        setSystemState(missedPrevious ? 'behind' : 'idle');
+               const tE = (t as any).end || (t as any).timeEnd;
+               return tE ? parseTime(tE) < now : false;
+          });
+          const missedPrevious = previousTasks.some(t => !executedTaskIds.some(id => String(id) === String(t.id)));
+          setSystemState(missedPrevious ? 'behind' : 'idle');
+        }
       }
 
     }, 1000);
     return () => clearInterval(timer);
-  }, [executedTaskIds, schedule]);
+  }, [executedTaskIds, schedule, followWeekendTimetable]);
+
+  const settingsFollow = progressionState?.settings?.followWeekendTimetable;
+  useEffect(() => {
+    if (settingsFollow !== undefined) {
+      setFollowWeekendTimetable(settingsFollow);
+    }
+  }, [settingsFollow]);
+
+  const handleToggleWeekendFollow = async (val: boolean) => {
+    audio.playClick();
+    setFollowWeekendTimetable(val);
+    const activeUid = userId || 'default';
+    localStorage.setItem(`quantum_weekend_follow_${activeUid}`, val.toString());
+    if (activeUid !== 'default' && supabase) {
+      await updateProfile({
+        settings: {
+          ...progressionState.settings,
+          followWeekendTimetable: val
+        }
+      });
+    }
+  };
+
+  // Session timer counting elapsed seconds
+  useEffect(() => {
+    let timerId: any = null;
+    if (isSessionActive && sessionStartTime) {
+      timerId = setInterval(() => {
+        const secs = Math.floor((Date.now() - new Date(sessionStartTime).getTime()) / 1000);
+        setElapsedSeconds(secs > 0 ? secs : 0);
+      }, 1000);
+    } else {
+      setElapsedSeconds(0);
+    }
+    return () => {
+      if (timerId) clearInterval(timerId);
+    };
+  }, [isSessionActive, sessionStartTime]);
 
   // Handle task change notifications
   useEffect(() => {
     if (activeTask) {
       const storedLast = localStorage.getItem(`quantum_last_notified_task_${userId}`);
       if (storedLast !== activeTask.id.toString()) {
-        notifier.send(
-          "Protocol Shift",
-          `Commencing: ${activeTask.title}`
-        );
+        const start = parseTime(activeTask.start);
+        const timeDiff = Math.abs(Date.now() - start.getTime());
+        const isJustStarted = timeDiff <= 120000; // 2 minutes
+        const wasTransition = storedLast && storedLast !== "";
+
+        if (isJustStarted || wasTransition) {
+          notifier.send(
+            "Protocol Shift",
+            `Commencing: ${activeTask.title}`
+          );
+        }
         localStorage.setItem(`quantum_last_notified_task_${userId}`, activeTask.id.toString());
       }
     }
   }, [activeTask, userId]);
 
-  const handleComplete = async () => {
-    audio.playSuccess();
+  const handleStartSession = () => {
+    audio.playClick();
     if (!activeTask) return;
+    const startIso = new Date().toISOString();
+    setSessionStartTime(startIso);
+    setIsSessionActive(true);
+    setElapsedSeconds(0);
 
+    const activeSessionKey = `quantum_active_session_${userId}`;
+    localStorage.setItem(activeSessionKey, JSON.stringify({
+      taskId: activeTask.id,
+      startTime: startIso,
+      date: getTodayString()
+    }));
+  };
+
+  const handleComplete = async () => {
+    if (!activeTask) return;
+    if (endReason.trim().length < 5) {
+      setEndError('A valid reason (minimum 5 characters) is required to log the session.');
+      return;
+    }
+
+    // 1. Calculate Base XP
     let baseXp = 30;
     const tTarget = (activeTask as any).task_target;
     if (tTarget === 'High') baseXp = 100;
     else if (tTarget === 'Medium') baseXp = 60;
     else if (tTarget === 'Low') baseXp = 40;
 
-    const { awarded } = await claimTimetableTaskXp(
+    // Calculate duration in minutes
+    const tStart = (activeTask as any).start || (activeTask as any).timeStart;
+    const tEnd = (activeTask as any).end || (activeTask as any).timeEnd;
+    const startMs = parseTime(tStart).getTime();
+    const endMs = parseTime(tEnd).getTime();
+    const scheduledDuration = Math.max(1, Math.round((endMs - startMs) / 60000));
+    const durationSpent = Math.max(1, Math.round(elapsedSeconds / 60));
+
+    // Calculate final XP
+    let earnedXp = baseXp;
+    if (endStatus === 'left_midway') {
+      earnedXp = Math.max(10, Math.min(baseXp, Math.round((durationSpent / scheduledDuration) * baseXp)));
+    }
+
+    // Weekend 2x points
+    const todayDow = new Date().getDay();
+    const isWknd = todayDow === 0 || todayDow === 6;
+    if (isWknd && followWeekendTimetable) {
+      earnedXp = earnedXp * 2;
+    }
+
+    audio.playSuccess();
+
+    // 2. Claim Timetable XP
+    const { awarded, xpEarned } = await claimTimetableTaskXp(
       String(activeTask.id),
       (activeTask as any).pillar || 'Mind',
       `Routine Task: ${activeTask.title}`,
-      baseXp
+      earnedXp
     );
-
-    if (awarded) {
-      // XP successfully awarded for this cycle!
-    }
 
     const todayStr = getTodayString();
     
     // Retrieve correct active user ID directly to avoid stale state bugs
-    let activeUid = 'default';
-    if (supabase) {
+    let activeUid = userId || 'default';
+    if (supabase && activeUid === 'default') {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) activeUid = session.user.id;
     }
+
+    // 3. Log detailed session to profiles settings
+    const logEntry = {
+      id: Math.random().toString(36).substring(2),
+      task_id: String(activeTask.id),
+      title: activeTask.title,
+      pillar: (activeTask as any).pillar || 'Mind',
+      scheduled_start: activeTask.start,
+      scheduled_end: activeTask.end,
+      scheduled_duration: scheduledDuration,
+      started_at: sessionStartTime || new Date().toISOString(),
+      ended_at: new Date().toISOString(),
+      duration_spent: durationSpent,
+      status: endStatus,
+      reason: endReason.trim(),
+      xp_earned: awarded ? xpEarned : 0,
+      date: todayStr
+    };
+
+    const currentLogs = progressionState?.settings?.execution_logs || [];
+    await updateProfile({
+      settings: {
+        ...progressionState.settings,
+        execution_logs: [...currentLogs, logEntry]
+      }
+    });
 
     const updated = [...executedTaskIds, activeTask.id];
     console.log("[EngineCard] Saving executed task ID:", activeTask.id, "to updated list:", updated);
@@ -316,6 +460,17 @@ export function EngineCard() {
     const storageKey = `quantum_exec_${activeUid}_${todayStr}`;
     console.log("[EngineCard] Writing to local storage under key:", storageKey, "value:", updated);
     localStorage.setItem(storageKey, JSON.stringify(updated));
+
+    // Clear active session
+    const activeSessionKey = `quantum_active_session_${activeUid}`;
+    localStorage.removeItem(activeSessionKey);
+
+    setIsSessionActive(false);
+    setSessionStartTime(null);
+    setElapsedSeconds(0);
+    setShowEndModal(false);
+    setEndReason('');
+    setEndError('');
 
     // Supabase Sync
     if (supabase && activeUid !== 'default') {
@@ -352,7 +507,7 @@ export function EngineCard() {
     setTimeout(() => setShowCheckmark(false), 2000);
   };
 
-  const attemptSkip = () => {
+  const attemptSkip = async () => {
     audio.playClick();
     if (skipReason.trim().length < 5) {
       setSkipError('A valid reason is required for system override.');
@@ -360,8 +515,16 @@ export function EngineCard() {
     }
 
     const todayStr = getTodayString();
-    const skipsStr = localStorage.getItem(`quantum_skips_${userId}`);
-    const skips: SkipRecord[] = skipsStr ? JSON.parse(skipsStr) : [];
+    const dbSettings = progressionState?.settings || {};
+    let skips: SkipRecord[] = [];
+    if (dbSettings.skips) {
+      skips = dbSettings.skips;
+    } else {
+      const skipsStr = localStorage.getItem(`quantum_skips_${userId}`);
+      if (skipsStr) {
+        try { skips = JSON.parse(skipsStr); } catch (e) {}
+      }
+    }
 
     // Validation rules
     const today = new Date();
@@ -387,28 +550,20 @@ export function EngineCard() {
 
     // Commit skip
     const newSkip: SkipRecord = { date: todayStr, reason: skipReason };
-    localStorage.setItem(`quantum_skips_${userId}`, JSON.stringify([...skips, newSkip]));
+    const updatedSkips = [...skips, newSkip];
+    localStorage.setItem(`quantum_skips_${userId}`, JSON.stringify(updatedSkips));
+    if (userId !== 'default' && supabase) {
+      await updateProfile({
+        settings: {
+          ...progressionState.settings,
+          skips: updatedSkips
+        }
+      });
+    }
 
     setIsSkippedToday(true);
     setSkipModalOpen(false);
   };
-
-  const isSunday = new Date().getDay() === 0;
-
-  // Sunday Rest View
-  if (isSunday && sundayRest) {
-    return (
-      <div className="h-full p-6 flex flex-col justify-center items-center text-center relative overflow-hidden bg-emerald-950/20">
-        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-500 to-teal-400 opacity-50" />
-        <PauseCircle size={64} className="text-emerald-500 mb-4 opacity-80" />
-        <h2 className="text-2xl font-bold text-textMain mb-2">System Offline</h2>
-        <p className="text-emerald-400 font-medium mb-1">Rest & Recovery Protocol Active</p>
-        <p className="text-sm text-textMuted max-w-md">
-          "Sunday is outside of the time. Enjoy and reflect here based on mood and history."
-        </p>
-      </div>
-    );
-  }
 
   // Skipped View
   if (isSkippedToday) {
@@ -451,6 +606,56 @@ export function EngineCard() {
         </div>
       </div>
     );
+  }
+
+  const tStart = activeTask ? ((activeTask as any).start || (activeTask as any).timeStart) : '00:00';
+  const tEnd = activeTask ? ((activeTask as any).end || (activeTask as any).timeEnd) : '00:00';
+  let scheduledDuration = 30;
+  if (activeTask) {
+    try {
+      const startMs = parseTime(tStart).getTime();
+      const endMs = parseTime(tEnd).getTime();
+      scheduledDuration = Math.max(1, Math.round((endMs - startMs) / 60000));
+    } catch (e) {}
+  }
+  const durationSpent = Math.max(1, Math.round(elapsedSeconds / 60));
+
+  const nextTask = (() => {
+    const now = currentTime;
+    const todayDow = now.getDay();
+    const todayTasks = schedule.filter(t => {
+      const tDow = (t as any).dayOfWeek !== undefined ? (t as any).dayOfWeek : (t as any).day_of_week;
+      return tDow === undefined || tDow === todayDow;
+    });
+    if (todayTasks.length === 0) return null;
+    const sorted = [...todayTasks].sort((a, b) => {
+      return parseTime(a.start || (a as any).timeStart).getTime() - parseTime(b.start || (b as any).timeStart).getTime();
+    });
+    const next = sorted.find(t => parseTime(t.start || (t as any).timeStart) > now);
+    return next || sorted[0];
+  })();
+
+  const progress = isSessionActive 
+    ? Math.min(100, (elapsedSeconds / (scheduledDuration * 60)) * 100)
+    : 0;
+
+  const timeRemaining = isSessionActive
+    ? `Focus Countdown: ${Math.max(0, scheduledDuration - Math.floor(elapsedSeconds / 60))}m remaining`
+    : nextTask 
+      ? `Next Sequence: ${nextTask.title} at ${nextTask.start || (nextTask as any).timeStart}`
+      : 'Awaiting next sequence...';
+  
+  let baseXp = 30;
+  if (activeTask) {
+    const tTarget = (activeTask as any).task_target;
+    if (tTarget === 'High') baseXp = 100;
+    else if (tTarget === 'Medium') baseXp = 60;
+    else if (tTarget === 'Low') baseXp = 40;
+  }
+  
+  let projectedXp = baseXp;
+  if (endStatus === 'left_midway') {
+    projectedXp = Math.max(10, Math.min(baseXp, Math.round((durationSpent / scheduledDuration) * baseXp)));
   }
 
   return (
@@ -519,6 +724,45 @@ export function EngineCard() {
         </div>
       </div>
 
+      {/* Weekend Timetable Follow Toggle */}
+      {(() => {
+        const todayDow = new Date().getDay();
+        const isWknd = todayDow === 0 || todayDow === 6;
+        if (!isWknd) return null;
+        return (
+          <div className="mb-4 p-3 bg-surfaceHighlight/30 border border-border rounded-xl flex items-center justify-between z-10">
+            <div>
+              <p className="text-xs font-bold text-textMain">Weekend Protocol</p>
+              <p className="text-[9px] text-textMuted uppercase font-medium">Follow timetable for 2x XP points</p>
+            </div>
+            <div className="flex gap-1 bg-surfaceHighlight p-1 rounded-lg border border-border">
+              <button
+                onClick={() => handleToggleWeekendFollow(true)}
+                className={cn(
+                  "px-2.5 py-1 rounded-md text-[9px] font-black uppercase tracking-wider transition-all",
+                  followWeekendTimetable 
+                    ? "bg-primary/20 text-primary border border-primary/30" 
+                    : "text-textMuted hover:text-textMain border border-transparent"
+                )}
+              >
+                Follow (2x XP)
+              </button>
+              <button
+                onClick={() => handleToggleWeekendFollow(false)}
+                className={cn(
+                  "px-2.5 py-1 rounded-md text-[9px] font-black uppercase tracking-wider transition-all",
+                  !followWeekendTimetable 
+                    ? "bg-emerald-500/25 text-emerald-400 border border-emerald-500/30" 
+                    : "text-textMuted hover:text-textMain border border-transparent"
+                )}
+              >
+                Relax Mode
+              </button>
+            </div>
+          </div>
+        );
+      })()}
+
       <div className="flex-1 flex flex-col justify-end z-10 relative">
         <div className="space-y-3 md:space-y-4">
 
@@ -555,25 +799,53 @@ export function EngineCard() {
 
           <div className="flex flex-row justify-between items-end gap-2 pt-1 md:pt-2">
             <div>
-              <p className="text-xl md:text-3xl font-black text-textMain">{Math.floor(progress)}%</p>
-              <p className="text-[9px] md:text-sm text-textMuted uppercase font-bold tracking-widest">Progress</p>
+              {isSessionActive ? (
+                <div className="animate-pulse">
+                  <p className="text-xl md:text-3xl font-black text-emerald-400 font-mono tracking-widest">
+                    {String(Math.floor(elapsedSeconds / 3600)).padStart(2, '0')}:
+                    {String(Math.floor((elapsedSeconds % 3600) / 60)).padStart(2, '0')}:
+                    {String(elapsedSeconds % 60).padStart(2, '0')}
+                  </p>
+                  <p className="text-[9px] md:text-sm text-emerald-400/80 uppercase font-bold tracking-widest">Session Timer Active</p>
+                </div>
+              ) : (
+                <div>
+                  <p className="text-xl md:text-3xl font-black text-textMain">{Math.floor(progress)}%</p>
+                  <p className="text-[9px] md:text-sm text-textMuted uppercase font-bold tracking-widest">Progress</p>
+                </div>
+              )}
             </div>
 
             <div className="flex items-center space-x-2">
-              <button
-                onClick={handleComplete}
-                disabled={!activeTask || isCompleted}
-                className={`py-2 px-4 md:py-3 md:px-6 text-xs md:text-base rounded-xl font-black uppercase tracking-widest transition-all ${isCompleted
-                  ? 'bg-surfaceHighlight text-textMuted'
-                  : 'bg-primary/20 text-primary border border-primary/30 hover:bg-primary/30'
-                  }`}
-              >
-                {isCompleted ? 'Done' : 'Execute'}
-              </button>
+              {isSessionActive ? (
+                <button
+                  onClick={() => {
+                    audio.playClick();
+                    setEndReason('');
+                    setEndStatus('completed');
+                    setShowEndModal(true);
+                  }}
+                  className="py-2 px-4 md:py-3 md:px-6 text-xs md:text-base rounded-xl font-black uppercase tracking-widest transition-all bg-red-500/20 text-red-500 border border-red-500/30 hover:bg-red-500/30 shadow-[0_0_15px_rgba(239,68,68,0.1)]"
+                >
+                  End Session
+                </button>
+              ) : (
+                <button
+                  onClick={handleStartSession}
+                  disabled={!activeTask || isCompleted}
+                  className={`py-2 px-4 md:py-3 md:px-6 text-xs md:text-base rounded-xl font-black uppercase tracking-widest transition-all ${isCompleted
+                    ? 'bg-surfaceHighlight text-textMuted border border-white/5 cursor-not-allowed'
+                    : 'bg-primary/20 text-primary border border-primary/30 hover:bg-primary/30 animate-[pulse_2s_infinite]'
+                    }`}
+                >
+                  {isCompleted ? 'Done' : 'Start Focus'}
+                </button>
+              )}
 
               <button
                 onClick={() => setSkipModalOpen(true)}
-                className="p-2 md:p-3 bg-surfaceHighlight text-textMuted rounded-xl border border-border"
+                disabled={isCompleted || isSessionActive}
+                className="p-2 md:p-3 bg-surfaceHighlight text-textMuted rounded-xl border border-border disabled:opacity-40"
               >
                 <SkipForward size={16} />
               </button>
@@ -590,7 +862,7 @@ export function EngineCard() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 20 }}
-              className="bg-surface border border-border rounded-2xl w-full max-w-md p-6 shadow-2xl relative"
+              className="bg-surface border border-border rounded-2xl w-full max-w-md p-6 shadow-2xl relative max-h-[90vh] overflow-y-auto scrollbar-thin"
             >
               <button
                 onClick={() => setSkipModalOpen(false)}
@@ -637,6 +909,113 @@ export function EngineCard() {
                   className="w-full py-3 bg-red-500/20 text-red-500 hover:bg-red-500 hover:text-white border border-red-500/50 rounded-lg font-bold transition-colors mt-4"
                 >
                   Confirm Override
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Session Termination Modal */}
+      <AnimatePresence>
+        {showEndModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-md px-4">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 20 }}
+              className="bg-surface border border-border rounded-2xl w-full max-w-md p-6 shadow-2xl relative max-h-[90vh] overflow-y-auto scrollbar-thin"
+            >
+              <button
+                onClick={() => setShowEndModal(false)}
+                className="absolute top-4 right-4 text-textMuted hover:text-textMain"
+              >
+                <X size={20} />
+              </button>
+
+              <h3 className="text-xl font-bold text-primary mb-2 flex items-center uppercase tracking-tighter">
+                <Target className="mr-2 text-primary animate-pulse" /> Focus Session Log
+              </h3>
+              <p className="text-xs text-textMuted mb-4">
+                Record outcome and log details for cloud progression.
+              </p>
+
+              {endError && (
+                <div className="p-3 mb-4 bg-red-500/10 border border-red-500/30 rounded-lg text-xs text-red-500 font-bold">
+                  {endError}
+                </div>
+              )}
+
+              <div className="space-y-4">
+                {/* Status Selection */}
+                <div>
+                  <label className="block text-[10px] font-black uppercase text-textMuted tracking-wider mb-2">Outcome Status</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => { audio.playClick(); setEndStatus('completed'); }}
+                      className={`py-2 px-3 rounded-xl text-xs font-black uppercase tracking-wider border transition-all ${
+                        endStatus === 'completed'
+                          ? 'bg-emerald-500/10 border-emerald-500 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.15)]'
+                          : 'bg-background border-border text-textMuted hover:border-white/10'
+                      }`}
+                    >
+                      🎯 Completed
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { audio.playClick(); setEndStatus('left_midway'); }}
+                      className={`py-2 px-3 rounded-xl text-xs font-black uppercase tracking-wider border transition-all ${
+                        endStatus === 'left_midway'
+                          ? 'bg-amber-500/10 border-amber-500 text-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.15)]'
+                          : 'bg-background border-border text-textMuted hover:border-white/10'
+                      }`}
+                    >
+                      ⚠️ Left Midway
+                    </button>
+                  </div>
+                </div>
+
+                {/* Session details breakdown card */}
+                <div className="p-3 bg-surfaceHighlight/50 border border-border rounded-xl space-y-1">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-textMuted">Task:</span>
+                    <span className="font-bold text-textMain">{activeTask?.title}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-textMuted">Scheduled Time:</span>
+                    <span className="font-bold text-textMain">{scheduledDuration} mins</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-textMuted">Time Spent:</span>
+                    <span className="font-bold text-textMain font-mono">
+                      {Math.floor(elapsedSeconds / 60)}m {elapsedSeconds % 60}s
+                    </span>
+                  </div>
+                  <div className="h-px bg-border my-2" />
+                  <div className="flex justify-between text-xs items-center">
+                    <span className="font-bold text-textMuted uppercase text-[10px]">Projected XP:</span>
+                    <span className="font-black text-primary text-sm font-mono">+{projectedXp} XP</span>
+                  </div>
+                </div>
+
+                {/* Reason justification */}
+                <div>
+                  <label className="block text-[10px] font-black uppercase text-textMuted tracking-wider mb-1">Session Summary / Reason</label>
+                  <textarea
+                    value={endReason}
+                    onChange={(e) => setEndReason(e.target.value)}
+                    className="w-full bg-background border border-border rounded-xl p-3 text-xs text-textMain focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all resize-none h-20 placeholder:text-white/10"
+                    placeholder="Provide details on what you achieved or why you had to leave..."
+                  />
+                  <p className="text-[9px] text-textMuted uppercase mt-1">Minimum 5 characters required.</p>
+                </div>
+
+                <button
+                  onClick={handleComplete}
+                  className="w-full py-3 bg-primary/20 text-primary hover:bg-primary hover:text-white border border-primary/50 rounded-xl text-xs font-black uppercase tracking-widest transition-all mt-2"
+                >
+                  Terminate & Sync Session
                 </button>
               </div>
             </motion.div>

@@ -34,7 +34,7 @@ const generateProblems = (): Problem[] => {
 };
 
 export function LogicHub({ onBack }: { onBack: () => void }) {
-  const { addXp } = useProgression();
+  const { state: { settings }, addXp, updateProfile } = useProgression();
   const [problems, setProblems]   = useState<Problem[]>([]);
   const [activeTab, setActiveTab] = useState<'All' | 'Easy' | 'Medium' | 'Hard'>('All');
   const [search, setSearch]       = useState('');
@@ -48,20 +48,44 @@ export function LogicHub({ onBack }: { onBack: () => void }) {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) { uid = session.user.id; setUserId(uid); }
       }
-      const saved = localStorage.getItem(`quantum_logic_problems_${uid}`);
-      if (saved) {
-        try { setProblems(JSON.parse(saved)); } catch { resetProblems(uid); }
+      if (settings?.logicProblems) {
+        setProblems(settings.logicProblems);
       } else {
-        resetProblems(uid);
+        const saved = localStorage.getItem(`quantum_logic_problems_${uid}`);
+        if (saved) {
+          try {
+            const parsed = JSON.parse(saved);
+            setProblems(parsed);
+          } catch {
+            resetProblems(uid);
+          }
+        } else {
+          resetProblems(uid);
+        }
       }
     };
     init();
   }, []);
 
-  const resetProblems = (uid: string) => {
+  // Sync state when loaded
+  useEffect(() => {
+    if (settings?.logicProblems) {
+      setProblems(settings.logicProblems);
+    }
+  }, [settings?.logicProblems]);
+
+  const resetProblems = async (uid: string) => {
     const fresh = generateProblems();
     setProblems(fresh);
     localStorage.setItem(`quantum_logic_problems_${uid}`, JSON.stringify(fresh));
+    if (uid !== 'default' && supabase) {
+      await updateProfile({
+        settings: {
+          ...settings,
+          logicProblems: fresh
+        }
+      });
+    }
   };
 
   const handleSolve = async (id: number) => {
@@ -78,6 +102,14 @@ export function LogicHub({ onBack }: { onBack: () => void }) {
     const updated = problems.map(p => p.id === id ? { ...p, completed: true } : p);
     setProblems(updated);
     localStorage.setItem(`quantum_logic_problems_${userId}`, JSON.stringify(updated));
+    if (userId !== 'default' && supabase) {
+      await updateProfile({
+        settings: {
+          ...settings,
+          logicProblems: updated
+        }
+      });
+    }
     setSolving(null);
   };
 

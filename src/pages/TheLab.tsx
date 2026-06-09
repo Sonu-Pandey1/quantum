@@ -11,6 +11,7 @@ import { useProgression } from '../hooks/useProgression';
 import { generateBioMissions, isApiKeyConfigured } from '../lib/aiService';
 import { audio } from '../lib/audio';
 import toast from 'react-hot-toast';
+import { supabase } from '../lib/supabaseClient';
 
 interface BioMission {
   id: string;
@@ -22,13 +23,16 @@ interface BioMission {
 }
 
 export function TheLab() {
-  const { state, addXp } = useProgression();
+  const { state, addXp, updateProfile } = useProgression();
   const { xp, level, archetype, goals, displayName } = state;
 
   // Local storage key scoped to current session user
   const storageKey = `quantum_bio_missions_${displayName || 'Agent'}`;
 
   const [missions, setMissions] = useState<BioMission[]>(() => {
+    if (state.settings?.bioMissions) {
+      return state.settings.bioMissions;
+    }
     const saved = localStorage.getItem(storageKey);
     if (saved) {
       try {
@@ -48,10 +52,32 @@ export function TheLab() {
   const [customDuration, setCustomDuration] = useState('15 min');
   const [generating, setGenerating] = useState(false);
 
-  // Sync back to local storage
+  // Sync back to local storage & Database
   useEffect(() => {
     localStorage.setItem(storageKey, JSON.stringify(missions));
+    
+    const syncToDb = async () => {
+      if (supabase) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          await updateProfile({
+            settings: {
+              ...state.settings,
+              bioMissions: missions
+            }
+          });
+        }
+      }
+    };
+    syncToDb();
   }, [missions, storageKey]);
+
+  // Sync settings updates when loaded
+  useEffect(() => {
+    if (state.settings?.bioMissions) {
+      setMissions(state.settings.bioMissions);
+    }
+  }, [state.settings?.bioMissions]);
 
   // Actions
   const handleAddCustom = () => {

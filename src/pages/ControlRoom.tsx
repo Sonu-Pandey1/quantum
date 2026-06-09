@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Save, Settings, Clock, Activity, Target, Plus, Trash2, Dumbbell, BookOpen, Briefcase, Brain, Pencil, Check, X } from 'lucide-react';
+import { Save, Settings, Clock, Activity, Target, Plus, Trash2, Dumbbell, BookOpen, Briefcase, Brain, Pencil, Check, X, RotateCcw } from 'lucide-react';
 import { audio } from '../lib/audio';
 import { supabase } from '../lib/supabaseClient';
 import { cn } from '../lib/utils';
+import { useProgression } from '../hooks/useProgression';
 
 interface TimetableTask {
   id: number;
@@ -46,6 +47,7 @@ interface TodoItem {
   task_target?: 'High' | 'Medium' | 'Low';
   xpAwarded?: boolean;
   xpAwardedDates?: string[];
+  recurrence?: 'daily' | 'weekly' | 'monthly' | 'one-off';
 }
 
 const defaultTasks: TimetableTask[] = [
@@ -68,6 +70,7 @@ const defaultRoadmap: RoadmapPhase[] = [
 ];
 
 export function ControlRoom() {
+  const { resetProgression } = useProgression();
   const [tasks, setTasks]         = useState<TimetableTask[]>(defaultTasks);
   const [habits, setHabits]       = useState<HabitTask[]>(defaultHabits);
   const [roadmap, setRoadmap]     = useState<RoadmapPhase[]>(defaultRoadmap);
@@ -85,7 +88,7 @@ export function ControlRoom() {
   const [newTodoTitle, setNewTodoTitle] = useState('');
   const [newTodoPillar, setNewTodoPillar] = useState<'Study' | 'Health' | 'Finance' | 'Mind'>('Study');
   const [newTodoTime, setNewTodoTime] = useState('');
-  const [newTodoIsOneOff, setNewTodoIsOneOff] = useState(false);
+  const [newTodoRecurrence, setNewTodoRecurrence] = useState<'daily' | 'weekly' | 'monthly' | 'one-off'>('one-off');
   const [newTodoPriority, setNewTodoPriority] = useState<'High' | 'Medium' | 'Low'>('Medium');
 
   useEffect(() => {
@@ -361,7 +364,8 @@ export function ControlRoom() {
       title: newTodoTitle.trim(),
       dayOfWeek: activeDay,
       pillar: newTodoPillar,
-      isOneOff: newTodoIsOneOff,
+      isOneOff: newTodoRecurrence === 'one-off',
+      recurrence: newTodoRecurrence,
       completed: false,
       completedDates: [],
       xpAwarded: false,
@@ -391,7 +395,7 @@ export function ControlRoom() {
     
     setNewTodoTitle('');
     setNewTodoTime('');
-    setNewTodoIsOneOff(false);
+    setNewTodoRecurrence('one-off');
     setNewTodoPriority('Medium');
     audio.playSuccess();
   };
@@ -942,24 +946,24 @@ export function ControlRoom() {
 
               <div className="flex items-center justify-between p-2 bg-background/50 border border-border rounded-xl">
                 <div>
-                  <p className="text-xs font-bold text-textMain">One-Off Todo</p>
-                  <p className="text-[9px] text-textMuted uppercase">Check off once and archive. Otherwise repeats every {['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][activeDay]}.</p>
+                  <p className="text-xs font-bold text-textMain">Recurrence Protocol</p>
+                  <p className="text-[9px] text-textMuted uppercase font-medium">
+                    {newTodoRecurrence === 'one-off' ? 'Check off once and archive.' :
+                     newTodoRecurrence === 'daily' ? 'Repeats every single day.' :
+                     newTodoRecurrence === 'monthly' ? 'Resets and repeats monthly.' :
+                     `Repeats every ${['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][activeDay]}.`}
+                  </p>
                 </div>
-                <button 
-                  onClick={() => { audio.playClick(); setNewTodoIsOneOff(!newTodoIsOneOff); }}
-                  className={cn(
-                    "w-12 h-6 rounded-full transition-all relative border",
-                    newTodoIsOneOff ? "bg-primary/20 border-primary" : "bg-white/5 border-white/10"
-                  )}
+                <select
+                  value={newTodoRecurrence}
+                  onChange={(e) => { audio.playClick(); setNewTodoRecurrence(e.target.value as any); }}
+                  className="bg-background border border-border rounded-xl px-2 py-1.5 text-xs text-textMain font-bold outline-none focus:border-primary"
                 >
-                  <motion.div 
-                    animate={{ x: newTodoIsOneOff ? 24 : 2 }}
-                    className={cn(
-                      "w-4 h-4 rounded-full absolute top-0.5",
-                      newTodoIsOneOff ? "bg-primary" : "bg-textMuted"
-                    )}
-                  />
-                </button>
+                  <option value="one-off">🎯 One-Off</option>
+                  <option value="daily">⚡ Daily</option>
+                  <option value="weekly">📅 Weekly</option>
+                  <option value="monthly">🌙 Monthly</option>
+                </select>
               </div>
 
               <button
@@ -967,7 +971,7 @@ export function ControlRoom() {
                 disabled={!newTodoTitle.trim()}
                 className="w-full flex items-center justify-center space-x-1 py-2 bg-primary/20 hover:bg-primary/30 text-primary border border-primary/40 rounded-xl text-xs font-bold transition-all disabled:opacity-40"
               >
-                <Plus size={14} /> <span>Schedule Todo for {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][activeDay]}</span>
+                <Plus size={14} /> <span>Schedule Todo</span>
               </button>
             </div>
 
@@ -980,8 +984,13 @@ export function ControlRoom() {
               <div className="max-h-60 overflow-y-auto pr-2 space-y-2 scrollbar-thin scrollbar-thumb-surfaceHighlight">
                 <AnimatePresence>
                   {todos
-                    .filter(t => t.dayOfWeek === activeDay)
+                    .filter(t => {
+                      const rec = t.recurrence || (t.isOneOff ? 'one-off' : 'weekly');
+                      if (rec === 'daily' || rec === 'monthly' || rec === 'one-off') return true;
+                      return t.dayOfWeek === activeDay;
+                    })
                     .map(todo => {
+                      const rec = todo.recurrence || (todo.isOneOff ? 'one-off' : 'weekly');
                       const pillarColors: Record<string, string> = {
                         Study: 'text-blue-400 bg-blue-500/10 border-blue-500/20',
                         Health: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20',
@@ -1003,7 +1012,12 @@ export function ControlRoom() {
                           <div className="flex-1 min-w-0">
                             <p className="text-xs font-bold text-textMain truncate leading-snug">{todo.title}</p>
                             <p className="text-[9px] text-textMuted font-medium uppercase tracking-wider">
-                              {todo.time ? `⏰ ${todo.time}` : '📅 Day Task'} · {todo.isOneOff ? 'One-off' : 'Weekly Repeat'}
+                              {todo.time ? `⏰ ${todo.time}` : '📅 Day Task'} · {
+                                rec === 'daily' ? '⚡ Daily' :
+                                rec === 'monthly' ? '🌙 Monthly' :
+                                rec === 'one-off' ? '🎯 One-off' :
+                                '📅 Weekly Repeat'
+                              }
                             </p>
                           </div>
 
@@ -1027,7 +1041,11 @@ export function ControlRoom() {
                       );
                     })}
                 </AnimatePresence>
-                {todos.filter(t => t.dayOfWeek === activeDay).length === 0 && (
+                {todos.filter(t => {
+                  const rec = t.recurrence || (t.isOneOff ? 'one-off' : 'weekly');
+                  if (rec === 'daily' || rec === 'monthly' || rec === 'one-off') return true;
+                  return t.dayOfWeek === activeDay;
+                }).length === 0 && (
                   <div className="text-center py-6 text-textMuted text-xs border border-dashed border-border rounded-xl">
                     No custom todos scheduled for this day.
                   </div>
@@ -1043,25 +1061,22 @@ export function ControlRoom() {
               <h2>System Protocols</h2>
             </div>
             
-            <div className="flex items-center justify-between p-4 bg-surfaceHighlight/50 border border-border rounded-xl">
+            <div className="flex items-center justify-between p-4 bg-red-500/5 border border-red-500/20 rounded-xl">
               <div>
-                <p className="text-sm font-bold text-textMain">Sunday Rest Mode</p>
-                <p className="text-[10px] text-textMuted uppercase">Automatic offline state every Sunday</p>
+                <p className="text-sm font-bold text-red-400">Reset All Progress</p>
+                <p className="text-[10px] text-textMuted uppercase">Wipe all XP, levels, and logs (start fresh from 0)</p>
               </div>
               <button 
-                onClick={() => setSundayRest(!sundayRest)}
-                className={cn(
-                  "w-12 h-6 rounded-full transition-all relative border",
-                  sundayRest ? "bg-emerald-500/20 border-emerald-500" : "bg-white/5 border-white/10"
-                )}
+                onClick={async () => {
+                  const confirmReset = window.confirm("Are you absolutely sure you want to reset all progress to 0 XP? This cannot be undone.");
+                  if (confirmReset) {
+                    audio.playClick();
+                    await resetProgression();
+                  }
+                }}
+                className="flex items-center space-x-1 text-xs font-bold bg-red-500/10 hover:bg-red-500/20 text-red-500 px-3 py-1.5 rounded-lg border border-red-500/30 transition-all"
               >
-                <motion.div 
-                  animate={{ x: sundayRest ? 24 : 2 }}
-                  className={cn(
-                    "w-4 h-4 rounded-full absolute top-0.5",
-                    sundayRest ? "bg-emerald-500" : "bg-textMuted"
-                  )}
-                />
+                <RotateCcw size={14} /> <span>Reset to 0 XP</span>
               </button>
             </div>
           </div>

@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { format } from 'date-fns';
 import confetti from 'canvas-confetti';
+import toast from 'react-hot-toast';
 
 export type Pillar = 'Study' | 'Health' | 'Finance' | 'Mind';
 
@@ -160,6 +161,7 @@ interface ProgressionState {
   theme: string;
   baselineLevel: number;
   timetableXpClaims: Record<string, string[]>;
+  settings?: any;
 }
 
 interface ProgressionContextType {
@@ -169,6 +171,7 @@ interface ProgressionContextType {
   setArchetype: (a: Archetype) => Promise<void>;
   updateProfile: (updates: Partial<{ archetype: Archetype; goals: string[]; onboarding_completed: boolean; display_name: string; settings: any }>) => Promise<void>;
   setTheme: (theme: string) => void;
+  resetProgression: () => Promise<void>;
   showLevelUp: boolean;
   levelUpData: { pillar: Pillar | 'Global'; newLevel: number; newRank?: string } | null;
   closeLevelUp: () => void;
@@ -236,8 +239,9 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
   } | null>(null);
   const [loading, setLoading] = useState(true);
   const [baselineLevel, setBaselineLevel] = useState(0);
-  const [earnedBadgeIds, setEarnedBadgeIds] = useState<string[]>([]);
+   const [earnedBadgeIds, setEarnedBadgeIds] = useState<string[]>([]);
   const [timetableXpClaims, setTimetableXpClaims] = useState<Record<string, string[]>>({});
+  const [settings, setSettings] = useState<any>({});
 
   // Refs — always hold latest values, addXp reads from here to avoid stale closures
   const pillarXpRef = useRef(EMPTY_PILLAR_XP);
@@ -250,6 +254,7 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
   const baselineLevelRef = useRef(0);
   const earnedBadgeIdsRef = useRef<string[]>([]);
   const timetableXpClaimsRef = useRef<Record<string, string[]>>({});
+  const settingsRef = useRef<any>({});
 
   useEffect(() => { pillarXpRef.current = pillarXp; }, [pillarXp]);
   useEffect(() => { totalXpRef.current = totalXp; }, [totalXp]);
@@ -260,6 +265,7 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
   useEffect(() => { baselineLevelRef.current = baselineLevel; }, [baselineLevel]);
   useEffect(() => { earnedBadgeIdsRef.current = earnedBadgeIds; }, [earnedBadgeIds]);
   useEffect(() => { timetableXpClaimsRef.current = timetableXpClaims; }, [timetableXpClaims]);
+  useEffect(() => { settingsRef.current = settings; }, [settings]);
 
   // ── Load profile on mount ─────────────────────────────────────────────────
   useEffect(() => {
@@ -312,6 +318,8 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
         setBaselineLevel(dbBaselineLevel);
         setTimetableXpClaims(dbXpClaims);
         timetableXpClaimsRef.current = dbXpClaims;
+        setSettings(dbSettings);
+        settingsRef.current = dbSettings;
 
         // Load earned badges from Supabase (ignoring error or falling back offline)
         let badgeIds: string[] = [];
@@ -460,9 +468,7 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
     if (newlyEarned.length > 0 && supabase) {
       // Optimistic toast notifications
       newlyEarned.forEach(b => {
-        import('react-hot-toast').then(({ default: toast }) => {
-          toast.success(`${b.icon} Badge Unlocked: ${b.name}!`, { duration: 5000 });
-        });
+        toast.success(`${b.icon} Badge Unlocked: ${b.name}!`, { duration: 5000 });
       });
       const newIds = [...currentEarnedBadges, ...newlyEarned.map(b => b.id)];
       setEarnedBadgeIds(newIds);
@@ -599,6 +605,80 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
     return { awarded: true, xpEarned: earned };
   }, [addXp]);
 
+  const resetProgression = useCallback(async () => {
+    setPillarXp(EMPTY_PILLAR_XP);
+    setTotalXp(0);
+    setStreakCount(0);
+    setLastActivityDate(null);
+    setBaselineLevel(0);
+    setTimetableXpClaims({});
+    setEarnedBadgeIds([]);
+
+    const cleanSettings = {
+      timetable: settingsRef.current.timetable || [],
+      habits: settingsRef.current.habits || [],
+      roadmap: settingsRef.current.roadmap || [],
+      todos: settingsRef.current.todos || [],
+      weightGoal: settingsRef.current.weightGoal,
+      sapTarget: settingsRef.current.sapTarget,
+      sundayRest: settingsRef.current.sundayRest,
+      theme: settingsRef.current.theme || 'quantum',
+      followWeekendTimetable: settingsRef.current.followWeekendTimetable !== undefined ? settingsRef.current.followWeekendTimetable : true
+    };
+    setSettings(cleanSettings);
+
+    pillarXpRef.current = EMPTY_PILLAR_XP;
+    totalXpRef.current = 0;
+    streakCountRef.current = 0;
+    lastActivityRef.current = null;
+    baselineLevelRef.current = 0;
+    timetableXpClaimsRef.current = {};
+    earnedBadgeIdsRef.current = [];
+    settingsRef.current = cleanSettings;
+
+    const uid = userIdRef.current;
+    if (uid) {
+      localStorage.setItem(`quantum_todos_${uid}`, JSON.stringify(cleanSettings.todos));
+      localStorage.setItem(`quantum_timetable_${uid}`, JSON.stringify(cleanSettings.timetable));
+      localStorage.setItem(`quantum_badges_${uid}`, JSON.stringify([]));
+      localStorage.setItem(`quantum_xp_claims_${uid}`, JSON.stringify({}));
+      localStorage.setItem(`quantum_theme_${uid}`, cleanSettings.theme);
+      
+      localStorage.removeItem(`quantum_active_session_${uid}`);
+      const todayStr = format(new Date(), 'yyyy-MM-dd');
+      localStorage.removeItem(`quantum_exec_${uid}_${todayStr}`);
+      localStorage.setItem(`quantum_skips_${uid}`, JSON.stringify([]));
+      localStorage.setItem(`quantum_comms_${uid}`, JSON.stringify([]));
+      localStorage.setItem(`quantum_bio_missions_${displayName || 'Agent'}`, JSON.stringify([]));
+      localStorage.setItem(`quantum_logic_problems_${uid}`, JSON.stringify([]));
+      localStorage.setItem(`quantum_dynamic_quests_${uid}`, JSON.stringify([]));
+      localStorage.setItem(`quantum_hard_streak_${uid}`, '0');
+    }
+
+    if (uid && supabase && uid !== 'default') {
+      try {
+        await supabase.from('user_earned_badges').delete().eq('user_id', uid);
+        await supabase.from('daily_completions').delete().eq('user_id', uid);
+        await supabase.from('executions').delete().eq('user_id', uid);
+        await supabase.from('daily_bonus_log').delete().eq('user_id', uid);
+        
+        await supabase.from('profiles').update({
+          total_xp: 0,
+          pillar_xp: EMPTY_PILLAR_XP,
+          streak_count: 0,
+          last_activity_date: null,
+          settings: cleanSettings
+        }).eq('id', uid);
+        toast.success("Progression matrix reset to 0 XP.");
+      } catch (e) {
+        console.error("Failed to reset database progression:", e);
+        toast.error("Cloud reset failed, local reset applied.");
+      }
+    } else {
+      toast.success("Progression matrix reset locally.");
+    }
+  }, [displayName]);
+
   const closeLevelUp = useCallback(() => {
     setShowLevelUp(false);
     setLevelUpData(null);
@@ -632,7 +712,8 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
           goals,
           theme,
           baselineLevel,
-          timetableXpClaims
+          timetableXpClaims,
+          settings
         },
         addXp,
         claimTimetableTaskXp,
@@ -662,9 +743,19 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
             }
           }
           if (updates.display_name) setDisplayName(updates.display_name);
-          if (updates.settings?.baselineLevel !== undefined) {
-            setBaselineLevel(updates.settings.baselineLevel);
-            baselineLevelRef.current = updates.settings.baselineLevel;
+          if (updates.settings) {
+            const mergedSettings = { ...settingsRef.current, ...updates.settings };
+            setSettings(mergedSettings);
+            settingsRef.current = mergedSettings;
+            if (userIdRef.current) {
+              localStorage.setItem(`quantum_todos_${userIdRef.current}`, JSON.stringify(mergedSettings.todos || []));
+              localStorage.setItem(`quantum_timetable_${userIdRef.current}`, JSON.stringify(mergedSettings.timetable || []));
+            }
+            if (updates.settings.baselineLevel !== undefined) {
+              setBaselineLevel(updates.settings.baselineLevel);
+              baselineLevelRef.current = updates.settings.baselineLevel;
+            }
+            updates.settings = mergedSettings;
           }
 
           if (userIdRef.current && supabase) {
@@ -684,6 +775,7 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
             }
           }
         },
+        resetProgression,
         showLevelUp,
         levelUpData,
         closeLevelUp,

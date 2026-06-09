@@ -13,7 +13,7 @@ import { ProgressAnalytics } from '../components/ProgressAnalytics';
 
 export function EngagementHub({ onNavigateToRank }: { onNavigateToRank?: () => void }) {
   const { stats, refresh, loadMore } = useEngagement();
-  const { state: { totalXp, totalLevel, rank } } = useProgression();
+  const { state: { totalXp, totalLevel, rank, settings } } = useProgression();
   const [refreshing, setRefreshing] = useState(false);
   const observerTarget = useRef(null);
 
@@ -44,6 +44,88 @@ export function EngagementHub({ onNavigateToRank }: { onNavigateToRank?: () => v
     stats.totalLoginDays > 0
       ? Math.min(100, Math.round((stats.currentLoginStreak / stats.totalLoginDays) * 100))
       : 0;
+
+  // Focus Session Calculations
+  const executionLogs = settings?.execution_logs || [];
+  
+  // Total focused hours
+  const totalMinutesFocused = executionLogs.reduce((sum: number, log: any) => sum + (log.duration_spent || 0), 0);
+  const totalHoursFocused = (totalMinutesFocused / 60).toFixed(1);
+
+  // Session completion rate
+  const totalStartedSessions = executionLogs.length;
+  const completedSessions = executionLogs.filter((log: any) => log.status === 'completed').length;
+  const sessionCompletionRate = totalStartedSessions > 0 ? Math.round((completedSessions / totalStartedSessions) * 100) : 0;
+
+  // Today's attempted vs scheduled timetable tasks
+  const todayStr = format(new Date(), 'yyyy-MM-dd');
+  const todayDow = new Date().getDay();
+  const todayAttemptedSessions = executionLogs.filter((log: any) => log.date === todayStr).length;
+  const todayTimetableTasksCount = (settings?.timetable || []).filter((t: any) => {
+    const d = t.dayOfWeek !== undefined ? t.dayOfWeek : t.day_of_week;
+    return d === undefined || d === todayDow;
+  }).length || 5; // fallback to default 5
+
+  // Pillar time spent distribution (in minutes)
+  const pillarDurations: Record<string, number> = { Study: 0, Health: 0, Finance: 0, Mind: 0 };
+  executionLogs.forEach((log: any) => {
+    const p = log.pillar || 'Mind';
+    if (pillarDurations[p] !== undefined) {
+      pillarDurations[p] += (log.duration_spent || 0);
+    }
+  });
+
+  // Smart rule-based AI Discipline Analyst Insights
+  const generateAiInsights = () => {
+    if (executionLogs.length === 0) {
+      return [
+        "AI Advisor: System initialization is complete, but no active focus logs are recorded yet.",
+        "Tip: Start an Action Protocol session in 'The Engine' to begin generating discipline analytics.",
+        "Recommendation: Aim to log a 30-minute Study block tomorrow to verify database sync."
+      ];
+    }
+
+    const insights = [];
+    
+    // Check midway drops
+    const midwayLogs = executionLogs.filter((log: any) => log.status === 'left_midway');
+    if (midwayLogs.length > 0) {
+      const percentageMidway = Math.round((midwayLogs.length / executionLogs.length) * 100);
+      if (percentageMidway >= 20) {
+        insights.push(`AI Advisor: We detected that ${percentageMidway}% of focus sessions were terminated midway. This suggests a pattern of split attention. Consider breaking study sessions into shorter 25m Pomodoros.`);
+      } else {
+        insights.push(`AI Advisor: You completed most of your started sessions. Keep using detailed justifications for early endings to refine focus metrics.`);
+      }
+    } else {
+      insights.push(`AI Advisor: Outstanding discipline! 100% of your started sessions reached completion without midway cancellations.`);
+    }
+
+    // Check most focused pillar
+    let topPillar = 'Study';
+    let maxMinutes = 0;
+    Object.entries(pillarDurations).forEach(([p, mins]) => {
+      if (mins > maxMinutes) {
+        maxMinutes = mins;
+        topPillar = p;
+      }
+    });
+
+    if (maxMinutes > 0) {
+      insights.push(`Pillar Analysis: Your highest focus volume is in the '${topPillar}' pillar (${Math.round(maxMinutes)} minutes). Ensure you balance study blocks with recovery protocols in 'Mind'.`);
+    }
+
+    // Check average session length
+    const avgSessionLength = Math.round(totalMinutesFocused / executionLogs.length);
+    if (avgSessionLength < 25) {
+      insights.push(`Efficiency Alert: Your average focus duration is ${avgSessionLength} mins. Shorter sessions are useful, but extending continuous focus blocks to 45m will trigger deeper cognitive consolidation.`);
+    } else {
+      insights.push(`Focus Range: Your average focus block duration is ${avgSessionLength} mins. This is within the optimal cognitive window for deep work.`);
+    }
+
+    return insights;
+  };
+
+  const aiInsights = generateAiInsights();
 
   return (
     <motion.div
@@ -183,6 +265,148 @@ export function EngagementHub({ onNavigateToRank }: { onNavigateToRank?: () => v
               <Activity size={15} className="mr-2 text-primary" /> Contribution Graph
             </h3>
             <ActivityGraph />
+          </div>
+
+          {/* ─── Focus Session Metrics & logs ────────────────────── */}
+          <div className="lg:col-span-12 grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            {/* Focus Metrics Panel */}
+            <div className="lg:col-span-1 glass-panel p-5 rounded-2xl border border-primary/10 flex flex-col justify-between space-y-4">
+              <h4 className="text-[10px] font-black text-textMuted uppercase tracking-widest flex items-center">
+                <Target size={14} className="mr-2 text-primary" /> Focus Statistics
+              </h4>
+              <div className="space-y-4 flex-1 flex flex-col justify-center">
+                <div>
+                  <p className="text-3xl font-black text-textMain">{totalHoursFocused} hrs</p>
+                  <p className="text-[10px] text-textMuted uppercase">Total Time Focused</p>
+                </div>
+                <div>
+                  <p className="text-3xl font-black text-primary">{sessionCompletionRate}%</p>
+                  <p className="text-[10px] text-textMuted uppercase">Session Completion Rate</p>
+                </div>
+                <div>
+                  <p className="text-3xl font-black text-emerald-400">{todayAttemptedSessions} / {todayTimetableTasksCount}</p>
+                  <p className="text-[10px] text-textMuted uppercase">Protocols Attempted Today</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Pillar Focus Distribution Chart */}
+            <div className="lg:col-span-1 glass-panel p-5 rounded-2xl border border-primary/10 space-y-4">
+              <h4 className="text-[10px] font-black text-textMuted uppercase tracking-widest flex items-center">
+                <Activity size={14} className="mr-2 text-emerald-400" /> Pillar Focus Volume
+              </h4>
+              <div className="space-y-3.5 pt-2">
+                {[
+                  { name: 'Study', color: 'bg-blue-500', text: 'text-blue-400', border: 'border-blue-500/20' },
+                  { name: 'Health', color: 'bg-emerald-500', text: 'text-emerald-400', border: 'border-emerald-500/20' },
+                  { name: 'Finance', color: 'bg-amber-500', text: 'text-amber-400', border: 'border-amber-500/20' },
+                  { name: 'Mind', color: 'bg-purple-500', text: 'text-purple-400', border: 'border-purple-500/20' },
+                ].map(pillar => {
+                  const mins = pillarDurations[pillar.name] || 0;
+                  const pct = totalMinutesFocused > 0 ? Math.round((mins / totalMinutesFocused) * 100) : 0;
+                  return (
+                    <div key={pillar.name} className="space-y-1">
+                      <div className="flex justify-between text-xs font-bold">
+                        <span className={pillar.text}>{pillar.name}</span>
+                        <span className="text-textMuted">{Math.round(mins)} mins ({pct}%)</span>
+                      </div>
+                      <div className="w-full h-2 bg-surfaceHighlight rounded-full overflow-hidden border border-white/5">
+                        <div className={`h-full ${pillar.color} rounded-full`} style={{ width: `${pct}%` }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* AI Discipline Analyst Insights */}
+            <div className="lg:col-span-1 glass-panel p-5 rounded-2xl border border-primary/10 space-y-4 bg-gradient-to-br from-primary/5 to-transparent relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full blur-2xl pointer-events-none" />
+              <h4 className="text-[10px] font-black text-primary uppercase tracking-widest flex items-center">
+                🤖 AI Discipline Analyst
+              </h4>
+              <div className="space-y-3 pt-2">
+                {aiInsights.map((insight, idx) => (
+                  <div key={idx} className="flex gap-2 items-start text-[11px] leading-relaxed text-textMain">
+                    <span className="text-primary mt-0.5">•</span>
+                    <p>{insight}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+          </div>
+
+          {/* Focus Execution Logs Feed */}
+          <div className="lg:col-span-12 space-y-3">
+            <h3 className="text-sm font-bold text-textMain uppercase tracking-widest flex items-center px-1">
+              <Clock size={15} className="mr-2 text-primary animate-pulse" /> Focus Protocol Execution Logs
+            </h3>
+            
+            <div className="glass-panel rounded-2xl border border-primary/5 overflow-hidden">
+              <div className="max-h-72 overflow-y-auto scrollbar-thin scrollbar-thumb-surfaceHighlight">
+                {executionLogs.length === 0 ? (
+                  <div className="p-8 text-center text-textMuted text-xs uppercase tracking-wider">
+                    No active focus sessions logged yet. Log sessions in the Engine card to view focus logs.
+                  </div>
+                ) : (
+                  <table className="w-full border-collapse text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-white/5 bg-surfaceHighlight/30 text-[9px] uppercase tracking-wider text-textMuted font-bold">
+                        <th className="p-3">Protocol Task</th>
+                        <th className="p-3">Pillar</th>
+                        <th className="p-3">Focused Duration</th>
+                        <th className="p-3">Status</th>
+                        <th className="p-3">XP Earned</th>
+                        <th className="p-3">Justification</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {executionLogs.map((log: any, idx: number) => {
+                        const dateStr = log.date ? format(new Date(log.date), 'MMM d, yyyy') : 'Recent';
+                        return (
+                          <tr key={log.id || idx} className="border-b border-white/5 hover:bg-surfaceHighlight/20 transition-colors">
+                            <td className="p-3 font-bold text-textMain">
+                              <div>{log.title}</div>
+                              <div className="text-[9px] text-textMuted font-medium">{dateStr} · {log.scheduled_start || '--'} - {log.scheduled_end || '--'}</div>
+                            </td>
+                            <td className="p-3">
+                              <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase border shrink-0 ${
+                                log.pillar === 'Study' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
+                                log.pillar === 'Health' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
+                                log.pillar === 'Finance' ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' :
+                                'bg-purple-500/10 text-purple-400 border-purple-500/20'
+                              }`}>
+                                {log.pillar}
+                              </span>
+                            </td>
+                            <td className="p-3 font-mono font-bold text-textMain">
+                              {log.duration_spent}m / {log.scheduled_duration || 30}m
+                            </td>
+                            <td className="p-3">
+                              <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase ${
+                                log.status === 'completed' 
+                                  ? 'bg-emerald-500/10 text-emerald-400' 
+                                  : 'bg-amber-500/10 text-amber-400'
+                              }`}>
+                                {log.status === 'completed' ? '🎯 Done' : '⚠️ Left Midway'}
+                              </span>
+                            </td>
+                            <td className="p-3 font-mono font-black text-primary">
+                              +{log.xp_earned || 0} XP
+                            </td>
+                            <td className="p-3 text-textMuted max-w-[200px] truncate" title={log.reason}>
+                              {log.reason || 'No justification provided'}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
           </div>
 
           {/* ─── Recent Activity Feed ───────────────────────────────── */}

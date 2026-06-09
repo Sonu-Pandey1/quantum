@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ShieldAlert, Wind, MessageSquare, Send, UserCheck, Code2 } from 'lucide-react';
 import { audio } from '../lib/audio';
 import { supabase } from '../lib/supabaseClient';
+import { useProgression } from '../hooks/useProgression';
 
 const INTERVIEW_QUESTIONS = [
   "Explain the difference between a Work Area and an Internal Table in SAP ABAP.",
@@ -13,6 +14,7 @@ const INTERVIEW_QUESTIONS = [
 ];
 
 export function GuardCard() {
+  const { state: { settings }, updateProfile } = useProgression();
   const [panicMode, setPanicMode] = useState(false);
   const [interviewMode, setInterviewMode] = useState(false);
   const [currentQuestion, setCurrentQuestion] = useState("");
@@ -25,18 +27,21 @@ export function GuardCard() {
   const [userId, setUserId] = useState<string>('default');
 
   useEffect(() => {
+    let uid = 'default';
     if (supabase) {
       supabase.auth.getSession().then(({ data: { session } }) => {
-        const uid = session?.user?.id || 'default';
+        uid = session?.user?.id || 'default';
         setUserId(uid);
-        const logs = localStorage.getItem(`quantum_comms_${uid}`);
-        if (logs) setSavedLogs(JSON.parse(logs));
       });
+    }
+    
+    if (settings?.comms) {
+      setSavedLogs(settings.comms);
     } else {
-      const logs = localStorage.getItem('quantum_comms_default');
+      const logs = localStorage.getItem(`quantum_comms_${uid}`);
       if (logs) setSavedLogs(JSON.parse(logs));
     }
-  }, []);
+  }, [settings]);
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
@@ -83,12 +88,21 @@ export function GuardCard() {
     setFeedback(newFeedback);
   };
 
-  const addCommLog = () => {
+  const addCommLog = async () => {
     if (!commLog.trim()) return;
     const newLog = { id: Date.now().toString(), text: commLog };
     const updated = [newLog, ...savedLogs].slice(0, 5); // Keep last 5
     setSavedLogs(updated);
     localStorage.setItem(`quantum_comms_${userId}`, JSON.stringify(updated));
+    
+    if (userId !== 'default' && supabase) {
+      await updateProfile({
+        settings: {
+          ...settings,
+          comms: updated
+        }
+      });
+    }
     setCommLog('');
   };
 
