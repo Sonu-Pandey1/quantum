@@ -420,19 +420,21 @@ export function EngineCard() {
       });
 
       if (current) {
-        setActiveTask(current);
-        
-        // 2. Auto-transition when next scheduled task starts and previous session is active on a different task
-        if (isSessionActiveRef.current && sessionTaskIdRef.current && String(current.id) !== String(sessionTaskIdRef.current)) {
-          const isTitleDiff = !current.title || !sessionTaskTitleRef.current || current.title.trim().toLowerCase() !== sessionTaskTitleRef.current.trim().toLowerCase();
-          if (isTitleDiff) {
-            console.log("[EngineCard] New task started while focusing on a different task. Submitting automatically:", sessionTaskTitleRef.current);
-            autoCompletePreviousTaskRef.current(sessionTaskIdRef.current, sessionStartTimeRef.current || new Date().toISOString(), elapsedSecondsRef.current);
-          }
-        }
-        if (executedTaskIds.some(id => String(id) === String(current.id))) {
+        const isCurrentCompleted = executedTaskIds.some(id => String(id) === String(current.id));
+        if (isCurrentCompleted) {
+          setActiveTask(null);
           setSystemState('optimal');
         } else {
+          setActiveTask(current);
+          
+          // 2. Auto-transition when next scheduled task starts and previous session is active on a different task
+          if (isSessionActiveRef.current && sessionTaskIdRef.current && String(current.id) !== String(sessionTaskIdRef.current)) {
+            const isTitleDiff = !current.title || !sessionTaskTitleRef.current || current.title.trim().toLowerCase() !== sessionTaskTitleRef.current.trim().toLowerCase();
+            if (isTitleDiff) {
+              console.log("[EngineCard] New task started while focusing on a different task. Submitting automatically:", sessionTaskTitleRef.current);
+              autoCompletePreviousTaskRef.current(sessionTaskIdRef.current, sessionStartTimeRef.current || new Date().toISOString(), elapsedSecondsRef.current);
+            }
+          }
           if (skipBehindCheck) {
             setSystemState('optimal');
           } else {
@@ -995,20 +997,32 @@ export function EngineCard() {
           <div className="flex flex-col mb-2 md:mb-4">
             <div className="flex justify-between items-start mb-1 md:mb-2">
               <span className="text-[10px] md:text-sm font-medium text-textMuted">
-                Status: <span className="text-textMain">{activeTask ? ((activeTask as any).statusMsg || 'Active...') : 'Idle'}</span>
+                Status: <span className="text-textMain">{activeTask ? ((activeTask as any).statusMsg || 'Active...') : (nextTask ? 'Recovery Mode' : 'Finished')}</span>
               </span>
               <div className="font-mono text-xl md:text-3xl font-bold text-primary tracking-wider">
                 {currentTime.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' })}
               </div>
             </div>
             <div className="flex items-center gap-3 mb-1 flex-wrap">
-              <h3 className="text-lg md:text-2xl font-bold text-textMain line-clamp-1">{activeTask ? activeTask.title : 'No Active Task'}</h3>
+              <h3 className="text-lg md:text-2xl font-bold text-textMain line-clamp-1">
+                {activeTask ? activeTask.title : (nextTask ? 'Free Time' : 'All Tasks Completed')}
+              </h3>
               {activeTask && (
                 <span className="text-[10px] md:text-xs font-mono font-black text-primary px-2.5 py-0.5 bg-primary/10 border border-primary/25 rounded-lg shrink-0">
                   {activeTask.start} - {activeTask.end}
                 </span>
               )}
             </div>
+            {!activeTask && nextTask && (
+              <p className="text-xs md:text-sm text-textMuted mt-1">
+                Great job! Your next scheduled session starts at {nextTask.start || (nextTask as any).timeStart}.
+              </p>
+            )}
+            {!activeTask && !nextTask && (
+              <p className="text-xs md:text-sm text-textMuted mt-1">
+                You have completed all scheduled tasks for today.
+              </p>
+            )}
             <p className="text-xs md:text-lg font-bold text-primary animate-pulse mt-1 md:mt-2 bg-primary/10 inline-block px-2 py-0.5 md:px-3 md:py-1 rounded-md w-max border border-primary/20">
               {timeRemaining}
             </p>
@@ -1055,16 +1069,23 @@ export function EngineCard() {
                 >
                   End Session
                 </button>
-              ) : (
+              ) : activeTask ? (
                 <button
                   onClick={handleStartSession}
-                  disabled={!activeTask || isCompleted}
+                  disabled={isCompleted}
                   className={`py-2 px-4 md:py-3 md:px-6 text-xs md:text-base rounded-xl font-black uppercase tracking-widest transition-all ${isCompleted
                     ? 'bg-surfaceHighlight text-textMuted border border-white/5 cursor-not-allowed'
                     : 'bg-primary/20 text-primary border border-primary/30 hover:bg-primary/30 animate-[pulse_2s_infinite]'
                     }`}
                 >
                   {isCompleted ? 'Done' : 'Start Focus'}
+                </button>
+              ) : (
+                <button
+                  disabled
+                  className="py-2 px-4 md:py-3 md:px-6 text-xs md:text-base rounded-xl font-black uppercase tracking-widest transition-all bg-surfaceHighlight text-textMuted border border-white/5 cursor-not-allowed"
+                >
+                  Locked
                 </button>
               )}
 
