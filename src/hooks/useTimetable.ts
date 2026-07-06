@@ -167,7 +167,8 @@ export function useTimetable(userId: string | null) {
       await supabase
         .from('daily_completions')
         .update({ completed: newCompleted, completed_at: newCompleted ? new Date().toISOString() : null })
-        .eq('id', existing.id);
+        .eq('id', existing.id)
+        .eq('user_id', userId);
       setCompletions(prev => prev.map(c =>
         c.id === existing.id ? { ...c, completed: newCompleted } : c
       ));
@@ -337,7 +338,8 @@ export function useTimetable(userId: string | null) {
       if (current) {
         await supabase.from('timetable_badges')
           .update({ count: newCount, tier: newTier })
-          .eq('id', current.id);
+          .eq('id', current.id)
+          .eq('user_id', userId);
       } else {
         await supabase.from('timetable_badges')
           .insert({ user_id: userId, badge_type: badgeType, count: newCount, tier: newTier });

@@ -233,7 +233,65 @@ export function ControlRoom() {
       localStorage.setItem(`quantum_sap_target_${uid}`, sapTarget);
       localStorage.setItem(`quantum_sunday_rest_${uid}`, sundayRest.toString());
 
-      // Save to Supabase
+      // Save sequentially to timetable_tasks table
+      if (currentUid && supabase) {
+        // Generate database-insertable rows from tasks
+        const rowsToSave: any[] = [];
+        tasks.forEach((t, idx) => {
+          const days = t.dayOfWeek !== undefined ? [t.dayOfWeek] : [0, 1, 2, 3, 4, 5, 6];
+          days.forEach(day => {
+            const sh = t.start;
+            const eh = t.end;
+            let duration = 30;
+            try {
+              const [shHrs, shMins] = sh.split(':').map(Number);
+              const [ehHrs, ehMins] = eh.split(':').map(Number);
+              duration = (ehHrs * 60 + ehMins) - (shHrs * 60 + shMins);
+              if (duration <= 0) duration = 30;
+            } catch (e) {}
+
+            const categoryMap: Record<string, string> = {
+              gym: 'gym', study: 'study', work: 'work', mind: 'mind', other: 'other',
+              Health: 'gym', Study: 'study', Finance: 'work', Mind: 'mind'
+            };
+            const category = categoryMap[t.category || ''] || categoryMap[t.pillar || ''] || 'other';
+
+            rowsToSave.push({
+              user_id: currentUid,
+              name: t.title,
+              category: category,
+              pillar: t.pillar || (category === 'gym' ? 'Health' : category === 'study' ? 'Study' : category === 'work' ? 'Finance' : 'Mind'),
+              duration_minutes: duration,
+              day_of_week: day,
+              is_weekend: day === 0 || day === 6,
+              order_index: idx,
+              start_time: t.start,
+              task_target: t.task_target || 'Medium'
+            });
+          });
+        });
+
+        setSavedMessage('Clearing existing schedule...');
+        const { error: deleteError } = await supabase.from('timetable_tasks').delete().eq('user_id', currentUid);
+        if (deleteError) {
+          console.error("Supabase Timetable Clear Error:", deleteError);
+          throw new Error(`Failed to clear timetable tasks: ${deleteError.message}`);
+        }
+
+        if (rowsToSave.length > 0) {
+          setSavedMessage(`Synchronizing ${rowsToSave.length} schedule entries...`);
+          const { error: insertError } = await supabase.from('timetable_tasks').insert(rowsToSave);
+          if (insertError) {
+            console.error("Supabase Bulk Insert Error:", insertError);
+            throw new Error(`Failed to synchronize timetable tasks: ${insertError.message}`);
+          }
+        }
+
+        setSavedMessage('Finished');
+        await new Promise(resolve => setTimeout(resolve, 300));
+      }
+
+      // Save to profiles settings column
       if (currentUid && supabase) {
         const { error } = await supabase.from('profiles').update({
           settings: {
@@ -438,6 +496,7 @@ export function ControlRoom() {
         </div>
         
         <button 
+          type="button"
           onClick={handleSave}
           className="w-full sm:w-auto flex items-center justify-center space-x-2 bg-primary/20 hover:bg-primary/30 text-primary px-6 py-3 rounded-xl font-bold transition-all border border-primary/50"
         >

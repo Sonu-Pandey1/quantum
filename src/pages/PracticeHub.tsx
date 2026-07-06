@@ -471,7 +471,8 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
             await supabase
               .from('practice_submissions')
               .update({ last_solved_at: now.toISOString(), solve_count: newSolveCount, total_xp_earned: xpGained })
-              .eq('id', existing.id);
+              .eq('id', existing.id)
+              .eq('user_id', uid);
           } else {
             await supabase
               .from('practice_submissions')

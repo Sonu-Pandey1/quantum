@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Target, CheckCircle2, AlertTriangle, Image as ImageIcon, X, CheckCircle, SkipForward, Bell } from 'lucide-react';
 import { audio } from '../lib/audio';
@@ -7,6 +7,8 @@ import { supabase } from '../lib/supabaseClient';
 import { useProgression } from '../hooks/useProgression';
 import { Skeleton } from './Skeleton';
 import { cn } from '../lib/utils';
+import toast from 'react-hot-toast';
+
 
 // Types
 interface Task {
@@ -65,11 +67,26 @@ export function EngineCard() {
   // Active Focus Session State
   const [isSessionActive, setIsSessionActive] = useState(false);
   const [sessionStartTime, setSessionStartTime] = useState<string | null>(null);
+  const [sessionTaskId, setSessionTaskId] = useState<string | number | null>(null);
+  const [sessionTaskTitle, setSessionTaskTitle] = useState<string>('');
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [showEndModal, setShowEndModal] = useState(false);
   const [endStatus, setEndStatus] = useState<'completed' | 'left_midway'>('completed');
   const [endReason, setEndReason] = useState('');
   const [endError, setEndError] = useState('');
+
+  const isSessionActiveRef = useRef(isSessionActive);
+  const sessionStartTimeRef = useRef(sessionStartTime);
+  const sessionTaskIdRef = useRef(sessionTaskId);
+  const sessionTaskTitleRef = useRef(sessionTaskTitle);
+  const elapsedSecondsRef = useRef(elapsedSeconds);
+
+  useEffect(() => { isSessionActiveRef.current = isSessionActive; }, [isSessionActive]);
+  useEffect(() => { sessionStartTimeRef.current = sessionStartTime; }, [sessionStartTime]);
+  useEffect(() => { sessionTaskIdRef.current = sessionTaskId; }, [sessionTaskId]);
+  useEffect(() => { sessionTaskTitleRef.current = sessionTaskTitle; }, [sessionTaskTitle]);
+  useEffect(() => { elapsedSecondsRef.current = elapsedSeconds; }, [elapsedSeconds]);
+
 
   // Executed tasks for today (store IDs)
   const [executedTaskIds, setExecutedTaskIds] = useState<any[]>([]);
@@ -221,6 +238,8 @@ export function EngineCard() {
           if (savedSession.date === todayStr) {
             setIsSessionActive(true);
             setSessionStartTime(savedSession.startTime);
+            setSessionTaskId(savedSession.taskId);
+            setSessionTaskTitle(savedSession.taskTitle || '');
             const elapsed = Math.floor((Date.now() - new Date(savedSession.startTime).getTime()) / 1000);
             setElapsedSeconds(elapsed > 0 ? elapsed : 0);
           } else {
@@ -235,6 +254,130 @@ export function EngineCard() {
     loadExecutions().finally(() => setLoading(false));
   }, []);
 
+  const autoCompletePreviousTask = async (prevTaskId: string | number, prevSessionStartTime: string, prevElapsedSeconds: number) => {
+    const foundTask = schedule.find(t => 
+      String(t.id) === String(prevTaskId) ||
+      (t.title && sessionTaskTitleRef.current && t.title.trim().toLowerCase() === sessionTaskTitleRef.current.trim().toLowerCase())
+    );
+
+    const prevTask: Task = foundTask || ({
+      id: prevTaskId as any,
+      title: sessionTaskTitleRef.current || 'Previous Task',
+      start: '00:00',
+      end: '00:00',
+      task_target: 'Medium',
+      pillar: 'Mind'
+    } as any);
+
+    let baseXp = 30;
+    const tTarget = (prevTask as any).task_target;
+    if (tTarget === 'High') baseXp = 100;
+    else if (tTarget === 'Medium') baseXp = 60;
+    else if (tTarget === 'Low') baseXp = 40;
+
+    const tStart = (prevTask as any).start || (prevTask as any).timeStart;
+    const tEnd = (prevTask as any).end || (prevTask as any).timeEnd;
+    let scheduledDuration = 30;
+    let durationSpent = Math.max(1, Math.round(prevElapsedSeconds / 60));
+    try {
+      const startMs = parseTime(tStart).getTime();
+      const endMs = parseTime(tEnd).getTime();
+      scheduledDuration = Math.max(1, Math.round((endMs - startMs) / 60000));
+    } catch (e) {}
+
+    let earnedXp = baseXp;
+    const todayDow = new Date().getDay();
+    const isWknd = todayDow === 0 || todayDow === 6;
+    if (isWknd && followWeekendTimetable) {
+      earnedXp = earnedXp * 2;
+    }
+
+    audio.playSuccess();
+
+    const { awarded, xpEarned } = await claimTimetableTaskXp(
+      String(prevTask.id),
+      (prevTask as any).pillar || 'Mind',
+      `Routine Task: ${prevTask.title}`,
+      earnedXp
+    );
+
+    const todayStr = getTodayString();
+    let activeUid = userId || 'default';
+    if (supabase && activeUid === 'default') {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) activeUid = session.user.id;
+    }
+
+    const logEntry = {
+      id: Math.random().toString(36).substring(2),
+      task_id: String(prevTask.id),
+      title: prevTask.title,
+      pillar: (prevTask as any).pillar || 'Mind',
+      scheduled_start: prevTask.start,
+      scheduled_end: prevTask.end,
+      scheduled_duration: scheduledDuration,
+      started_at: prevSessionStartTime,
+      ended_at: new Date().toISOString(),
+      duration_spent: durationSpent,
+      status: 'completed',
+      reason: 'Auto-completed on schedule transition',
+      xp_earned: awarded ? xpEarned : 0,
+      date: todayStr
+    };
+
+    const currentLogs = progressionState?.settings?.execution_logs || [];
+    await updateProfile({
+      settings: {
+        ...progressionState.settings,
+        execution_logs: [...currentLogs, logEntry]
+      }
+    });
+
+    const updated = [...executedTaskIds, prevTask.id];
+    setExecutedTaskIds(updated);
+
+    const storageKey = `quantum_exec_${activeUid}_${todayStr}`;
+    localStorage.setItem(storageKey, JSON.stringify(updated));
+
+    const activeSessionKey = `quantum_active_session_${activeUid}`;
+    localStorage.removeItem(activeSessionKey);
+
+    setIsSessionActive(false);
+    setSessionStartTime(null);
+    setSessionTaskId(null);
+    setSessionTaskTitle('');
+    setElapsedSeconds(0);
+
+    if (supabase && activeUid !== 'default') {
+      const payload: any = {
+        task_id: String(prevTask.id),
+        date_string: todayStr,
+        user_id: activeUid
+      };
+      await supabase.from('executions').insert([payload]);
+
+      try {
+        await supabase.from('daily_completions').insert([{
+          user_id: activeUid,
+          date: todayStr,
+          task_id: String(prevTask.id),
+          completed: true,
+          completed_at: new Date().toISOString()
+        }]);
+      } catch (e) {
+        console.error("Failed to sync to daily_completions:", e);
+      }
+    }
+
+    setShowCheckmark(true);
+    setTimeout(() => setShowCheckmark(false), 2000);
+  };
+
+  const autoCompletePreviousTaskRef = useRef(autoCompletePreviousTask);
+  useEffect(() => {
+    autoCompletePreviousTaskRef.current = autoCompletePreviousTask;
+  }, [autoCompletePreviousTask]);
+
   // Time loop
   useEffect(() => {
     const timer = setInterval(() => {
@@ -243,6 +386,25 @@ export function EngineCard() {
       const todayDow = now.getDay();
       const isWknd = todayDow === 0 || todayDow === 6;
       const skipBehindCheck = isWknd && !followWeekendTimetable;
+
+      // 1. Auto-complete active task if its scheduled block has ended
+      if (isSessionActiveRef.current && sessionTaskIdRef.current) {
+        const sessionTask = schedule.find(t => 
+          String(t.id) === String(sessionTaskIdRef.current) ||
+          (t.title && sessionTaskTitleRef.current && t.title.trim().toLowerCase() === sessionTaskTitleRef.current.trim().toLowerCase())
+        );
+
+        if (sessionTask) {
+          const tEnd = (sessionTask as any).end || (sessionTask as any).timeEnd;
+          if (tEnd) {
+            const end = parseTime(tEnd);
+            if (now > end) {
+              console.log("[EngineCard] Active focus task ended. Submitting automatically:", sessionTask.title);
+              autoCompletePreviousTaskRef.current(sessionTaskIdRef.current, sessionStartTimeRef.current || new Date().toISOString(), elapsedSecondsRef.current);
+            }
+          }
+        }
+      }
 
       // Find active task
       const current = schedule.find(t => {
@@ -259,6 +421,15 @@ export function EngineCard() {
 
       if (current) {
         setActiveTask(current);
+        
+        // 2. Auto-transition when next scheduled task starts and previous session is active on a different task
+        if (isSessionActiveRef.current && sessionTaskIdRef.current && String(current.id) !== String(sessionTaskIdRef.current)) {
+          const isTitleDiff = !current.title || !sessionTaskTitleRef.current || current.title.trim().toLowerCase() !== sessionTaskTitleRef.current.trim().toLowerCase();
+          if (isTitleDiff) {
+            console.log("[EngineCard] New task started while focusing on a different task. Submitting automatically:", sessionTaskTitleRef.current);
+            autoCompletePreviousTaskRef.current(sessionTaskIdRef.current, sessionStartTimeRef.current || new Date().toISOString(), elapsedSecondsRef.current);
+          }
+        }
         if (executedTaskIds.some(id => String(id) === String(current.id))) {
           setSystemState('optimal');
         } else {
@@ -361,12 +532,15 @@ export function EngineCard() {
     if (!activeTask) return;
     const startIso = new Date().toISOString();
     setSessionStartTime(startIso);
+    setSessionTaskId(activeTask.id);
+    setSessionTaskTitle(activeTask.title);
     setIsSessionActive(true);
     setElapsedSeconds(0);
 
     const activeSessionKey = `quantum_active_session_${userId}`;
     localStorage.setItem(activeSessionKey, JSON.stringify({
       taskId: activeTask.id,
+      taskTitle: activeTask.title,
       startTime: startIso,
       date: getTodayString()
     }));
@@ -467,6 +641,8 @@ export function EngineCard() {
 
     setIsSessionActive(false);
     setSessionStartTime(null);
+    setSessionTaskId(null);
+    setSessionTaskTitle('');
     setElapsedSeconds(0);
     setShowEndModal(false);
     setEndReason('');
@@ -579,6 +755,56 @@ export function EngineCard() {
   }
 
   const isCompleted = activeTask ? executedTaskIds.some(id => String(id) === String(activeTask.id)) : false;
+
+  // Reminders for starting the task
+  useEffect(() => {
+    if (!activeTask || isCompleted || isSessionActive) return;
+
+    const checkReminders = () => {
+      const todayStr = getTodayString();
+      const start = parseTime(activeTask.start);
+      const timeDiffMs = Date.now() - start.getTime();
+      const diffMinutes = Math.floor(timeDiffMs / 60000);
+
+      // Start reminder (only within the first 3 minutes of the task start)
+      const startRemindedKey = `reminded_start_${activeTask.id}_${todayStr}`;
+      if (timeDiffMs >= 0 && timeDiffMs <= 180000 && !localStorage.getItem(startRemindedKey)) {
+        localStorage.setItem(startRemindedKey, 'true');
+        
+        toast('⏰ Scheduled Task Commenced: ' + activeTask.title + '. Start focus now!', {
+          icon: '⚡',
+          duration: 5000,
+        });
+        
+        notifier.send(
+          "Task Started",
+          `Scheduled Task: ${activeTask.title} is ready. Start focus now!`
+        );
+      }
+
+      // 10 minutes later reminder (only within the 10 to 13 minutes window)
+      const tenMinRemindedKey = `reminded_10min_${activeTask.id}_${todayStr}`;
+      if (diffMinutes >= 10 && diffMinutes <= 13 && !localStorage.getItem(tenMinRemindedKey)) {
+        localStorage.setItem(tenMinRemindedKey, 'true');
+        
+        toast('⚠️ Reminder: ' + activeTask.title + ' has been scheduled for 10 minutes. Click "Start Focus" to begin!', {
+          icon: '⏰',
+          duration: 8000,
+        });
+
+        notifier.send(
+          "Task Delayed",
+          `10 minutes have passed since ${activeTask.title} was scheduled to start. Begin focusing now!`
+        );
+      }
+    };
+
+    // Run immediately and then every 5 seconds
+    checkReminders();
+    const interval = setInterval(checkReminders, 5000);
+
+    return () => clearInterval(interval);
+  }, [activeTask, isCompleted, isSessionActive]);
 
   if (loading) {
     return (

@@ -34,6 +34,7 @@ export function LedgerCard({ onClick }: { onClick?: () => void }) {
           const { data } = await supabase
             .from('investments')
             .select('*')
+            .eq('user_id', uid)
             .order('created_at', { ascending: false });
 
           if (data && data.length > 0) {
@@ -83,13 +84,13 @@ export function LedgerCard({ onClick }: { onClick?: () => void }) {
     localStorage.setItem(`quantum_investments_${userId}`, JSON.stringify(updated));
 
     // Supabase sync
-    if (supabase) {
+    if (supabase && userId !== 'default') {
       try {
         const payload: any = {
           description: investment.title,
-          amount: investment.amount
+          amount: investment.amount,
+          user_id: userId
         };
-        if (userId !== 'default') payload.user_id = userId;
         await supabase.from('investments').insert([payload]);
       } catch (e) {
         console.error("Failed to sync investment.");
