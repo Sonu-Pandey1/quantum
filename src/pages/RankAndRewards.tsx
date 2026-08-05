@@ -88,6 +88,19 @@ const PILLARS = [
 ];
 
 
+const DEFAULT_STAGE_REWARDS: Reward[] = [
+  { id: 'stage_1',   title: 'Initiate Crest',        description: 'Achieved Level 1 baseline',              required_level: 1,   pillar: 'Mind',    icon: 'Shield' },
+  { id: 'stage_5',   title: 'Apprentice Badge',      description: 'Reached Level 5 milestone',              required_level: 5,   pillar: 'Study',   icon: 'Star' },
+  { id: 'stage_10',  title: 'Specialist Emblem',     description: 'Reached Level 10 mastery',              required_level: 10,  pillar: 'Health',  icon: 'Target' },
+  { id: 'stage_15',  title: 'Rising Analyst Pin',    description: 'Reached Level 15 analytical rank',       required_level: 15,  pillar: 'Finance', icon: 'Sun' },
+  { id: 'stage_20',  title: 'Analyst Insignia',      description: 'Reached Level 20 protocol proficiency',  required_level: 20,  pillar: 'Study',   icon: 'Brain' },
+  { id: 'stage_30',  title: 'Commander Aegis',       description: 'Reached Level 30 tactical leadership',   required_level: 30,  pillar: 'Mind',    icon: 'Trophy' },
+  { id: 'stage_45',  title: 'Elite Vanguard Crown',  description: 'Reached Level 45 elite status',          required_level: 45,  pillar: 'Health',  icon: 'Zap' },
+  { id: 'stage_60',  title: 'Grandmaster Sigil',     description: 'Reached Level 60 grandmaster rank',      required_level: 60,  pillar: 'Finance', icon: 'Crown' },
+  { id: 'stage_80',  title: 'Legend Aura',           description: 'Reached Level 80 legendary tier',        required_level: 80,  pillar: 'Study',   icon: 'Sparkles' },
+  { id: 'stage_100', title: 'Quantum Mythic Relic',   description: 'Reached Level 100 ultimate ascension',   required_level: 100, pillar: 'Mind',    icon: 'Trophy' },
+];
+
 export function RankAndRewards() {
   const { state } = useProgression();
   const [rewards, setRewards]   = useState<Reward[]>([]);
@@ -156,13 +169,28 @@ export function RankAndRewards() {
   };
 
   useEffect(() => {
-    if (!supabase) { setRewardLoad(false); return; }
-    supabase.from('rewards').select('*').order('required_level', { ascending: true })
-      .then(({ data, error }) => {
-        if (!error && data) setRewards(data);
+    async function loadRewards() {
+      if (!supabase) {
+        setRewards(DEFAULT_STAGE_REWARDS);
         setRewardLoad(false);
-      });
+        return;
+      }
+      try {
+        const { data, error } = await supabase.from('rewards').select('*').order('required_level', { ascending: true });
+        if (!error && data && data.length > 0) {
+          setRewards(data);
+        } else {
+          setRewards(DEFAULT_STAGE_REWARDS);
+        }
+      } catch (e) {
+        setRewards(DEFAULT_STAGE_REWARDS);
+      } finally {
+        setRewardLoad(false);
+      }
+    }
+    loadRewards();
   }, []);
+
 
   // Scroll active rank node into view
   useEffect(() => {

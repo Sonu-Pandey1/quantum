@@ -154,7 +154,7 @@ export function useTimetable(userId: string | null) {
   // ── Toggle task completion ─────────────────────────────────────────────────
   const toggleCompletion = useCallback(async (
     taskId: string,
-    claimXpFn?: (taskId: string, pillar: 'Study' | 'Health' | 'Finance' | 'Mind', label: string, baseAmount: number) => Promise<{ awarded: boolean; xpEarned: number }>
+    claimXpFn?: (taskId: string, pillar: 'Study' | 'Health' | 'Finance' | 'Mind', label: string, baseAmount: number) => Promise<any>
   ) => {
     if (!supabase || !userId) return;
 
@@ -193,21 +193,28 @@ export function useTimetable(userId: string | null) {
         };
         const base = getBaseXp(task.task_target);
         
-        const { awarded, xpEarned } = await claimXpFn(
+        const result = await claimXpFn(
           taskId,
           task.pillar || 'Mind',
           `Routine Task: ${task.name}`,
           base
         );
 
-        if (awarded) {
+        if (result?.awarded) {
+          const xpEarned = result.xpEarned;
+          const breakdown = result.breakdown;
+          const parts = [`Base: ${base} XP`];
+          if (breakdown?.streakBonus > 0) parts.push(`Streak: +${breakdown.streakBonus} XP`);
+          if (breakdown?.archetypeBonus > 0) parts.push(`Archetype: +${breakdown.archetypeBonus} XP`);
+
           import('react-hot-toast').then(({ default: toast }) => {
-            toast.success(`🎉 Routine Mastered! +${xpEarned} XP`);
+            toast.success(`🎉 Routine Mastered! +${xpEarned} XP Total (${parts.join(' | ')})`);
           });
         }
       }
     }
   }, [completions, today, userId, tasks]);
+
 
   // ── Today's stats ──────────────────────────────────────────────────────────
   const todayStats: DailyStats = (() => {

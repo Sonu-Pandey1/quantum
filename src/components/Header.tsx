@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ShieldCheck, Trophy, Zap } from 'lucide-react';
+import { ShieldCheck, Trophy, Zap, Bell, BellOff } from 'lucide-react';
 import { useProgression } from '../hooks/useProgression';
 import { audio } from '../lib/audio';
+import { notifier } from '../lib/notifications';
+import toast from 'react-hot-toast';
 
 const vows = [
   "Action over Thinking.",
@@ -51,6 +53,41 @@ export function Header({ hideVow = false, onNavigateToRank, onNavigateToDashboar
   const { state } = useProgression();
   const displayVows = state.goals && state.goals.length > 0 ? state.goals : vows;
   const [index, setIndex] = useState(0);
+  const [notifGranted, setNotifGranted] = useState(false);
+
+  useEffect(() => {
+    setNotifGranted(notifier.isGranted());
+  }, []);
+
+  const handleToggleNotifications = async () => {
+    audio.playClick();
+    if (!notifier.isSupported()) {
+      toast.error('Web System Notifications are not supported in this browser.');
+      return;
+    }
+
+    if (notifier.isGranted()) {
+      toast.success('Phone & Browser System Notifications Active 🔔', {
+        icon: '🔔',
+      });
+      notifier.send(
+        "Protocol Alerts Active",
+        "System alerts are enabled on your device."
+      );
+    } else {
+      const granted = await notifier.requestPermission();
+      setNotifGranted(granted);
+      if (granted) {
+        toast.success('Phone & Device Notifications Enabled! 🚀');
+        notifier.send(
+          "Neural Protocol Alerts Enabled",
+          "You will receive live device notifications when protocols start or complete."
+        );
+      } else {
+        toast.error('Notification permission denied. Please allow notifications in browser settings.');
+      }
+    }
+  };
 
   useEffect(() => {
     if (hideVow) return;
@@ -107,34 +144,50 @@ export function Header({ hideVow = false, onNavigateToRank, onNavigateToDashboar
         </div>
       )}
 
-      {/* Right: Rank & Progress */}
-      <div
-        className="flex items-center space-x-3 md:space-x-6 cursor-pointer group hover:bg-white/5 p-2 rounded-xl transition-colors"
-        onClick={() => {
-          audio.playClick();
-          if (onNavigateToRank) onNavigateToRank();
-        }}
-      >
-        <div className="flex flex-col items-end">
-          <div className="flex items-center space-x-2 mb-1">
-            <span className="text-[10px] md:text-[10px] font-bold text-amber-400 uppercase tracking-wider group-hover:text-amber-300 transition-colors">{state.rank}</span>
-            <Trophy size={13} className="text-amber-500 md:w-[14px] md:h-[14px] group-hover:scale-110 transition-transform" />
-          </div>
-          <div className="w-16 xs:w-20 md:w-32 h-1 bg-white/5 rounded-full overflow-hidden flex border border-white/5 shadow-inner relative group-hover:border-primary/30 transition-colors">
-            <motion.div
-              className="bg-gradient-to-r from-primary to-blue-400 h-full w-full"
-              initial={{ width: 0 }}
-              animate={{ width: `${getProgress(state.totalXp)}%` }}
-            />
-          </div>
-        </div>
+      {/* Right: Notifications Button & Rank & Progress */}
+      <div className="flex items-center space-x-3 md:space-x-4">
+        {/* Phone / Device Notification Permission Toggle */}
+        <button
+          onClick={handleToggleNotifications}
+          title={notifGranted ? "Device Notifications Active" : "Enable Phone / Device Notifications"}
+          className={`p-2 rounded-xl border transition-all ${
+            notifGranted
+              ? 'bg-primary/10 border-primary/30 text-primary hover:bg-primary/20 shadow-[0_0_12px_rgba(59,130,246,0.2)]'
+              : 'bg-white/5 border-white/10 text-textMuted hover:text-white hover:bg-white/10'
+          }`}
+        >
+          {notifGranted ? <Bell size={18} className="animate-pulse" /> : <BellOff size={18} />}
+        </button>
 
-        <div className="flex flex-col items-center justify-center p-1.5 md:p-2 bg-primary/10 border border-primary/20 rounded-lg md:rounded-xl min-w-[36px] md:min-w-[48px] group-hover:bg-primary/20 group-hover:border-primary/40 transition-colors shadow-[0_0_15px_rgba(59,130,246,0.1)] group-hover:shadow-[0_0_20px_rgba(59,130,246,0.3)]">
-          <span className="text-[8px] md:text-[9px] text-primary font-bold uppercase leading-none mb-1 md:mb-1">Lvl</span>
-          <span className="text-sm md:text-base font-black text-textMain leading-none">{state.totalLevel}</span>
+        <div
+          className="flex items-center space-x-3 md:space-x-6 cursor-pointer group hover:bg-white/5 p-2 rounded-xl transition-colors"
+          onClick={() => {
+            audio.playClick();
+            if (onNavigateToRank) onNavigateToRank();
+          }}
+        >
+          <div className="flex flex-col items-end">
+            <div className="flex items-center space-x-2 mb-1">
+              <span className="text-[10px] md:text-[10px] font-bold text-amber-400 uppercase tracking-wider group-hover:text-amber-300 transition-colors">{state.rank}</span>
+              <Trophy size={13} className="text-amber-500 md:w-[14px] md:h-[14px] group-hover:scale-110 transition-transform" />
+            </div>
+            <div className="w-16 xs:w-20 md:w-32 h-1 bg-white/5 rounded-full overflow-hidden flex border border-white/5 shadow-inner relative group-hover:border-primary/30 transition-colors">
+              <motion.div
+                className="bg-gradient-to-r from-primary to-blue-400 h-full w-full"
+                initial={{ width: 0 }}
+                animate={{ width: `${getProgress(state.totalXp)}%` }}
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-col items-center justify-center p-1.5 md:p-2 bg-primary/10 border border-primary/20 rounded-lg md:rounded-xl min-w-[36px] md:min-w-[48px] group-hover:bg-primary/20 group-hover:border-primary/40 transition-colors shadow-[0_0_15px_rgba(59,130,246,0.1)] group-hover:shadow-[0_0_20px_rgba(59,130,246,0.3)]">
+            <span className="text-[8px] md:text-[9px] text-primary font-bold uppercase leading-none mb-1 md:mb-1">Lvl</span>
+            <span className="text-sm md:text-base font-black text-textMain leading-none">{state.totalLevel}</span>
+          </div>
         </div>
       </div>
 
     </header>
   );
 }
+

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Target, CheckCircle2, AlertTriangle, Image as ImageIcon, X, CheckCircle, SkipForward, Bell } from 'lucide-react';
 import { audio } from '../lib/audio';
@@ -229,7 +229,7 @@ export function EngineCard() {
         }
       }
 
-      // Restore active session
+      // Restore active session with background reconciliation
       const activeSessionKey = `quantum_active_session_${uid}`;
       const savedSessionStr = localStorage.getItem(activeSessionKey);
       if (savedSessionStr) {
@@ -269,11 +269,11 @@ export function EngineCard() {
       pillar: 'Mind'
     } as any);
 
-    let baseXp = 30;
+    let maxAssignedXp = 60;
     const tTarget = (prevTask as any).task_target;
-    if (tTarget === 'High') baseXp = 100;
-    else if (tTarget === 'Medium') baseXp = 60;
-    else if (tTarget === 'Low') baseXp = 40;
+    if (tTarget === 'High') maxAssignedXp = 100;
+    else if (tTarget === 'Medium') maxAssignedXp = 60;
+    else if (tTarget === 'Low') maxAssignedXp = 40;
 
     const tStart = (prevTask as any).start || (prevTask as any).timeStart;
     const tEnd = (prevTask as any).end || (prevTask as any).timeEnd;
@@ -285,20 +285,26 @@ export function EngineCard() {
       scheduledDuration = Math.max(1, Math.round((endMs - startMs) / 60000));
     } catch (e) {}
 
-    let earnedXp = baseXp;
+    // Performance-based calculation strictly capped at maxAssignedXp
+    const perfRatio = Math.min(1.0, Math.max(0.1, durationSpent / scheduledDuration));
+    const baseEarnedXp = Math.round(maxAssignedXp * perfRatio);
+
     const todayDow = new Date().getDay();
     const isWknd = todayDow === 0 || todayDow === 6;
+    let weekendBonus = 0;
+    let claimInputXp = baseEarnedXp;
     if (isWknd && followWeekendTimetable) {
-      earnedXp = earnedXp * 2;
+      weekendBonus = baseEarnedXp;
+      claimInputXp = baseEarnedXp * 2;
     }
 
     audio.playSuccess();
 
-    const { awarded, xpEarned } = await claimTimetableTaskXp(
+    const { awarded, xpEarned, breakdown } = await claimTimetableTaskXp(
       String(prevTask.id),
       (prevTask as any).pillar || 'Mind',
       `Routine Task: ${prevTask.title}`,
-      earnedXp
+      claimInputXp
     );
 
     const todayStr = getTodayString();
@@ -306,6 +312,25 @@ export function EngineCard() {
     if (supabase && activeUid === 'default') {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) activeUid = session.user.id;
+    }
+
+    if (awarded) {
+      const parts = [`Base Task: ${baseEarnedXp}/${maxAssignedXp} XP`];
+      if (weekendBonus > 0) parts.push(`Weekend 2x: +${weekendBonus} XP`);
+      if (breakdown?.streakBonus > 0) parts.push(`Streak: +${breakdown.streakBonus} XP`);
+      if (breakdown?.archetypeBonus > 0) parts.push(`Archetype: +${breakdown.archetypeBonus} XP`);
+
+      import('react-hot-toast').then(({ default: toast }) => {
+        toast.success(`🎉 Protocol Complete! +${xpEarned} XP Total\n${parts.join(' | ')}`, {
+          duration: 6000,
+        });
+      });
+
+      notifier.send(
+        "Protocol Completed",
+        `+${xpEarned} XP earned for ${prevTask.title}! (${parts.join(' | ')})`,
+        { tag: 'task-complete', playSound: true, vibrate: true }
+      );
     }
 
     const logEntry = {
@@ -321,6 +346,8 @@ export function EngineCard() {
       duration_spent: durationSpent,
       status: 'completed',
       reason: 'Auto-completed on schedule transition',
+      xp_base: baseEarnedXp,
+      xp_max_assigned: maxAssignedXp,
       xp_earned: awarded ? xpEarned : 0,
       date: todayStr
     };
@@ -377,6 +404,7 @@ export function EngineCard() {
   useEffect(() => {
     autoCompletePreviousTaskRef.current = autoCompletePreviousTask;
   }, [autoCompletePreviousTask]);
+
 
   // Time loop
   useEffect(() => {
@@ -477,6 +505,73 @@ export function EngineCard() {
     }
   }, [settingsFollow]);
 
+  // Background Session Reconciliation on Tab Focus / App Re-open
+  const checkAndReconcileActiveSession = useCallback(async () => {
+    const todayStr = getTodayString();
+    let uid: string = userId || 'default';
+    if (supabase && uid === 'default') {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) uid = session.user.id;
+    }
+
+    const activeSessionKey = `quantum_active_session_${uid}`;
+    const savedSessionStr = localStorage.getItem(activeSessionKey);
+    if (!savedSessionStr) return;
+
+    try {
+      const savedSession = JSON.parse(savedSessionStr);
+      if (savedSession.date !== todayStr) {
+        localStorage.removeItem(activeSessionKey);
+        return;
+      }
+
+      const matchingTask = schedule.find(t =>
+        String(t.id) === String(savedSession.taskId) ||
+        (t.title && savedSession.taskTitle && t.title.trim().toLowerCase() === savedSession.taskTitle.trim().toLowerCase())
+      );
+
+      const tEndStr = (matchingTask as any)?.end || (matchingTask as any)?.timeEnd;
+      const now = new Date();
+
+      if (tEndStr) {
+        const end = parseTime(tEndStr);
+        if (now >= end) {
+          console.log("[EngineCard] Active session ended in background. Auto-completing:", savedSession.taskTitle);
+          const startMs = new Date(savedSession.startTime).getTime();
+          const cappedElapsedSeconds = Math.max(60, Math.floor((end.getTime() - startMs) / 1000));
+
+          await autoCompletePreviousTaskRef.current(savedSession.taskId, savedSession.startTime, cappedElapsedSeconds);
+          
+          notifier.send(
+            "Protocol Completed (Background)",
+            `Task '${savedSession.taskTitle || 'Scheduled Task'}' completed at ${tEndStr}. Next protocol ready!`,
+            { tag: 'background-complete', playSound: true, vibrate: true }
+          );
+        }
+      }
+    } catch (e) {
+      console.error("Failed to reconcile active session", e);
+    }
+  }, [userId, schedule]);
+
+  useEffect(() => {
+    checkAndReconcileActiveSession();
+
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible') {
+        checkAndReconcileActiveSession();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    window.addEventListener('focus', handleVisibilityOrFocus);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+    };
+  }, [checkAndReconcileActiveSession]);
+
+
   const handleToggleWeekendFollow = async (val: boolean) => {
     audio.playClick();
     setFollowWeekendTimetable(val);
@@ -555,12 +650,12 @@ export function EngineCard() {
       return;
     }
 
-    // 1. Calculate Base XP
-    let baseXp = 30;
+    // 1. Base assigned XP for task target
+    let maxAssignedXp = 60;
     const tTarget = (activeTask as any).task_target;
-    if (tTarget === 'High') baseXp = 100;
-    else if (tTarget === 'Medium') baseXp = 60;
-    else if (tTarget === 'Low') baseXp = 40;
+    if (tTarget === 'High') maxAssignedXp = 100;
+    else if (tTarget === 'Medium') maxAssignedXp = 60;
+    else if (tTarget === 'Low') maxAssignedXp = 40;
 
     // Calculate duration in minutes
     const tStart = (activeTask as any).start || (activeTask as any).timeStart;
@@ -570,27 +665,31 @@ export function EngineCard() {
     const scheduledDuration = Math.max(1, Math.round((endMs - startMs) / 60000));
     const durationSpent = Math.max(1, Math.round(elapsedSeconds / 60));
 
-    // Calculate final XP
-    let earnedXp = baseXp;
+    // Performance-based calculation strictly capped at maxAssignedXp
+    const perfRatio = Math.min(1.0, Math.max(0.1, durationSpent / scheduledDuration));
+    let baseEarnedXp = Math.round(maxAssignedXp * perfRatio);
     if (endStatus === 'left_midway') {
-      earnedXp = Math.max(10, Math.min(baseXp, Math.round((durationSpent / scheduledDuration) * baseXp)));
+      baseEarnedXp = Math.max(10, Math.min(maxAssignedXp, baseEarnedXp));
     }
 
     // Weekend 2x points
     const todayDow = new Date().getDay();
     const isWknd = todayDow === 0 || todayDow === 6;
+    let weekendBonus = 0;
+    let claimInputXp = baseEarnedXp;
     if (isWknd && followWeekendTimetable) {
-      earnedXp = earnedXp * 2;
+      weekendBonus = baseEarnedXp;
+      claimInputXp = baseEarnedXp * 2;
     }
 
     audio.playSuccess();
 
-    // 2. Claim Timetable XP
-    const { awarded, xpEarned } = await claimTimetableTaskXp(
+    // 2. Claim Timetable XP with detailed breakdown
+    const { awarded, xpEarned, breakdown } = await claimTimetableTaskXp(
       String(activeTask.id),
       (activeTask as any).pillar || 'Mind',
       `Routine Task: ${activeTask.title}`,
-      earnedXp
+      claimInputXp
     );
 
     const todayStr = getTodayString();
@@ -600,6 +699,25 @@ export function EngineCard() {
     if (supabase && activeUid === 'default') {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) activeUid = session.user.id;
+    }
+
+    if (awarded) {
+      const parts = [`Base Task: ${baseEarnedXp}/${maxAssignedXp} XP`];
+      if (weekendBonus > 0) parts.push(`Weekend 2x: +${weekendBonus} XP`);
+      if (breakdown?.streakBonus > 0) parts.push(`Streak: +${breakdown.streakBonus} XP`);
+      if (breakdown?.archetypeBonus > 0) parts.push(`Archetype: +${breakdown.archetypeBonus} XP`);
+
+      import('react-hot-toast').then(({ default: toast }) => {
+        toast.success(`🎉 Protocol Complete! +${xpEarned} XP Total\n${parts.join(' | ')}`, {
+          duration: 6000,
+        });
+      });
+
+      notifier.send(
+        "Protocol Completed",
+        `+${xpEarned} XP earned for ${activeTask.title}! (${parts.join(' | ')})`,
+        { tag: 'task-complete', playSound: true, vibrate: true }
+      );
     }
 
     // 3. Log detailed session to profiles settings
@@ -616,6 +734,8 @@ export function EngineCard() {
       duration_spent: durationSpent,
       status: endStatus,
       reason: endReason.trim(),
+      xp_base: baseEarnedXp,
+      xp_max_assigned: maxAssignedXp,
       xp_earned: awarded ? xpEarned : 0,
       date: todayStr
     };

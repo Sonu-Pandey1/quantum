@@ -164,6 +164,13 @@ interface ProgressionState {
   settings?: any;
 }
 
+export interface XpBreakdown {
+  base: number;
+  streakBonus: number;
+  archetypeBonus: number;
+  total: number;
+}
+
 interface ProgressionContextType {
   state: ProgressionState;
   addXp: (pillar: Pillar, actionType: string, baseAmount: number) => Promise<number>;
@@ -176,7 +183,7 @@ interface ProgressionContextType {
   levelUpData: { pillar: Pillar | 'Global'; newLevel: number; newRank?: string } | null;
   closeLevelUp: () => void;
   loading: boolean;
-  claimTimetableTaskXp: (taskId: string, pillar: Pillar, label: string, baseAmount: number) => Promise<{ awarded: boolean; xpEarned: number }>;
+  claimTimetableTaskXp: (taskId: string, pillar: Pillar, label: string, baseAmount: number) => Promise<{ awarded: boolean; xpEarned: number; breakdown: XpBreakdown }>;
 }
 
 const ProgressionContext = createContext<ProgressionContextType | null>(null);
@@ -239,7 +246,7 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
   } | null>(null);
   const [loading, setLoading] = useState(true);
   const [baselineLevel, setBaselineLevel] = useState(0);
-   const [earnedBadgeIds, setEarnedBadgeIds] = useState<string[]>([]);
+  const [earnedBadgeIds, setEarnedBadgeIds] = useState<string[]>([]);
   const [timetableXpClaims, setTimetableXpClaims] = useState<Record<string, string[]>>({});
   const [settings, setSettings] = useState<any>({});
 
@@ -291,7 +298,6 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
         const dbLastAct = profile.last_activity_date ?? null;
         const dbRole = (profile.role as 'user' | 'admin') ?? 'user';
         
-        // Identity data from DB
         // Identity data from DB
         const dbArchetype = (profile as any).archetype as Archetype || 'None';
         const dbGoals = (profile as any).goals as string[] || [];
@@ -365,7 +371,6 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
   const addXp = useCallback(async (pillar: Pillar, actionType: string, baseAmount: number): Promise<number> => {
     if (!supabase) return 0;
 
-    // FIX: use getSession() — no HTTP call, no 403
     let userId = userIdRef.current;
     if (!userId) {
       const user = await getSessionUser();
@@ -398,20 +403,19 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
     let currentStreak = streakCountRef.current;
     let newLastActivity = lastActivityRef.current;
 
-    // Activity streak logic (DO NOT TOUCH — separate from login streak)
+    // Activity streak logic
     if (newLastActivity) {
       const diffDays = Math.round(
         (new Date(today).getTime() - new Date(newLastActivity).getTime()) / 86400000
       );
       if (diffDays === 1) { currentStreak += 1; newLastActivity = today; }
       else if (diffDays > 1) { currentStreak = 1; newLastActivity = today; }
-      // diffDays === 0 → same day, no change
     } else {
       currentStreak = 1;
       newLastActivity = today;
     }
 
-    // ── Multipliers (only ever ADD to XP, never reduce) ──────────────────
+    // ── Multipliers ──────────────────
     let finalMultiplier = 1.0;
 
     // 1. Streak bonus: 3+ consecutive days = 1.5×
@@ -423,15 +427,11 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
     if (currentArchetype === 'Wealth Architect' && pillar === 'Finance') finalMultiplier *= 1.2;
     if (currentArchetype === 'Vitality Vanguard' && pillar === 'Health') finalMultiplier *= 1.2;
 
-    // 3. Active buffs (user-activated, always positive)
+    // 3. Active buffs
     const activeBuffs = buffsRef.current.filter(b => b.expiresAt > Date.now() && (b.type === pillar || b.type === 'Global'));
     activeBuffs.forEach(b => { finalMultiplier *= b.multiplier; });
 
-    // REMOVED: Imbalance Tax (0.7× Focus Tax) — was silently reducing XP below stated values.
-    // XP will never go below what the action says it's worth.
-
     const rawAmount  = Math.floor(baseAmount * finalMultiplier);
-    // Guarantee: awarded XP is always AT LEAST the base input (bonuses only add, never subtract)
     const finalAmount = Math.max(baseAmount, rawAmount);
 
     const newPillarXp = currentPillarXp[pillar] + finalAmount;
@@ -454,7 +454,7 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
       setShowLevelUp(true);
     }
 
-    // ── Badge auto-award ─────────────────────────────────────────────────────
+    // ── Badge auto-award (Deduplicated Single-Claim) ───────────────────────────
     const badgeOpts = {
       totalXp: currentTotalXp,
       newTotalXp,
@@ -465,24 +465,24 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
     };
     const currentEarnedBadges = earnedBadgeIdsRef.current || [];
     const newlyEarned = BADGES.filter(b => !currentEarnedBadges.includes(b.id) && checkBadgeTriggers(b.id, badgeOpts));
-    if (newlyEarned.length > 0 && supabase) {
-      // Optimistic toast notifications
+    
+    if (newlyEarned.length > 0) {
       newlyEarned.forEach(b => {
         toast.success(`${b.icon} Badge Unlocked: ${b.name}!`, { duration: 5000 });
       });
-      const newIds = [...currentEarnedBadges, ...newlyEarned.map(b => b.id)];
+      const newIds = Array.from(new Set([...currentEarnedBadges, ...newlyEarned.map(b => b.id)]));
       setEarnedBadgeIds(newIds);
       earnedBadgeIdsRef.current = newIds;
       localStorage.setItem(`quantum_badges_${userId}`, JSON.stringify(newIds));
 
-      // Persist to user_earned_badges (insert ignoring duplicates)
-      void supabase.from('user_earned_badges')
-        .upsert(
-          newlyEarned.map(b => ({ user_id: userId, badge_id: b.id, earned_at: new Date().toISOString() })),
-          { onConflict: 'user_id,badge_id', ignoreDuplicates: true }
-        );
+      if (supabase) {
+        void supabase.from('user_earned_badges')
+          .upsert(
+            newlyEarned.map(b => ({ user_id: userId, badge_id: b.id, earned_at: new Date().toISOString() })),
+            { onConflict: 'user_id,badge_id', ignoreDuplicates: true }
+          );
+      }
     }
-
 
     // Optimistic UI update + sync refs
     setPillarXp(updatedPillarXp);
@@ -496,7 +496,6 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
 
     const uid = userId;
 
-    // 1. Profile update (total_xp + pillar_xp + streak)
     void (async () => {
       if (!supabase) return;
 
@@ -512,19 +511,10 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
 
       if (error) {
         console.warn('[addXp] profile update failed:', error.message);
-        // Rollback on failure
         rollback();
-
-        // Attempt a minimal recovery if it was a schema mismatch or similar
-        const { error: e2 } = await supabase
-          .from('profiles')
-          .update({ total_xp: newTotalXp })
-          .eq('id', uid);
-        if (e2) console.error('[addXp] minimal profile update also failed:', e2.message);
       }
     })();
 
-    // 2. Activity log entry
     if (supabase) {
       supabase
         .from('activity_logs')
@@ -539,7 +529,6 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
           if (error) console.warn('[addXp] activity_logs insert failed:', error.message);
         });
 
-      // 3. Daily heatmap upsert via RPC
       supabase
         .rpc('increment_daily_activity', {
           p_user_id: uid,
@@ -554,22 +543,23 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
     return finalAmount;
   }, []);
 
-  // Secure Timetable XP Claiming Ledger - awards task completion XP strictly once per task per day.
+  // Secure Timetable XP Claiming Ledger with Detailed Breakdown
   const claimTimetableTaskXp = useCallback(async (
     taskId: string,
     pillar: Pillar,
     label: string,
     baseAmount: number
-  ): Promise<{ awarded: boolean; xpEarned: number }> => {
+  ): Promise<{ awarded: boolean; xpEarned: number; breakdown: XpBreakdown }> => {
     const today = format(new Date(), 'yyyy-MM-dd');
     const claims = { ...timetableXpClaimsRef.current };
     const todayClaims = claims[today] ? [...claims[today]] : [];
 
     const stringTaskId = String(taskId);
 
+    const emptyBreakdown: XpBreakdown = { base: 0, streakBonus: 0, archetypeBonus: 0, total: 0 };
+
     if (todayClaims.includes(stringTaskId)) {
-      // Already claimed today!
-      return { awarded: false, xpEarned: 0 };
+      return { awarded: false, xpEarned: 0, breakdown: emptyBreakdown };
     }
 
     // Unclaimed! Award XP
@@ -584,10 +574,29 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
     const uid = userIdRef.current || 'default';
     localStorage.setItem(`quantum_xp_claims_${uid}`, JSON.stringify(newClaims));
 
-    // Award the XP through the normal addXp path (which applies weekend/streak multipliers!)
+    // Calculate detailed breakdown
+    const currentStreak = streakCountRef.current;
+    const currentArchetype = archetypeRef.current;
+
+    const baseEarned = baseAmount;
+    const streakBonus = currentStreak >= 3 ? Math.floor(baseEarned * 0.5) : 0;
+    
+    let isMatchingArchetype = false;
+    if (currentArchetype === 'Technical Elite' && pillar === 'Study') isMatchingArchetype = true;
+    if (currentArchetype === 'Wealth Architect' && pillar === 'Finance') isMatchingArchetype = true;
+    if (currentArchetype === 'Vitality Vanguard' && pillar === 'Health') isMatchingArchetype = true;
+
+    const archetypeBonus = isMatchingArchetype ? Math.floor(baseEarned * 0.2) : 0;
+
     const earned = await addXp(pillar, label, baseAmount);
 
-    // Sync to Supabase
+    const breakdown: XpBreakdown = {
+      base: baseEarned,
+      streakBonus,
+      archetypeBonus,
+      total: earned
+    };
+
     if (supabase && uid !== 'default') {
       try {
         const { data } = await supabase.from('profiles').select('settings').eq('id', uid).single();
@@ -602,7 +611,7 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    return { awarded: true, xpEarned: earned };
+    return { awarded: true, xpEarned: earned, breakdown };
   }, [addXp]);
 
   const resetProgression = useCallback(async () => {
