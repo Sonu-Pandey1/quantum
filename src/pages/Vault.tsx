@@ -241,6 +241,50 @@ export function Vault() {
           </div>
         </div>
       </div>
+
+      {/* AI Logged Investments Section */}
+      <div className="mt-8">
+        <div className="glass-panel p-6 border border-white/5 rounded-3xl space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-black text-textMain uppercase tracking-widest flex items-center gap-2">
+              <Briefcase size={16} className="text-yellow-500" />
+              Logged Skill Investments & Assets
+            </h3>
+            <span className="text-[9px] font-bold text-yellow-500 bg-yellow-500/10 border border-yellow-500/20 px-2.5 py-1 rounded-full uppercase">
+              AI Command Synced
+            </span>
+          </div>
+
+          {(() => {
+            const uidKey = Object.keys(localStorage).find(k => k.startsWith('quantum_buffs_'));
+            const userId = uidKey ? uidKey.replace('quantum_buffs_', '') : 'default';
+            const investments = JSON.parse(localStorage.getItem(`quantum_investments_${userId}`) || '[]');
+
+            if (investments.length === 0) {
+              return (
+                <div className="p-6 text-center text-textMuted text-xs bg-background/40 rounded-2xl border border-white/5">
+                  No custom financial investments logged yet. Tell AI e.g. <span className="text-yellow-500 font-bold">"Log ₹1500 investment in SAP course"</span> to record assets here!
+                </div>
+              );
+            }
+
+            return (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                {investments.map((inv: any) => (
+                  <div key={inv.id} className="p-4 rounded-2xl bg-background/60 border border-white/5 space-y-1">
+                    <span className="text-[9px] font-black uppercase text-yellow-500 tracking-wider block">{inv.pillar || 'Finance'} Pillar</span>
+                    <h4 className="text-xs font-bold text-textMain">{inv.title}</h4>
+                    <div className="flex items-center justify-between pt-2 border-t border-white/5">
+                      <span className="text-sm font-mono font-bold text-emerald-400">₹{inv.amount}</span>
+                      <span className="text-[9px] font-bold text-textMuted">{inv.date || 'Recent'}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+        </div>
+      </div>
     </div>
   );
 }

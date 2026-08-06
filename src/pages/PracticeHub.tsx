@@ -121,6 +121,15 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
         }
       }
 
+      // Merge AI Command synthesized custom questions
+      const aiCustomQs = localStorage.getItem(`quantum_custom_questions_${userId}`);
+      if (aiCustomQs) {
+        try {
+          const parsedCustom = JSON.parse(aiCustomQs);
+          savedQuestsList = [...parsedCustom, ...savedQuestsList];
+        } catch (e) {}
+      }
+
       const now = Date.now();
       const valid = savedQuestsList.filter((q: any) => {
         if (!q.expiresAt) return true;

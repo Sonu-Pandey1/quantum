@@ -22,6 +22,8 @@ const EXECUTION_DATA = [
   { name: 'Sun', score: 0 },
 ];
 
+import { AIPillarDiagnostic } from '../components/AIPillarDiagnostic';
+
 export function AnalyticsMatrix() {
   return (
     <motion.div 
@@ -56,6 +58,9 @@ export function AnalyticsMatrix() {
             <p className="text-xs text-textMuted uppercase tracking-widest mt-1">Logic Mastery</p>
           </div>
         </div>
+
+        {/* AI Live Pillar Skill Growth Diagnostic Report */}
+        <AIPillarDiagnostic />
 
         {/* Charts */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

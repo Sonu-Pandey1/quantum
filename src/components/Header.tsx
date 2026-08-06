@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ShieldCheck, Trophy, Zap, Bell, BellOff } from 'lucide-react';
+import { ShieldCheck, Trophy, Zap, Bell, BellOff, Sparkles } from 'lucide-react';
 import { useProgression } from '../hooks/useProgression';
 import { audio } from '../lib/audio';
 import { notifier } from '../lib/notifications';
@@ -144,8 +144,21 @@ export function Header({ hideVow = false, onNavigateToRank, onNavigateToDashboar
         </div>
       )}
 
-      {/* Right: Notifications Button & Rank & Progress */}
-      <div className="flex items-center space-x-3 md:space-x-4">
+      {/* Right: AI Command & Notifications Button & Rank & Progress */}
+      <div className="flex items-center space-x-2 md:space-x-3">
+        {/* AI Command Bar Button */}
+        <button
+          onClick={() => {
+            audio.playClick();
+            window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }));
+          }}
+          title="Open AI Co-Pilot Command Bar (Ctrl + K)"
+          className="flex items-center gap-1.5 px-2.5 py-2 rounded-xl bg-primary/10 border border-primary/30 text-primary hover:bg-primary/20 transition-all cursor-pointer shadow-[0_0_12px_rgba(59,130,246,0.2)]"
+        >
+          <Sparkles size={16} className="animate-pulse" />
+          <span className="hidden sm:inline text-[10px] font-black uppercase tracking-wider">AI Command</span>
+        </button>
+
         {/* Phone / Device Notification Permission Toggle */}
         <button
           onClick={handleToggleNotifications}

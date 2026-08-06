@@ -26,6 +26,8 @@ import { LevelUpModal } from './components/LevelUpModal';
 import { Toaster } from 'react-hot-toast';
 
 
+import { AICommandBar } from './components/AICommandBar';
+
 class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean }> {
   constructor(props: any) {
     super(props);
@@ -60,6 +62,7 @@ function AppContent({ currentView, setCurrentView, isPortfolioMode, setIsPortfol
     <div className="flex h-screen w-full bg-background overflow-hidden font-sans text-textMain selection:bg-primary/30 relative">
       <ParticleBackground />
       <LevelUpModal />
+      <AICommandBar />
     
       <Sidebar 
         currentView={currentView} 

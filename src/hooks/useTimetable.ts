@@ -110,14 +110,32 @@ export function useTimetable(userId: string | null) {
 
   // ── Load tasks ─────────────────────────────────────────────────────────────
   const loadTasks = useCallback(async () => {
-    if (!supabase || !userId) return;
-    const { data, error } = await supabase
-      .from('timetable_tasks')
-      .select('*')
-      .eq('user_id', userId)
-      .order('day_of_week')
-      .order('order_index');
-    if (!error && data) setTasks(data);
+    if (!userId) return;
+    let loadedData: TimetableTask[] = [];
+
+    if (supabase && userId !== 'default') {
+      const { data, error } = await supabase
+        .from('timetable_tasks')
+        .select('*')
+        .eq('user_id', userId)
+        .order('day_of_week')
+        .order('order_index');
+      if (!error && data && data.length > 0) {
+        loadedData = data;
+      }
+    }
+
+    const cached = localStorage.getItem(`quantum_timetable_${userId}`);
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        if (parsed && parsed.length > 0) {
+          loadedData = [...loadedData, ...parsed.filter((p: any) => !loadedData.some(d => d.id === p.id))];
+        }
+      } catch (e) {}
+    }
+
+    setTasks(loadedData);
   }, [userId]);
 
   // ── Load today's completions ───────────────────────────────────────────────
@@ -146,6 +164,12 @@ export function useTimetable(userId: string | null) {
     setLoading(true);
     Promise.all([loadTasks(), loadTodayCompletions(), loadBadges()])
       .finally(() => setLoading(false));
+
+    const handleUpdate = () => {
+      loadTasks();
+    };
+    window.addEventListener('quantum_timetable_updated', handleUpdate);
+    return () => window.removeEventListener('quantum_timetable_updated', handleUpdate);
   }, [userId, loadTasks, loadTodayCompletions, loadBadges]);
 
   // ── Today's tasks ──────────────────────────────────────────────────────────

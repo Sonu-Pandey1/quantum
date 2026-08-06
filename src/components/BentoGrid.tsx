@@ -28,6 +28,8 @@ interface BentoGridProps {
 
 import { useProgression } from '../hooks/useProgression';
 
+import { AIPilotWidget } from './AIPilotWidget';
+
 export function BentoGrid({ onNavigateToLogic, onNavigate, isPortfolioMode }: BentoGridProps) {
   const { state } = useProgression();
   
@@ -56,6 +58,9 @@ export function BentoGrid({ onNavigateToLogic, onNavigate, isPortfolioMode }: Be
             )}
           </p>
         </div>
+
+        {/* Proactive AI Co-Pilot Morning Briefing & 1-Click Auto Schedule Widget */}
+        <AIPilotWidget />
 
         <motion.div 
           variants={containerVars}
