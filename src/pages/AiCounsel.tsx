@@ -118,17 +118,34 @@ How shall we optimize your path today? You can converse with me directly, compil
       }
 
       // Load Habits and compute readiness score
-      const savedHabits = localStorage.getItem(`quantum_habits_${uid}`);
+      const now = new Date();
+      const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      const savedHabits = localStorage.getItem(`quantum_pulse_habits_${uid}`) || 
+                          localStorage.getItem(`quantum_pulse_habits_${state.displayName || 'operator'}`) || 
+                          localStorage.getItem(`quantum_habits_${uid}`);
+      const savedLogs = localStorage.getItem(`quantum_pulse_logs_${uid}`) || 
+                        localStorage.getItem(`quantum_pulse_logs_${state.displayName || 'operator'}`);
+
       if (savedHabits) {
         try {
           const parsed = JSON.parse(savedHabits);
-          setTotalHabitsCount(parsed.length);
-          // Check completed habits logged in local storage
-          const completedCount = parsed.length > 0 ? Math.floor(Math.random() * (parsed.length + 1)) : 0;
+          const total = Array.isArray(parsed) ? parsed.length : 0;
+          setTotalHabitsCount(total);
+
+          let completedCount = 0;
+          if (savedLogs && Array.isArray(parsed)) {
+            const logs = JSON.parse(savedLogs);
+            parsed.forEach((h: any) => {
+              const req = h.habitType === 'counter' ? (h.dailyGoal || 1) : 1;
+              const count = logs[`${h.id}_${todayStr}`] || 0;
+              if (count >= req) completedCount++;
+            });
+          }
           setCompletedHabitsCount(completedCount);
           
-          let score = 100 - (parsed.length - completedCount) * 20;
-          setReadinessScore(Math.max(20, score));
+          const ratio = total > 0 ? (completedCount / total) : 1;
+          const score = Math.round(ratio * 100);
+          setReadinessScore(Math.max(20, Math.min(100, score)));
         } catch (e) {}
       }
     };
@@ -307,17 +324,26 @@ How shall we optimize your path today? You can converse with me directly, compil
     // Save to Supabase if session active
     if (supabase && uid !== 'default') {
       try {
-        // Clear existing tasks for this day first
-        await supabase
+        // Non-destructive upsert matching existing IDs to preserve foreign keys
+        const { data: existingDayTasks } = await supabase
           .from('timetable_tasks')
-          .delete()
+          .select('id, name, start_time')
           .eq('user_id', uid)
           .eq('day_of_week', activeDay);
 
-        // Batch insert optimized ones
-        const { error } = await supabase
-          .from('timetable_tasks')
-          .insert(formatted.map(f => ({
+        const dayMap = new Map<string, string>();
+        if (existingDayTasks) {
+          existingDayTasks.forEach(et => {
+            const key = `${et.name.trim().toLowerCase()}_${et.start_time}`;
+            dayMap.set(key, et.id);
+          });
+        }
+
+        const rowsToUpsert = formatted.map(f => {
+          const key = `${f.name.trim().toLowerCase()}_${f.start_time}`;
+          const existingId = dayMap.get(key);
+          return {
+            ...(existingId ? { id: existingId } : {}),
             user_id: uid,
             name: f.name,
             category: f.category,
@@ -328,9 +354,14 @@ How shall we optimize your path today? You can converse with me directly, compil
             task_target: f.task_target,
             start_time: f.start_time,
             order_index: f.order_index
-          })));
+          };
+        });
 
-        if (error) console.error("Supabase timetable clear/insert error:", error.message);
+        const { error } = await supabase
+          .from('timetable_tasks')
+          .upsert(rowsToUpsert, { onConflict: 'id' });
+
+        if (error) console.error("Supabase timetable non-destructive upsert error:", error.message);
       } catch (err) {
         console.error("Supabase timetable clear/insert catch:", err);
       }

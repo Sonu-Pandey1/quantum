@@ -227,7 +227,7 @@ export function RankAndRewards() {
 
 
   return (
-    <div className="w-full max-w-5xl mx-auto px-4 py-6 space-y-6 pb-24">
+    <div className="w-full max-w-5xl mx-auto px-4 py-6 space-y-6 pb-32 md:pb-24">
 
       {/* ── HERO: Current Title & Level ─────────────────────────────────────── */}
       <motion.div

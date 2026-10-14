@@ -1,12 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Cpu, DatabaseBackup, Check, Target, LogOut, Settings, User, Eye, EyeOff, Briefcase, Activity, ShieldAlert, Zap, BrainCircuit, Menu, X, Sparkles } from 'lucide-react';
+import { DatabaseBackup, Check, Target, LogOut, Settings, User, Eye, EyeOff, Zap, BrainCircuit, Menu, X, Trophy, TrendingUp, Activity } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { audio } from '../lib/audio';
 import { supabase } from '../lib/supabaseClient';
-import toast from 'react-hot-toast';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -162,33 +161,7 @@ function ProfileDropdown({
             Strategic Control
           </button>
 
-          {/* Super Admin Access */}
-          {supabase && (
-            <button
-              onClick={async () => {
-                if (!supabase) return;
-                const { data: { session } } = await supabase.auth.getSession();
-                if (!session) {
-                  alert('Session expired. Please log in.');
-                  return;
-                }
-                const { data } = await supabase.from('profiles').select('role').eq('id', session.user.id).single();
-                if (data?.role === 'admin') {
-                  audio.playClick();
-                  onNavigate('super_admin');
-                  onClose();
-                } else {
-                  toast.error('Administrator privileges required.', {
-                    style: { background: '#050508', color: '#fff', border: '1px solid rgba(239, 68, 68, 0.5)' }
-                  });
-                }
-              }}
-              className="w-full text-left px-3 py-2 text-xs font-medium text-white/60 hover:text-white hover:bg-white/8 rounded-xl flex items-center gap-2.5 transition-all duration-150"
-            >
-              <ShieldAlert size={14} className="text-red-500 shrink-0" />
-              Super Admin
-            </button>
-          )}
+
 
           {/* System Settings */}
           <button
@@ -229,7 +202,7 @@ function ProfileDropdown({
   return createPortal(dropdown, document.body);
 }
 
-export function Sidebar({ currentView, onViewChange, isPortfolioMode, onTogglePortfolio, isAdmin }: SidebarProps) {
+export function Sidebar({ currentView, onViewChange, isPortfolioMode, onTogglePortfolio }: SidebarProps) {
   const [userData, setUserData] = useState({ name: 'Commander', id: '—', initials: 'US' });
   const [backupStatus, setBackupStatus] = useState<'idle' | 'syncing' | 'done'>('idle');
   const [showProfileMenu, setShowProfileMenu] = useState(false);
@@ -285,17 +258,13 @@ export function Sidebar({ currentView, onViewChange, isPortfolioMode, onTogglePo
   };
 
   const navItems = [
-    { id: 'dashboard',        icon: Cpu,          label: 'Command'   },
-    { id: 'strategic_control',icon: Target,        label: 'Strategy'  },
-    { id: 'ai_counsel',       icon: Sparkles,      label: 'AI Counsel' },
-    { id: 'practice',         icon: BrainCircuit,  label: 'Practice'  },
-    { id: 'vault',            icon: Briefcase,     label: 'Vault'     },
-    { id: 'lab',              icon: Activity,      label: 'The Lab'   },
-    { id: 'engagement',       icon: Zap,           label: 'Hub'       },
-    { id: 'control_room',     icon: Settings,      label: 'System'    },
+    { id: 'dashboard',    icon: Zap,          label: 'Command Deck' },
+    { id: 'practice',     icon: BrainCircuit, label: 'The Arena' },
+    { id: 'engagement',   icon: Activity,     label: 'Engagement' },
+    { id: 'vault',        icon: TrendingUp,   label: 'Pulse & Vault' },
+    { id: 'rank',         icon: Trophy,       label: 'Ascension & AI' },
+    { id: 'control_room', icon: Settings,     label: 'System' },
   ];
-
-  if (isAdmin) navItems.push({ id: 'admin', icon: ShieldAlert, label: 'Admin' });
 
 
   return (

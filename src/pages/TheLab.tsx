@@ -1,132 +1,373 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  Activity, HeartPulse, Dna, Zap, 
-  Brain, Moon, Flame, Timer, 
-  CheckCircle2, AlertCircle, 
-  ChevronRight, Thermometer,
-  Plus, Trash2, Sparkles, RefreshCw, Check
+  Activity, HeartPulse, Moon, Scale, Droplets, 
+  Plus, Trash2, Sparkles, RefreshCw, Check, 
+  Dumbbell, X, BarChart3, Apple, Timer
 } from 'lucide-react';
 import { useProgression } from '../hooks/useProgression';
-import { generateBioMissions, isApiKeyConfigured } from '../lib/aiService';
 import { audio } from '../lib/audio';
 import toast from 'react-hot-toast';
 import { supabase } from '../lib/supabaseClient';
+import { generateBioMissions, isApiKeyConfigured } from '../lib/aiService';
 
-interface BioMission {
+// ─── TYPES ─────────────────────────────────────────────────────────────
+export type BioCategory = 'workout' | 'hydration' | 'sleep' | 'mass' | 'nutrition' | 'protocol';
+
+export interface BioLedgerEntry {
+  id: string;
+  title: string;
+  category: BioCategory;
+  value: number;
+  unit: string;
+  notes?: string;
+  date: string;
+  xpAwarded: number;
+}
+
+export interface BioMission {
   id: string;
   title: string;
   xp: number;
   time: string;
   difficulty: 'Easy' | 'Medium' | 'Hard';
   completed?: boolean;
+  lastCompletedDate?: string;
 }
+
+const CATEGORY_CONFIG: Record<BioCategory, { label: string; color: string; bg: string; border: string; text: string; icon: React.ComponentType<{ size?: number; className?: string }> }> = {
+  workout:   { label: 'Workout & Training', color: '#10b981', bg: 'bg-emerald-500/10', border: 'border-emerald-500/20', text: 'text-emerald-400', icon: Dumbbell },
+  hydration: { label: 'Hydration & Fluids', color: '#06b6d4', bg: 'bg-cyan-500/10',    border: 'border-cyan-500/20',    text: 'text-cyan-400',    icon: Droplets },
+  sleep:     { label: 'Sleep & Recovery',   color: '#a855f7', bg: 'bg-purple-500/10',  border: 'border-purple-500/20',  text: 'text-purple-400',  icon: Moon },
+  mass:      { label: 'Body Mass & Scale',  color: '#3b82f6', bg: 'bg-blue-500/10',    border: 'border-blue-500/20',    text: 'text-blue-400',    icon: Scale },
+  nutrition: { label: 'Fuel & Nutrition',   color: '#f59e0b', bg: 'bg-amber-500/10',   border: 'border-amber-500/20',   text: 'text-amber-400',   icon: Apple },
+  protocol:  { label: 'Bio Protocol',       color: '#ef4444', bg: 'bg-red-500/10',     border: 'border-red-500/20',     text: 'text-red-400',     icon: Timer },
+};
+
+const DEFAULT_BIO_ENTRIES: BioLedgerEntry[] = [
+  { id: 'b-1', title: 'Strength Training: Heavy Hypertrophy & Core', category: 'workout', value: 60, unit: 'mins', notes: 'Compound lifts, progressive overload, mobility cool-down', date: '2026-10-14', xpAwarded: 45 },
+  { id: 'b-2', title: 'Daily Electrolyte Fluid Baseline', category: 'hydration', value: 3.5, unit: 'L', notes: 'Filtered water + trace mineral salts throughout work blocks', date: '2026-10-14', xpAwarded: 25 },
+  { id: 'b-3', title: 'Deep Circadian Rest & REM Sleep', category: 'sleep', value: 7.8, unit: 'hrs', notes: 'Pitch black, 19°C cool room, 0 screen time 45m before bed', date: '2026-10-14', xpAwarded: 35 },
+  { id: 'b-4', title: 'Fasted Morning Weigh-In', category: 'mass', value: 74.8, unit: 'kg', notes: 'Baseline stable, target range maintained', date: '2026-10-13', xpAwarded: 20 },
+  { id: 'b-5', title: 'Clean Macronutrient & Protein Fuel', category: 'nutrition', value: 165, unit: 'g protein', notes: 'Target protein met with whole food sources', date: '2026-10-13', xpAwarded: 30 },
+  { id: 'b-6', title: 'Cold Shock & Endorphin Protocol', category: 'protocol', value: 3, unit: 'mins', notes: '3-minute cold exposure for norepinephrine release', date: '2026-10-12', xpAwarded: 50 },
+];
+
+const DEFAULT_PROTOCOLS: BioMission[] = [
+  { id: 'bp-1', title: 'Cold Exposure Protocol (2–3 min cold shower)', xp: 50, time: '3 min', difficulty: 'Hard', completed: false },
+  { id: 'bp-2', title: 'Morning Sunlight Saturation & Optic Flow', xp: 25, time: '15 min', difficulty: 'Easy', completed: false },
+  { id: 'bp-3', title: 'Zone 2 Steady-State Cardio or 8k Steps', xp: 40, time: '40 min', difficulty: 'Medium', completed: false },
+  { id: 'bp-4', title: 'Full Spinal Decompression & Hip Mobility', xp: 30, time: '15 min', difficulty: 'Medium', completed: false },
+  { id: 'bp-5', title: 'Digital Fast & Blue-Light Cutoff (Pre-Sleep)', xp: 35, time: '45 min', difficulty: 'Medium', completed: false },
+];
 
 export function TheLab() {
   const { state, addXp, updateProfile } = useProgression();
   const { xp, level, archetype, goals, displayName } = state;
+  const uid = displayName || 'operator';
 
-  // Local storage key scoped to current session user
-  const storageKey = `quantum_bio_missions_${displayName || 'Agent'}`;
+  const now = new Date();
+  const todayDateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
-  const [missions, setMissions] = useState<BioMission[]>(() => {
-    if (state.settings?.bioMissions) {
-      return state.settings.bioMissions;
-    }
-    const saved = localStorage.getItem(storageKey);
+  // ── 1. Health Ledger State (Real Data Persistence) ───────────────────
+  const ledgerStorageKey = `quantum_health_ledger_${uid}`;
+  const [entries, setEntries] = useState<BioLedgerEntry[]>(() => {
+    const saved = localStorage.getItem(ledgerStorageKey);
     if (saved) {
       try {
-        return JSON.parse(saved);
-      } catch (e) {}
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch {}
     }
-    return [
-      { id: '1', title: 'Cold Exposure Protocol', xp: 50, time: '3 min', difficulty: 'Hard', completed: false },
-      { id: '2', title: 'Deep Work Focus Block', xp: 30, time: '90 min', difficulty: 'Medium', completed: false },
-      { id: '3', title: 'Sunlight Saturation', xp: 15, time: '15 min', difficulty: 'Easy', completed: false },
-    ];
+    return DEFAULT_BIO_ENTRIES;
   });
 
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [customTitle, setCustomTitle] = useState('');
-  const [customDifficulty, setCustomDifficulty] = useState<'Easy' | 'Medium' | 'Hard'>('Easy');
-  const [customDuration, setCustomDuration] = useState('15 min');
+  useEffect(() => {
+    localStorage.setItem(ledgerStorageKey, JSON.stringify(entries));
+  }, [entries, ledgerStorageKey]);
+
+  // ── 2. Bio Metrics State (Synced with Command Deck & Supabase) ─────────
+  const bioStorageKey = `quantum_pulse_bio_${uid}_${todayDateStr}`;
+  const [bioStats, setBioStats] = useState({
+    weightKg: 74.8,
+    waterLiters: 3.5,
+    sleepHours: 7.8,
+  });
+
+  useEffect(() => {
+    const saved = localStorage.getItem(bioStorageKey);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        setBioStats({
+          weightKg: parsed.weightKg ?? 74.8,
+          waterLiters: parsed.waterLiters ?? 3.5,
+          sleepHours: parsed.sleepHours ?? 7.8,
+        });
+      } catch {}
+    }
+  }, [bioStorageKey]);
+
+  const updateSyncedBio = (updated: Partial<typeof bioStats>) => {
+    setBioStats(prev => {
+      const next = { ...prev, ...updated };
+      localStorage.setItem(bioStorageKey, JSON.stringify(next));
+
+      // Sync to Supabase daily_biometrics
+      if (supabase) {
+        const client = supabase;
+        client.auth.getSession().then(async ({ data: { session } }) => {
+          if (session?.user) {
+            try {
+              await client.from('daily_biometrics').upsert({
+                user_id: session.user.id,
+                log_date: todayDateStr,
+                weight_kg: next.weightKg,
+                water_liters: next.waterLiters,
+                sleep_hours: next.sleepHours,
+              }, { onConflict: 'user_id,log_date' });
+            } catch (err) {
+              console.warn('Supabase bio sync warning:', err);
+            }
+          }
+        });
+      }
+
+      return next;
+    });
+  };
+
+  // ── 3. Bio Protocols / Missions State ────────────────────────────────
+  const missionsKey = `quantum_bio_missions_${uid}`;
+  const [protocols, setProtocols] = useState<BioMission[]>(() => {
+    if (state.settings?.bioMissions && Array.isArray(state.settings.bioMissions) && state.settings.bioMissions.length > 0) {
+      return state.settings.bioMissions.map((m: BioMission) => ({
+        ...m,
+        completed: m.lastCompletedDate === todayDateStr ? (m.completed ?? false) : false
+      }));
+    }
+    const saved = localStorage.getItem(missionsKey);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map((m: BioMission) => ({
+            ...m,
+            completed: m.lastCompletedDate === todayDateStr ? (m.completed ?? false) : false
+          }));
+        }
+      } catch {}
+    }
+    return DEFAULT_PROTOCOLS;
+  });
+
+  useEffect(() => {
+    localStorage.setItem(missionsKey, JSON.stringify(protocols));
+    if (supabase) {
+      const client = supabase;
+      client.auth.getSession().then(async ({ data: { session } }) => {
+        if (session?.user) {
+          try {
+            await updateProfile({
+              settings: {
+                ...state.settings,
+                bioMissions: protocols
+              }
+            });
+          } catch (err) {
+            console.warn('Profile protocol sync warning:', err);
+          }
+        }
+      });
+    }
+  }, [protocols, missionsKey]);
+
+  // ── 4. Dynamically Computed Analytics ───────────────────────────────
+  const metrics = useMemo(() => {
+    let workoutCount = 0;
+    let workoutTotalMins = 0;
+    let totalWaterLogged = 0;
+    let latestSleep = bioStats.sleepHours;
+    let latestWeight = bioStats.weightKg;
+
+    entries.forEach(e => {
+      if (e.category === 'workout') {
+        workoutCount++;
+        workoutTotalMins += Number(e.value) || 0;
+      } else if (e.category === 'hydration' && e.date === todayDateStr) {
+        totalWaterLogged += Number(e.value) || 0;
+      } else if (e.category === 'sleep' && e.date === todayDateStr) {
+        latestSleep = Number(e.value) || latestSleep;
+      } else if (e.category === 'mass') {
+        latestWeight = Number(e.value) || latestWeight;
+      }
+    });
+
+    const effectiveWater = Math.max(bioStats.waterLiters, totalWaterLogged);
+
+    // Dynamic Bio-Readiness Score (0 - 100)
+    let readiness = 50;
+    if (effectiveWater >= 3.0) readiness += 25;
+    else readiness += Math.round((effectiveWater / 3.0) * 25);
+
+    if (latestSleep >= 7.0 && latestSleep <= 9.0) readiness += 25;
+    else if (latestSleep > 0) readiness += Math.min(20, Math.round((latestSleep / 7.0) * 20));
+
+    // Category breakdown counts
+    const categoryCounts: Record<BioCategory, number> = {
+      workout: 0,
+      hydration: 0,
+      sleep: 0,
+      mass: 0,
+      nutrition: 0,
+      protocol: 0,
+    };
+    entries.forEach(e => {
+      if (categoryCounts[e.category] !== undefined) {
+        categoryCounts[e.category]++;
+      }
+    });
+
+    return {
+      readiness: Math.min(100, Math.max(30, readiness)),
+      workoutCount,
+      workoutTotalMins,
+      waterLiters: Number(effectiveWater.toFixed(1)),
+      sleepHours: Number(latestSleep.toFixed(1)),
+      weightKg: Number(latestWeight.toFixed(1)),
+      categoryCounts,
+    };
+  }, [entries, bioStats, todayDateStr]);
+
+  // ── 5. Modal & Form State ───────────────────────────────────────────
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [filterCategory, setFilterCategory] = useState<'all' | BioCategory>('all');
+  const [mTitle, setMTitle] = useState('');
+  const [mCategory, setMCategory] = useState<BioCategory>('workout');
+  const [mValue, setMValue] = useState('');
+  const [mUnit, setMUnit] = useState('mins');
+  const [mNotes, setMNotes] = useState('');
   const [generating, setGenerating] = useState(false);
 
-  // Sync back to local storage & Database
-  useEffect(() => {
-    localStorage.setItem(storageKey, JSON.stringify(missions));
-    
-    const syncToDb = async () => {
-      if (supabase) {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
-          await updateProfile({
-            settings: {
-              ...state.settings,
-              bioMissions: missions
-            }
-          });
-        }
-      }
-    };
-    syncToDb();
-  }, [missions, storageKey]);
+  // Quick unit synchronization when category changes
+  const handleCategorySelect = (cat: BioCategory) => {
+    setMCategory(cat);
+    if (cat === 'workout') setMUnit('mins');
+    else if (cat === 'hydration') setMUnit('L');
+    else if (cat === 'sleep') setMUnit('hrs');
+    else if (cat === 'mass') setMUnit('kg');
+    else if (cat === 'nutrition') setMUnit('kcal');
+    else if (cat === 'protocol') setMUnit('mins');
+  };
 
-  // Sync settings updates when loaded
-  useEffect(() => {
-    if (state.settings?.bioMissions) {
-      setMissions(state.settings.bioMissions);
+  const handleAddEntry = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const val = parseFloat(mValue);
+    if (!mTitle.trim() || isNaN(val) || val <= 0) {
+      toast.error('Please enter a valid title and positive numeric metric');
+      return;
     }
-  }, [state.settings?.bioMissions]);
 
-  // Actions
-  const handleAddCustom = () => {
-    if (!customTitle.trim()) return;
-    audio.playClick();
+    audio.playSuccess();
+    const xpMap: Record<BioCategory, number> = {
+      workout: 45,
+      hydration: 20,
+      sleep: 30,
+      mass: 20,
+      nutrition: 25,
+      protocol: 40,
+    };
+    const earnedXp = xpMap[mCategory] || 25;
 
-    const xpMap = { Easy: 15, Medium: 30, Hard: 50 };
-    const newMission: BioMission = {
-      id: `custom-${Date.now()}`,
-      title: customTitle.trim(),
-      xp: xpMap[customDifficulty],
-      time: customDuration,
-      difficulty: customDifficulty,
-      completed: false
+    const newEntry: BioLedgerEntry = {
+      id: `b-${Date.now()}`,
+      title: mTitle.trim(),
+      category: mCategory,
+      value: val,
+      unit: mUnit.trim() || 'units',
+      notes: mNotes.trim() || undefined,
+      date: todayDateStr,
+      xpAwarded: earnedXp,
     };
 
-    setMissions(prev => [...prev, newMission]);
-    setCustomTitle('');
-    setShowAddForm(false);
-    toast.success("Custom protocol added to bio-log!");
+    setEntries(prev => [newEntry, ...prev]);
+
+    // Update synced bio state if applicable
+    if (mCategory === 'hydration') {
+      updateSyncedBio({ waterLiters: Number((bioStats.waterLiters + val).toFixed(1)) });
+    } else if (mCategory === 'mass') {
+      updateSyncedBio({ weightKg: val });
+    } else if (mCategory === 'sleep') {
+      updateSyncedBio({ sleepHours: val });
+    }
+
+    // Award Health XP directly
+    await addXp('Health', `Health Lab: ${mTitle.trim()}`, earnedXp);
+    toast.success(`🎉 Bio-Metric Logged! +${earnedXp} Health XP`);
+
+    setMTitle('');
+    setMValue('');
+    setMNotes('');
+    setIsModalOpen(false);
   };
 
-  const handleDelete = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleDeleteEntry = (id: string) => {
     audio.playClick();
-    setMissions(prev => prev.filter(m => m.id !== id));
-    toast.success("Protocol removed from bio-log.");
+    setEntries(prev => prev.filter(e => e.id !== id));
+    toast.success('Log entry removed from Health Ledger');
   };
 
-  const handleComplete = async (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    const mission = missions.find(m => m.id === id);
+  // Quick hydration shortcut
+  const handleQuickWaterAdd = async (liters: number) => {
+    audio.playSuccess();
+    const nextWater = Number((bioStats.waterLiters + liters).toFixed(1));
+    updateSyncedBio({ waterLiters: nextWater });
+
+    const newEntry: BioLedgerEntry = {
+      id: `b-h-${Date.now()}`,
+      title: `Hydration Protocol (+${liters}L)`,
+      category: 'hydration',
+      value: liters,
+      unit: 'L',
+      notes: 'Quick logged via Health Lab fluid button',
+      date: todayDateStr,
+      xpAwarded: 15,
+    };
+    setEntries(prev => [newEntry, ...prev]);
+
+    await addXp('Health', `Hydration logged (+${liters}L)`, 15);
+    toast.success(`💧 +${liters}L Water logged! +15 Health XP`);
+  };
+
+  // Complete a bio protocol mission
+  const handleCompleteProtocol = async (id: string) => {
+    const mission = protocols.find(p => p.id === id);
     if (!mission || mission.completed) return;
 
     audio.playSuccess();
-    
-    // Optimistic UI Update
-    setMissions(prev => prev.map(m => m.id === id ? { ...m, completed: true } : m));
+    setProtocols(prev => prev.map(p => p.id === id ? { ...p, completed: true, lastCompletedDate: todayDateStr } : p));
 
-    // Award XP (Health Pillar)
-    const label = `Lab: completed ${mission.title}`;
-    const awarded = await addXp('Health', label, mission.xp);
+    // Also record it into the ledger
+    const newEntry: BioLedgerEntry = {
+      id: `b-p-${Date.now()}`,
+      title: mission.title,
+      category: 'protocol',
+      value: parseFloat(mission.time) || 15,
+      unit: 'mins',
+      notes: `Mastered ${mission.difficulty} protocol`,
+      date: todayDateStr,
+      xpAwarded: mission.xp,
+    };
+    setEntries(prev => [newEntry, ...prev]);
 
-    toast.success(`🎉 Bio-Protocol Mastered! +${awarded} Health XP`);
+    const earned = await addXp('Health', `Lab: ${mission.title}`, mission.xp);
+    toast.success(`⚡ Protocol Mastered! +${earned} Health XP`);
   };
 
+  // Generate AI Bio Protocols
   const handleGenerateAI = async () => {
     if (!isApiKeyConfigured()) {
-      toast.error("Gemini API Key missing. Configure in Neural Strategy settings.");
+      toast.error('Gemini API Key missing. Please configure your key in System Settings (Control Room).');
       return;
     }
 
@@ -140,348 +381,505 @@ export function TheLab() {
         Array.isArray(goals) ? goals.join(', ') : (goals || '')
       );
 
-      const parsedMissions: BioMission[] = generated.map((m, idx) => ({
-        id: `ai-${Date.now()}-${idx}`,
+      const parsed: BioMission[] = generated.map((m, idx) => ({
+        id: `ai-bio-${Date.now()}-${idx}`,
         title: m.title,
         xp: m.xpAward,
         time: m.timeRequired,
         difficulty: m.difficulty,
-        completed: false
+        completed: false,
       }));
 
-      setMissions(parsedMissions);
-      toast.success("Bespoke AI Bio-Missions Calibrated!");
+      setProtocols(parsed);
+      toast.success('Bespoke AI Bio-Missions Calibrated!');
       audio.playSuccess();
     } catch (e: any) {
       console.error(e);
-      toast.error(e.message || "Failed to generate dynamic bio-hacking protocols.");
+      toast.error(e.message || 'Failed to calibrate AI bio-hacking protocols.');
     } finally {
       setGenerating(false);
     }
   };
 
+  // Filtered ledger entries
+  const displayedEntries = useMemo(() => {
+    if (filterCategory === 'all') return entries;
+    return entries.filter(e => e.category === filterCategory);
+  }, [entries, filterCategory]);
+
   return (
-    <div className="flex-1 h-full flex flex-col p-6 md:p-8 overflow-y-auto scrollbar-thin bg-background/50">
-      {/* Header */}
-      <div className="mb-8 flex items-center justify-between">
+    <div className="flex-1 h-full flex flex-col p-4 md:p-8 overflow-y-auto scrollbar-none bg-background/50 space-y-6 pb-28 md:pb-8">
+      {/* ─── HEADER (MIRRORING THE VAULT) ─── */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center space-x-4">
-          <div className="p-3 rounded-2xl bg-red-500/10 border border-red-500/20 shadow-[0_0_20px_rgba(239,68,68,0.1)]">
-            <Activity size={32} className="text-red-500" />
+          <div className="p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 shadow-[0_0_20px_rgba(16,185,129,0.15)]">
+            <HeartPulse size={28} className="text-emerald-400" />
           </div>
           <div>
-            <h1 className="text-3xl font-black text-textMain tracking-tighter uppercase">The Lab</h1>
-            <p className="text-sm text-textMuted font-medium uppercase tracking-widest text-[10px]">Vitality & Bio-Hack Command Room</p>
+            <h1 className="text-2xl md:text-3xl font-black text-textMain tracking-tighter uppercase">THE HEALTH LAB</h1>
+            <p className="text-xs md:text-sm text-textMuted font-medium">Vitality Command, Biometrics Ledger & Bio-Optimization</p>
           </div>
         </div>
-        <div className="hidden md:flex items-center space-x-2 px-4 py-2 bg-emerald-500/5 border border-emerald-500/10 rounded-xl">
-          <Zap size={16} className="text-emerald-500 animate-pulse" />
-          <span className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">System Stable</span>
-        </div>
+
+        <button
+          onClick={() => {
+            audio.playClick();
+            setIsModalOpen(true);
+          }}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-emerald-500 text-black font-black text-xs uppercase tracking-wider hover:scale-105 transition-all shadow-[0_0_15px_rgba(16,185,129,0.3)] self-start sm:self-auto"
+        >
+          <Plus size={16} />
+          <span>Log Bio Metric</span>
+        </button>
       </div>
 
+      {/* ─── ROW 1: HERO STATS CARD + BENTO KPI CARDS ─── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Main Stats Card */}
+        {/* Main Vitality Hero Card */}
         <motion.div 
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="glass-panel p-8 border border-red-500/20 rounded-3xl relative overflow-hidden group"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="glass-panel p-6 md:p-8 border border-emerald-500/20 rounded-3xl relative overflow-hidden group flex flex-col justify-between"
         >
           <div className="absolute top-0 right-0 p-6 opacity-5 group-hover:opacity-10 transition-opacity">
-            <HeartPulse size={120} className="text-red-500" />
+            <Activity size={130} className="text-emerald-500" />
           </div>
-          <div className="relative z-10">
-            <div className="flex items-center space-x-2 mb-4">
-              <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-              <h2 className="text-xs font-black text-red-500 uppercase tracking-[0.2em]">Vitality Pillar</h2>
+          <div className="relative z-10 space-y-4">
+            <div className="flex items-center space-x-2">
+              <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <h2 className="text-xs font-black text-emerald-400 uppercase tracking-[0.2em]">Bio-Readiness State</h2>
             </div>
-            <div className="flex items-baseline space-x-2">
-              <span className="text-6xl font-black text-textMain tracking-tighter">{level.Health}</span>
-              <span className="text-xl font-bold text-red-500/60 uppercase tracking-widest">Level</span>
+            
+            <div className="flex items-baseline space-x-3">
+              <span className="text-4xl md:text-6xl font-black text-textMain tracking-tighter">
+                {metrics.readiness}%
+              </span>
+              <span className="text-xs font-black uppercase px-2.5 py-1 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/25">
+                {metrics.readiness >= 85 ? 'Optimal' : metrics.readiness >= 70 ? 'High Readiness' : 'Recharge Required'}
+              </span>
             </div>
-            <div className="mt-8 flex items-center justify-between">
-              <div>
-                <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">Vitality Score</p>
-                <p className="text-xl font-mono text-textMain">{xp.Health.toLocaleString()}<span className="text-textMuted text-sm ml-1">XP</span></p>
+
+            {/* Visual readiness index bar */}
+            <div className="space-y-1">
+              <div className="w-full bg-white/5 h-2.5 rounded-full overflow-hidden border border-white/5">
+                <div 
+                  className="h-full bg-gradient-to-r from-emerald-500 via-teal-400 to-cyan-400 rounded-full transition-all duration-700" 
+                  style={{ width: `${metrics.readiness}%` }}
+                />
               </div>
-              <div className="text-right">
-                <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">Biological Rank</p>
-                <p className="text-sm font-bold text-red-500 uppercase">{level.Health >= 10 ? 'Apex' : level.Health >= 5 ? 'Resilient' : 'Adept'}</p>
-              </div>
+              <p className="text-[10px] text-textMuted font-medium">Computed across hydration, sleep depth, mass & workout output</p>
+            </div>
+          </div>
+
+          <div className="mt-6 pt-4 border-t border-white/5 flex items-center justify-between relative z-10">
+            <div>
+              <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">Health Pillar</p>
+              <p className="text-sm font-mono text-textMain">Lv.{level.Health} <span className="text-textMuted text-xs">({xp.Health.toLocaleString()} XP)</span></p>
+            </div>
+            <div className="text-right">
+              <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">Biological Rank</p>
+              <p className="text-xs font-bold text-emerald-400 uppercase">{level.Health >= 10 ? 'Apex Titan' : level.Health >= 5 ? 'Resilient Guardian' : 'Vitality Adept'}</p>
             </div>
           </div>
         </motion.div>
 
-        {/* Bio-Feedback Dashboard (Bento Grid) */}
+        {/* Bento KPI Cards */}
         <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="glass-panel p-6 border border-white/5 bg-white/[0.02] rounded-2xl flex flex-col justify-between group cursor-pointer hover:bg-white/[0.04] transition-all">
-            <div className="flex items-center justify-between mb-4">
-              <div className="p-2 rounded-lg bg-indigo-500/10 text-indigo-500">
-                <Moon size={20} />
+          {/* Hydration Card */}
+          <motion.div 
+            whileHover={{ scale: 1.01 }}
+            className="glass-panel p-5 border border-white/5 bg-white/[0.02] rounded-2xl flex flex-col justify-between"
+          >
+            <div className="flex items-center justify-between mb-3">
+              <div className="p-2 rounded-xl bg-cyan-500/10 text-cyan-400">
+                <Droplets size={18} />
               </div>
-              <div className="text-right">
-                <span className="text-[10px] font-bold text-indigo-500 uppercase block tracking-widest">Sleep Quality</span>
-                <span className="text-xs text-textMuted font-mono">8h 12m</span>
-              </div>
+              <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-widest">Fluid Equilibrium</span>
             </div>
-            <div className="flex items-end justify-between h-8 space-x-1">
-              {[40, 70, 45, 90, 65, 80, 75].map((h, i) => (
-                <div key={i} className="flex-1 bg-indigo-500/20 rounded-t-sm relative group/bar">
-                  <motion.div 
-                    initial={{ height: 0 }}
-                    animate={{ height: `${h}%` }}
-                    className="absolute bottom-0 w-full bg-indigo-500 rounded-t-sm"
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="glass-panel p-6 border border-white/5 bg-white/[0.02] rounded-2xl flex flex-col justify-between group cursor-pointer hover:bg-white/[0.04] transition-all">
-            <div className="flex items-center justify-between mb-4">
-              <div className="p-2 rounded-lg bg-orange-500/10 text-orange-500">
-                <Flame size={20} />
+            <div className="space-y-2">
+              <div className="flex items-baseline justify-between">
+                <p className="text-2xl font-black text-textMain">{metrics.waterLiters} / 3.5L</p>
+                <span className="text-xs font-bold text-cyan-400">{Math.round((metrics.waterLiters / 3.5) * 100)}%</span>
               </div>
-              <div className="text-right">
-                <span className="text-[10px] font-bold text-orange-500 uppercase block tracking-widest">Active Burn</span>
-                <span className="text-xs text-textMuted font-mono">452 kcal</span>
-              </div>
-            </div>
-            <div className="flex items-center justify-center space-x-2">
-              <div className="w-full bg-white/5 h-2 rounded-full overflow-hidden">
-                <div className="bg-gradient-to-r from-orange-500 to-red-500 h-full w-[78%]" />
-              </div>
-              <span className="text-[10px] font-bold text-textMain">78%</span>
-            </div>
-          </div>
-
-          <div className="glass-panel p-6 border border-white/5 bg-white/[0.02] rounded-2xl md:col-span-2 flex items-center justify-between relative overflow-hidden">
-            <div className="relative z-10 flex items-center space-x-6">
-              <div className="w-16 h-16 rounded-full border-4 border-emerald-500/20 flex items-center justify-center relative">
-                <Brain size={24} className="text-emerald-500" />
-                <div className="absolute inset-0 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin-slow" />
-              </div>
-              <div>
-                <h3 className="text-sm font-bold text-textMain uppercase tracking-widest">Cognitive State</h3>
-                <p className="text-xs text-textMuted max-w-[200px]">System ready for high-intensity logic practice. Peak window active.</p>
-              </div>
-            </div>
-            <div className="hidden md:flex items-center space-x-2">
-              <div className="text-center px-4">
-                <p className="text-[8px] font-black text-textMuted uppercase">Focus</p>
-                <p className="text-lg font-mono text-emerald-500 font-bold">92%</p>
-              </div>
-              <div className="w-px h-8 bg-white/10" />
-              <div className="text-center px-4">
-                <p className="text-[8px] font-black text-textMuted uppercase">Clarity</p>
-                <p className="text-lg font-mono text-blue-500 font-bold">High</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Bio-Mission Engine */}
-        <div className="lg:col-span-2">
-          <div className="glass-panel p-6 md:p-8 border border-white/5 bg-black/40 rounded-3xl h-full">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
-              <div>
-                <h3 className="text-xl font-black text-textMain flex items-center uppercase tracking-tighter">
-                  <Timer size={20} className="mr-2 text-red-500" /> Bio-Mission Engine
-                </h3>
-                <p className="text-xs text-textMuted mt-1 uppercase tracking-widest">Daily protocols for biological optimization</p>
-              </div>
-              
-              <div className="flex items-center gap-2">
+              <div className="flex gap-1.5 pt-1">
                 <button
-                  onClick={handleGenerateAI}
-                  disabled={generating}
-                  className="py-2 px-3 bg-red-500/10 hover:bg-red-500/20 border border-red-500/25 hover:border-red-500/40 text-red-400 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 transition-all disabled:opacity-50 cursor-pointer shadow-md"
+                  onClick={() => handleQuickWaterAdd(0.25)}
+                  className="flex-1 py-1 px-2 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 text-[10px] font-black uppercase tracking-wider transition-all"
                 >
-                  {generating ? <RefreshCw size={12} className="animate-spin" /> : <Sparkles size={12} />}
-                  <span>{generating ? "Calibrating..." : "Calibrate AI"}</span>
+                  +250ml
                 </button>
-                
                 <button
-                  onClick={() => { audio.playClick(); setShowAddForm(!showAddForm); }}
-                  className="py-2 px-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
+                  onClick={() => handleQuickWaterAdd(0.5)}
+                  className="flex-1 py-1 px-2 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 text-[10px] font-black uppercase tracking-wider transition-all"
                 >
-                  <Plus size={12} />
-                  <span>Custom</span>
+                  +500ml
+                </button>
+                <button
+                  onClick={() => handleQuickWaterAdd(1.0)}
+                  className="flex-1 py-1 px-2 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-200 text-[10px] font-black uppercase tracking-wider transition-all"
+                >
+                  +1.0L
                 </button>
               </div>
             </div>
+          </motion.div>
 
-            {/* Custom Mission Form */}
-            <AnimatePresence>
-              {showAddForm && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  exit={{ opacity: 0, height: 0 }}
-                  className="overflow-hidden mb-6"
+          {/* Sleep Card */}
+          <motion.div 
+            whileHover={{ scale: 1.01 }}
+            className="glass-panel p-5 border border-white/5 bg-white/[0.02] rounded-2xl flex flex-col justify-between"
+          >
+            <div className="flex items-center justify-between mb-3">
+              <div className="p-2 rounded-xl bg-purple-500/10 text-purple-400">
+                <Moon size={18} />
+              </div>
+              <span className="text-[10px] font-bold text-purple-400 uppercase tracking-widest">Circadian Recovery</span>
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-baseline justify-between">
+                <p className="text-2xl font-black text-textMain">{metrics.sleepHours} hrs</p>
+                <span className="text-xs font-bold text-purple-400">{metrics.sleepHours >= 7.5 ? 'Optimal Rest' : 'Needs Sleep'}</span>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    const next = Math.max(0, Number((metrics.sleepHours - 0.5).toFixed(1)));
+                    updateSyncedBio({ sleepHours: next });
+                    audio.playClick();
+                  }}
+                  className="flex-1 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-zinc-300 text-[10px] font-black"
                 >
-                  <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/5 space-y-4">
-                    <div>
-                      <label className="text-[9px] font-black text-textMuted uppercase tracking-widest block mb-1">Protocol Title</label>
-                      <input
-                        type="text"
-                        placeholder="e.g. 10min Box Breathing, Fasting Block..."
-                        value={customTitle}
-                        onChange={e => setCustomTitle(e.target.value)}
-                        className="w-full bg-black/20 border border-white/10 rounded-xl px-3 py-2 text-xs text-textMain focus:border-red-500 outline-none"
-                      />
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="text-[9px] font-black text-textMuted uppercase tracking-widest block mb-1">Difficulty</label>
-                        <select
-                          value={customDifficulty}
-                          onChange={e => setCustomDifficulty(e.target.value as any)}
-                          className="w-full bg-black/20 border border-white/10 rounded-xl px-3 py-2 text-xs text-textMain focus:border-red-500 outline-none"
-                        >
-                          <option value="Easy" className="bg-surface">Easy (+15 XP)</option>
-                          <option value="Medium" className="bg-surface">Medium (+30 XP)</option>
-                          <option value="Hard" className="bg-surface">Hard (+50 XP)</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="text-[9px] font-black text-textMuted uppercase tracking-widest block mb-1">Duration</label>
-                        <input
-                          type="text"
-                          placeholder="e.g. 15 min, 45 min..."
-                          value={customDuration}
-                          onChange={e => setCustomDuration(e.target.value)}
-                          className="w-full bg-black/20 border border-white/10 rounded-xl px-3 py-2 text-xs text-textMain focus:border-red-500 outline-none"
-                        />
-                      </div>
-                    </div>
-                    <div className="flex gap-2 justify-end pt-2">
-                      <button onClick={() => setShowAddForm(false)} className="px-3 py-1.5 text-[9px] font-black uppercase text-textMuted hover:text-textMain">Cancel</button>
-                      <button onClick={handleAddCustom} className="px-4 py-1.5 bg-red-500 hover:bg-red-600 text-white rounded-xl text-[9px] font-black uppercase tracking-widest">Install Protocol</button>
-                    </div>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {/* Missions List */}
-            <div className="space-y-4">
-              {missions.length === 0 ? (
-                <div className="text-center py-12 text-textMuted border border-dashed border-white/5 rounded-2xl">
-                  <Activity size={32} className="mx-auto mb-3 opacity-20" />
-                  <p className="text-xs font-bold uppercase tracking-widest">No protocols Active</p>
-                  <p className="text-[10px] opacity-60 mt-1">Click "Calibrate AI" or "Custom" to install bio-protocols!</p>
-                </div>
-              ) : (
-                missions.map((m) => (
-                  <div 
-                    key={m.id} 
-                    className={`p-4 rounded-2xl border transition-all flex items-center justify-between group relative overflow-hidden ${
-                      m.completed 
-                        ? 'bg-emerald-500/5 border-emerald-500/20' 
-                        : 'bg-white/[0.03] border-white/5 hover:border-red-500/30'
-                    }`}
-                  >
-                    <div className="flex items-center space-x-4">
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${
-                        m.completed 
-                          ? 'bg-emerald-500/10 text-emerald-400' 
-                          : 'bg-black/40 text-textMuted group-hover:text-red-500'
-                      }`}>
-                        {m.completed ? <Check size={18} /> : <Flame size={18} />}
-                      </div>
-                      <div>
-                        <h4 className={`text-sm font-bold truncate transition-all ${
-                          m.completed ? 'line-through text-textMuted font-medium' : 'text-textMain'
-                        }`}>{m.title}</h4>
-                        <div className="flex items-center space-x-2 text-[10px] uppercase font-bold text-textMuted">
-                          <span>{m.time}</span>
-                          <span>•</span>
-                          <span className={m.difficulty === 'Hard' ? 'text-red-500' : m.difficulty === 'Medium' ? 'text-amber-500' : 'text-emerald-500'}>{m.difficulty}</span>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex items-center space-x-4 relative z-10">
-                      <div className="text-right">
-                        <p className={`text-xs font-black transition-colors ${m.completed ? 'text-emerald-400' : 'text-textMain'}`}>
-                          +{m.xp} XP
-                        </p>
-                        <p className="text-[8px] text-textMuted font-bold uppercase tracking-widest">Health Pillar</p>
-                      </div>
-                      
-                      <div className="flex items-center gap-1.5">
-                        {!m.completed && (
-                          <button 
-                            onClick={(e) => handleComplete(m.id, e)}
-                            className="p-2 rounded-lg bg-white/5 hover:bg-emerald-500/20 hover:text-emerald-500 transition-all cursor-pointer"
-                            title="Complete protocol"
-                          >
-                            <CheckCircle2 size={16} />
-                          </button>
-                        )}
-                        <button 
-                          onClick={(e) => handleDelete(m.id, e)}
-                          className="p-2 rounded-lg bg-white/5 hover:bg-red-500/25 hover:text-red-400 text-textMuted transition-all opacity-0 group-hover:opacity-100 cursor-pointer"
-                          title="Remove protocol"
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
+                  -0.5h
+                </button>
+                <button
+                  onClick={() => {
+                    const next = Number((metrics.sleepHours + 0.5).toFixed(1));
+                    updateSyncedBio({ sleepHours: next });
+                    audio.playClick();
+                  }}
+                  className="flex-1 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-zinc-300 text-[10px] font-black"
+                >
+                  +0.5h
+                </button>
+              </div>
             </div>
-          </div>
+          </motion.div>
+
+          {/* Body Mass & Conditioning Card */}
+          <motion.div 
+            className="glass-panel p-5 border border-white/5 bg-white/[0.02] rounded-2xl md:col-span-2 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+          >
+            <div className="flex items-center space-x-3">
+              <div className="p-2.5 rounded-xl bg-blue-500/10 text-blue-400 shrink-0">
+                <Scale size={20} />
+              </div>
+              <div>
+                <h3 className="text-xs font-black text-textMain uppercase tracking-wider">Body Mass: {metrics.weightKg} kg</h3>
+                <p className="text-[10px] text-textMuted">Cumulative conditioning: {metrics.workoutTotalMins} mins across {metrics.workoutCount} sessions</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  const next = Number((metrics.weightKg - 0.2).toFixed(1));
+                  updateSyncedBio({ weightKg: next });
+                  audio.playClick();
+                }}
+                className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-black text-zinc-300"
+              >
+                -0.2 kg
+              </button>
+              <button
+                onClick={() => {
+                  const next = Number((metrics.weightKg + 0.2).toFixed(1));
+                  updateSyncedBio({ weightKg: next });
+                  audio.playClick();
+                }}
+                className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-black text-zinc-300"
+              >
+                +0.2 kg
+              </button>
+            </div>
+          </motion.div>
         </div>
+      </div>
 
-        {/* Bio-Hacker's Log (Side Panel) */}
-        <div>
-          <div className="glass-panel p-6 border border-white/5 bg-white/[0.01] rounded-3xl h-full flex flex-col">
-            <div className="flex items-center space-x-2 mb-6">
-              <Dna size={18} className="text-red-500" />
-              <h3 className="text-sm font-black text-textMain uppercase tracking-widest">Bio-Hacker's Log</h3>
-            </div>
-            
-            <div className="flex-1 space-y-4">
-              <div className="p-4 rounded-2xl bg-red-500/5 border border-red-500/10 flex items-start space-x-3">
-                <AlertCircle size={16} className="text-red-500 mt-0.5" />
-                <div>
-                  <p className="text-[10px] font-black text-red-500 uppercase tracking-widest mb-1">System Warning</p>
-                  <p className="text-[10px] text-textMuted leading-relaxed">
-                    Cortisol spikes detected at 10 PM. Recommend magnesium protocol and 20min meditation.
-                  </p>
-                </div>
-              </div>
+      {/* ─── ROW 2: ACTIVE PROTOCOLS (BIO-MISSIONS ENGINE) ─── */}
+      <div className="glass-panel p-6 rounded-3xl border border-white/10 bg-black/40 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-black uppercase tracking-wider text-textMain flex items-center gap-2">
+              <Timer size={16} className="text-emerald-400" />
+              <span>Active Bio-Optimization Protocols</span>
+            </h3>
+            <p className="text-[10px] text-textMuted uppercase tracking-wider">Execute daily micro-protocols to condition nervous & metabolic systems</p>
+          </div>
 
-              <div className="space-y-2">
-                <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-2 px-1">Recent Supplements</p>
-                <div className="flex flex-wrap gap-2">
-                  {['Magnesium', 'Creatine', 'Fish Oil', 'Ashwagandha'].map(s => (
-                    <span key={s} className="px-2 py-1 bg-white/5 border border-white/10 rounded-lg text-[10px] font-bold text-textMain">{s}</span>
-                  ))}
-                </div>
-              </div>
-
-              <div className="p-4 rounded-2xl bg-blue-500/5 border border-blue-500/10">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center space-x-2">
-                    <Thermometer size={14} className="text-blue-500" />
-                    <span className="text-[10px] font-black text-blue-500 uppercase tracking-widest">Hydration Matrix</span>
-                  </div>
-                  <span className="text-[10px] font-mono text-textMuted">2.4L / 3.5L</span>
-                </div>
-                <div className="w-full bg-white/5 h-1.5 rounded-full overflow-hidden">
-                  <div className="bg-blue-500 h-full w-[68%]" />
-                </div>
-              </div>
-            </div>
-
-            <button className="mt-8 w-full py-3 bg-white/[0.03] border border-white/10 rounded-xl text-[10px] font-black text-textMain uppercase tracking-[0.2em] hover:bg-white/[0.05] flex items-center justify-center group transition-all">
-              Full Diagnostics <ChevronRight size={14} className="ml-1 group-hover:translate-x-1 transition-transform" />
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleGenerateAI}
+              disabled={generating}
+              className="py-1.5 px-3 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 transition-all disabled:opacity-50 cursor-pointer"
+            >
+              {generating ? <RefreshCw size={12} className="animate-spin" /> : <Sparkles size={12} />}
+              <span>{generating ? 'Calibrating...' : 'AI Calibrate'}</span>
             </button>
           </div>
         </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          {protocols.map(p => (
+            <div
+              key={p.id}
+              onClick={() => handleCompleteProtocol(p.id)}
+              className={`p-4 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between gap-3 ${
+                p.completed
+                  ? 'bg-emerald-500/10 border-emerald-500/30'
+                  : 'bg-white/[0.02] border-white/5 hover:border-emerald-500/30 hover:bg-white/[0.04]'
+              }`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-2.5">
+                  <div className={`w-6 h-6 rounded-lg flex items-center justify-center border transition-all ${
+                    p.completed ? 'bg-emerald-500 border-emerald-500 text-black' : 'border-white/20'
+                  }`}>
+                    {p.completed && <Check size={14} className="stroke-[3]" />}
+                  </div>
+                  <h4 className={`text-xs font-bold leading-snug ${p.completed ? 'line-through text-zinc-400' : 'text-textMain'}`}>
+                    {p.title}
+                  </h4>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between text-[10px] pt-1 border-t border-white/5">
+                <span className="text-textMuted font-mono">{p.time}</span>
+                <span className="font-black text-emerald-400">+{p.xp} Health XP</span>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
+
+      {/* ─── ROW 3: HEALTH & BIO LEDGER (MIRRORING VAULT'S TABLE) ─── */}
+      <div className="glass-panel p-6 rounded-3xl border border-white/10 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h3 className="text-sm font-black uppercase tracking-wider text-textMain flex items-center gap-2">
+              <BarChart3 size={16} className="text-primary" />
+              <span>Vitality Ledger & Bio-Logs</span>
+            </h3>
+            <p className="text-[10px] text-textMuted uppercase tracking-wider">Auditable record of physical training, fluid intake & rest</p>
+          </div>
+
+          {/* Filter Pills */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
+            {(['all', 'workout', 'hydration', 'sleep', 'mass', 'nutrition', 'protocol'] as const).map(cat => (
+              <button
+                key={cat}
+                onClick={() => {
+                  audio.playClick();
+                  setFilterCategory(cat);
+                }}
+                className={`px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap border ${
+                  filterCategory === cat
+                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                    : 'bg-white/[0.02] text-textMuted border-white/5 hover:text-white'
+                }`}
+              >
+                {cat}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Ledger Table */}
+        <div className="overflow-x-auto rounded-2xl border border-white/5">
+          <table className="w-full text-left text-xs">
+            <thead>
+              <tr className="border-b border-white/10 bg-white/[0.02] text-[10px] uppercase font-bold text-textMuted tracking-wider">
+                <th className="p-3.5">Bio-Event / Protocol</th>
+                <th className="p-3.5">Category</th>
+                <th className="p-3.5">Recorded Value</th>
+                <th className="p-3.5">Date</th>
+                <th className="p-3.5">Reward</th>
+                <th className="p-3.5 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+              {displayedEntries.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="p-8 text-center text-textMuted text-xs uppercase tracking-wider">
+                    No bio logs recorded in this category. Click "Log Bio Metric" to record data.
+                  </td>
+                </tr>
+              ) : (
+                displayedEntries.map(e => {
+                  const cfg = CATEGORY_CONFIG[e.category] || CATEGORY_CONFIG.workout;
+                  const Icon = cfg.icon;
+                  return (
+                    <tr key={e.id} className="hover:bg-white/[0.02] transition-colors group">
+                      <td className="p-3.5 font-bold text-textMain">
+                        <div className="flex items-center gap-2.5">
+                          <div className={`p-1.5 rounded-lg ${cfg.bg} ${cfg.text} shrink-0`}>
+                            <Icon size={14} />
+                          </div>
+                          <div>
+                            <div>{e.title}</div>
+                            {e.notes && <div className="text-[10px] text-textMuted font-normal">{e.notes}</div>}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="p-3.5">
+                        <span className={`px-2.5 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-wider border ${cfg.bg} ${cfg.text} ${cfg.border}`}>
+                          {e.category}
+                        </span>
+                      </td>
+                      <td className="p-3.5 font-mono font-bold text-textMain">
+                        {e.value} {e.unit}
+                      </td>
+                      <td className="p-3.5 font-mono text-[10px] text-textMuted">
+                        {e.date}
+                      </td>
+                      <td className="p-3.5 font-mono font-bold text-emerald-400">
+                        +{e.xpAwarded} XP
+                      </td>
+                      <td className="p-3.5 text-right">
+                        <button
+                          onClick={() => handleDeleteEntry(e.id)}
+                          className="p-1.5 rounded-lg hover:bg-red-500/20 text-zinc-500 hover:text-red-400 transition-colors cursor-pointer"
+                          title="Remove entry"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* ─── MODAL: LOG HEALTH & BIO METRIC (MIRRORING THE VAULT) ─── */}
+      <AnimatePresence>
+        {isModalOpen && (
+          <div className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-[#11131e] border border-white/20 rounded-3xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto space-y-4 shadow-2xl"
+            >
+              <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                <h3 className="text-sm font-black uppercase tracking-wider text-white flex items-center gap-2">
+                  <HeartPulse size={16} className="text-emerald-400" />
+                  <span>Log Bio Metric & Training</span>
+                </h3>
+                <button onClick={() => setIsModalOpen(false)} className="text-textMuted hover:text-white">
+                  <X size={16} />
+                </button>
+              </div>
+
+              <form onSubmit={handleAddEntry} className="space-y-4">
+                {/* Category Selector */}
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-wider text-textMuted block mb-1.5">
+                    Category
+                  </label>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {(['workout', 'hydration', 'sleep', 'mass', 'nutrition', 'protocol'] as const).map(cat => (
+                      <button
+                        type="button"
+                        key={cat}
+                        onClick={() => handleCategorySelect(cat)}
+                        className={`py-1.5 px-2 rounded-xl text-[10px] font-black uppercase tracking-wider border transition-all ${
+                          mCategory === cat
+                            ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                            : 'bg-white/5 text-textMuted border-white/5 hover:text-white'
+                        }`}
+                      >
+                        {cat}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Title */}
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-wider text-textMuted block mb-1">
+                    Protocol / Event Title
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Upper Body Strength, 1.5L Hydration Block..."
+                    value={mTitle}
+                    onChange={e => setMTitle(e.target.value)}
+                    className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-zinc-500 focus:border-emerald-500 outline-none"
+                  />
+                </div>
+
+                {/* Metric Value & Unit */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-wider text-textMuted block mb-1">
+                      Metric Value
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      required
+                      placeholder="e.g. 60, 1.5, 7.5..."
+                      value={mValue}
+                      onChange={e => setMValue(e.target.value)}
+                      className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-zinc-500 focus:border-emerald-500 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-wider text-textMuted block mb-1">
+                      Unit
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="mins, L, hrs, kg..."
+                      value={mUnit}
+                      onChange={e => setMUnit(e.target.value)}
+                      className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-zinc-500 focus:border-emerald-500 outline-none"
+                    />
+                  </div>
+                </div>
+
+                {/* Notes */}
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-wider text-textMuted block mb-1">
+                    Context / Notes (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Focus on progressive overload, good form..."
+                    value={mNotes}
+                    onChange={e => setMNotes(e.target.value)}
+                    className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-zinc-500 focus:border-emerald-500 outline-none"
+                  />
+                </div>
+
+                {/* Submit button */}
+                <div className="pt-2">
+                  <button
+                    type="submit"
+                    className="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-black text-xs uppercase tracking-wider transition-all shadow-[0_0_15px_rgba(16,185,129,0.3)]"
+                  >
+                    Save to Health Ledger & Earn XP
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

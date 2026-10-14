@@ -133,7 +133,7 @@ export function EngagementHub({ onNavigateToRank }: { onNavigateToRank?: () => v
       animate={{ opacity: 1 }}
       className="flex flex-col h-full w-full relative z-10 overflow-hidden"
     >
-      <div className="flex-1 overflow-y-auto p-4 md:p-8 pb-10 md:pb-8 scrollbar-thin scrollbar-thumb-surfaceHighlight scrollbar-track-transparent">
+      <div className="flex-1 overflow-y-auto p-4 md:p-8 pb-28 md:pb-8 scrollbar-thin scrollbar-thumb-surfaceHighlight scrollbar-track-transparent">
         
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-4 md:gap-6">
           

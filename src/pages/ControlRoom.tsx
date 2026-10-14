@@ -1,10 +1,15 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Save, Settings, Clock, Activity, Target, Plus, Trash2, Dumbbell, BookOpen, Briefcase, Brain, Pencil, Check, X, RotateCcw } from 'lucide-react';
+import { 
+  Save, Settings, Clock, Activity, Target, Plus, Trash2, Dumbbell, 
+  BookOpen, Briefcase, Brain, Pencil, Check, X, RotateCcw,
+  Cpu, Sparkles, Eye, EyeOff, ExternalLink, Loader2, Key
+} from 'lucide-react';
 import { audio } from '../lib/audio';
 import { supabase } from '../lib/supabaseClient';
 import { cn } from '../lib/utils';
 import { useProgression } from '../hooks/useProgression';
+import { getGeminiApiKey, setGeminiApiKey, testGeminiApiKey } from '../lib/aiService';
 
 interface TimetableTask {
   id: number;
@@ -90,6 +95,11 @@ export function ControlRoom() {
   const [newTodoTime, setNewTodoTime] = useState('');
   const [newTodoRecurrence, setNewTodoRecurrence] = useState<'daily' | 'weekly' | 'monthly' | 'one-off'>('one-off');
   const [newTodoPriority, setNewTodoPriority] = useState<'High' | 'Medium' | 'Low'>('Medium');
+  const [geminiKey, setGeminiKey] = useState<string>(() => getGeminiApiKey());
+  const [showGeminiKey, setShowGeminiKey] = useState(false);
+  const [testingAi, setTestingAi] = useState(false);
+  const [aiTestResult, setAiTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [aiKeySavedNotice, setAiKeySavedNotice] = useState(false);
 
   useEffect(() => {
     async function loadUserConfig() {
@@ -173,6 +183,15 @@ export function ControlRoom() {
               const sr = localStorage.getItem(`quantum_sunday_rest_${uid}`);
               if (sr) setSundayRest(sr !== 'false');
             }
+
+            // 8. Gemini API Key loading
+            if (s.geminiApiKey) {
+              setGeminiKey(s.geminiApiKey);
+              setGeminiApiKey(s.geminiApiKey);
+            } else {
+              const k = getGeminiApiKey();
+              if (k) setGeminiKey(k);
+            }
             return;
           }
         } catch (e) {
@@ -201,6 +220,9 @@ export function ControlRoom() {
 
       const sr = localStorage.getItem(`quantum_sunday_rest_${uid}`);
       if (sr) setSundayRest(sr !== 'false');
+
+      const k = getGeminiApiKey();
+      if (k) setGeminiKey(k);
     }
     loadUserConfig();
   }, []);
@@ -232,6 +254,7 @@ export function ControlRoom() {
       localStorage.setItem(`quantum_weight_goal_${uid}`, weightGoal);
       localStorage.setItem(`quantum_sap_target_${uid}`, sapTarget);
       localStorage.setItem(`quantum_sunday_rest_${uid}`, sundayRest.toString());
+      setGeminiApiKey(geminiKey);
 
       // Save sequentially to timetable_tasks table
       if (currentUid && supabase) {
@@ -271,19 +294,36 @@ export function ControlRoom() {
           });
         });
 
-        setSavedMessage('Clearing existing schedule...');
-        const { error: deleteError } = await supabase.from('timetable_tasks').delete().eq('user_id', currentUid);
-        if (deleteError) {
-          console.error("Supabase Timetable Clear Error:", deleteError);
-          throw new Error(`Failed to clear timetable tasks: ${deleteError.message}`);
+        setSavedMessage('Matching existing schedule entries...');
+        const { data: existingTasks } = await supabase
+          .from('timetable_tasks')
+          .select('id, name, start_time, day_of_week')
+          .eq('user_id', currentUid);
+
+        const existingMap = new Map<string, string>();
+        if (existingTasks) {
+          existingTasks.forEach(et => {
+            const key = `${et.name.trim().toLowerCase()}_${et.start_time}_${et.day_of_week}`;
+            existingMap.set(key, et.id);
+          });
         }
 
+        // Attach existing ID if found to preserve foreign keys
+        rowsToSave.forEach(row => {
+          const key = `${row.name.trim().toLowerCase()}_${row.start_time}_${row.day_of_week}`;
+          if (existingMap.has(key)) {
+            row.id = existingMap.get(key);
+          }
+        });
+
         if (rowsToSave.length > 0) {
-          setSavedMessage(`Synchronizing ${rowsToSave.length} schedule entries...`);
-          const { error: insertError } = await supabase.from('timetable_tasks').insert(rowsToSave);
-          if (insertError) {
-            console.error("Supabase Bulk Insert Error:", insertError);
-            throw new Error(`Failed to synchronize timetable tasks: ${insertError.message}`);
+          setSavedMessage(`Synchronizing ${rowsToSave.length} schedule entries non-destructively...`);
+          const { error: upsertError } = await supabase
+            .from('timetable_tasks')
+            .upsert(rowsToSave, { onConflict: 'id' });
+          if (upsertError) {
+            console.error("Supabase Upsert Error:", upsertError);
+            throw new Error(`Failed to synchronize timetable tasks: ${upsertError.message}`);
           }
         }
 
@@ -301,7 +341,8 @@ export function ControlRoom() {
             todos: todos,
             weightGoal,
             sapTarget,
-            sundayRest
+            sundayRest,
+            geminiApiKey: geminiKey
           }
         }).eq('id', currentUid);
 
@@ -487,7 +528,7 @@ export function ControlRoom() {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -20 }}
-      className="flex-1 flex flex-col h-full overflow-y-auto scrollbar-thin p-6 md:p-10 space-y-8"
+      className="flex-1 flex flex-col h-full overflow-y-auto scrollbar-thin p-4 sm:p-6 md:p-10 space-y-6 sm:space-y-8 pb-32 md:pb-12"
     >
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div className="flex items-center space-x-3 text-textMain">
@@ -1109,6 +1150,134 @@ export function ControlRoom() {
                     No custom todos scheduled for this day.
                   </div>
                 )}
+              </div>
+            </div>
+          </div>
+
+          {/* Neural AI Engine (Google Gemini) */}
+          <div className="glass-panel p-6 space-y-6 relative overflow-hidden border border-purple-500/30 bg-gradient-to-b from-purple-500/5 to-transparent">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center space-x-3 text-purple-400 font-bold">
+                <div className="p-2.5 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-400">
+                  <Cpu size={20} />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-textMain flex items-center gap-2">
+                    Neural AI Engine (Google Gemini)
+                    <Sparkles size={16} className="text-purple-400 animate-pulse" />
+                  </h2>
+                  <p className="text-[10px] text-textMuted uppercase tracking-wider font-semibold">Powers AI Arena Grading & Strategic Counsel</p>
+                </div>
+              </div>
+              
+              <div className="flex items-center gap-2">
+                {geminiKey ? (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping inline-block" />
+                    Active
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                    Key Required
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <p className="text-xs text-textMuted leading-relaxed">
+              Provide your Google Gemini API Key to enable instant AI code grading in <strong className="text-textMain">The Arena</strong>, real-time <strong className="text-textMain">Strategic AI Counsel</strong>, and personalized biometric protocols. Your key is stored in your private browser vault and synced to your encrypted account profile.
+            </p>
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] text-textMuted font-black uppercase tracking-widest flex items-center gap-1.5">
+                  <Key size={12} className="text-purple-400" />
+                  Gemini API Key
+                </label>
+                <a 
+                  href="https://aistudio.google.com/app/apikey" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="text-[10px] font-bold text-purple-400 hover:text-purple-300 flex items-center gap-1 transition-colors"
+                >
+                  <span>Get Free API Key (Google AI Studio)</span>
+                  <ExternalLink size={11} />
+                </a>
+              </div>
+
+              <div className="relative">
+                <input 
+                  type={showGeminiKey ? "text" : "password"} 
+                  value={geminiKey}
+                  onChange={(e) => {
+                    setGeminiKey(e.target.value);
+                    setAiTestResult(null);
+                  }}
+                  placeholder="Paste your Gemini API key (AIzaSy...)"
+                  className="w-full bg-surfaceHighlight border border-border rounded-xl pl-4 pr-11 py-3 text-sm text-textMain outline-none focus:border-purple-500 font-mono transition-all"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowGeminiKey(!showGeminiKey)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-textMuted hover:text-textMain p-1 transition-colors"
+                >
+                  {showGeminiKey ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+
+              {aiTestResult && (
+                <div className={cn(
+                  "p-3 rounded-xl border text-xs font-semibold flex items-center gap-2",
+                  aiTestResult.success ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" : "bg-red-500/10 border-red-500/30 text-red-400"
+                )}>
+                  <span>{aiTestResult.success ? "✓" : "⚠"}</span>
+                  <span>{aiTestResult.message}</span>
+                </div>
+              )}
+
+              {aiKeySavedNotice && (
+                <div className="p-3 rounded-xl border bg-emerald-500/10 border-emerald-500/30 text-emerald-400 text-xs font-semibold flex items-center gap-2">
+                  <Check size={14} />
+                  <span>Gemini API Key saved and initialized successfully!</span>
+                </div>
+              )}
+
+              <div className="flex flex-col sm:flex-row gap-2 pt-1">
+                <button
+                  type="button"
+                  disabled={testingAi || !geminiKey.trim()}
+                  onClick={async () => {
+                    setTestingAi(true);
+                    setAiTestResult(null);
+                    audio.playClick();
+                    const res = await testGeminiApiKey(geminiKey);
+                    setAiTestResult(res);
+                    setTestingAi(false);
+                    if (res.success) {
+                      audio.playSuccess();
+                      setGeminiApiKey(geminiKey);
+                    }
+                  }}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/30 text-purple-300 text-xs font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {testingAi ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                  <span>{testingAi ? 'Testing Neural Link...' : 'Test Connection'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={!geminiKey.trim()}
+                  onClick={() => {
+                    setGeminiApiKey(geminiKey);
+                    audio.playSuccess();
+                    setAiKeySavedNotice(true);
+                    setTimeout(() => setAiKeySavedNotice(false), 3000);
+                  }}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-primary/20 hover:bg-primary/30 border border-primary/40 text-primary text-xs font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <Save size={14} />
+                  <span>Save AI Key</span>
+                </button>
               </div>
             </div>
           </div>

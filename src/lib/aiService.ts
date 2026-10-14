@@ -29,13 +29,71 @@ const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/
  * Retrieves the Gemini API Key from LocalStorage or Vite Environment variables.
  */
 export function getGeminiApiKey(): string {
-  const customKey = localStorage.getItem('quantum_counsel_api_key');
-  if (customKey && customKey.trim()) {
-    return customKey.trim();
+  const keys = [
+    localStorage.getItem('quantum_counsel_api_key'),
+    localStorage.getItem('gemini_api_key'),
+    localStorage.getItem('quantum_gemini_api_key'),
+  ];
+  for (const k of keys) {
+    if (k && k.trim()) {
+      return k.trim();
+    }
   }
   // Fallback to Vite env variable if present
   const envKey = (import.meta.env.VITE_GEMINI_API_KEY as string) || '';
   return envKey.trim();
+}
+
+/**
+ * Stores or clears the Gemini API Key across standard storage keys.
+ */
+export function setGeminiApiKey(key: string): void {
+  const trimmed = key.trim();
+  if (trimmed) {
+    localStorage.setItem('quantum_counsel_api_key', trimmed);
+    localStorage.setItem('gemini_api_key', trimmed);
+    localStorage.setItem('quantum_gemini_api_key', trimmed);
+  } else {
+    localStorage.removeItem('quantum_counsel_api_key');
+    localStorage.removeItem('gemini_api_key');
+    localStorage.removeItem('quantum_gemini_api_key');
+  }
+}
+
+/**
+ * Tests connection with the provided or stored Gemini API key.
+ */
+export async function testGeminiApiKey(keyToTest?: string): Promise<{ success: boolean; message: string }> {
+  const key = keyToTest?.trim() || getGeminiApiKey();
+  if (!key) {
+    return { success: false, message: 'Please enter a valid Gemini API Key first.' };
+  }
+
+  const modelsToTry = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-2.5-flash'];
+  let lastErr = '';
+
+  for (const model of modelsToTry) {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: 'Respond with exactly: OK' }] }]
+        })
+      });
+      if (res.ok) {
+        return { success: true, message: `Successfully verified Gemini AI link (${model})!` };
+      } else {
+        const data = await res.json().catch(() => ({}));
+        lastErr = data?.error?.message || `HTTP ${res.status}`;
+      }
+    } catch (e: any) {
+      lastErr = e?.message || 'Network error';
+    }
+  }
+
+  return { success: false, message: `Verification failed: ${lastErr}` };
 }
 
 /**
@@ -46,57 +104,75 @@ export function isApiKeyConfigured(): boolean {
 }
 
 /**
- * Helper to call the direct Gemini REST API.
+ * Helper to call the direct Gemini REST API with multi-model fallback.
  */
 async function callGemini(prompt: string, systemInstruction?: string, jsonMode: boolean = false): Promise<string> {
   const apiKey = getGeminiApiKey();
   if (!apiKey) {
-    throw new Error('Neural API Key not configured. Please input your key in Neural Settings.');
+    throw new Error('Neural API Key not configured. Please input your Gemini API Key in the System tab.');
   }
 
-  const url = `${GEMINI_API_URL}?key=${apiKey}`;
+  const models = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-2.5-flash'];
+  let lastError: Error | null = null;
 
-  const requestBody: any = {
-    contents: [
-      {
-        parts: [{ text: prompt }]
+  for (const model of models) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+    const requestBody: any = {
+      contents: [
+        {
+          parts: [{ text: prompt }]
+        }
+      ]
+    };
+
+    if (systemInstruction) {
+      requestBody.systemInstruction = {
+        parts: [{ text: systemInstruction }]
+      };
+    }
+
+    if (jsonMode) {
+      requestBody.generationConfig = {
+        responseMimeType: 'application/json'
+      };
+    }
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(requestBody)
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        const errMsg = errData?.error?.message || `HTTP ${response.status} Error`;
+        if (response.status === 404 || errMsg.toLowerCase().includes('not found')) {
+          lastError = new Error(`Model ${model} not found: ${errMsg}`);
+          continue;
+        }
+        throw new Error(`Gemini Link failed: ${errMsg}`);
       }
-    ]
-  };
 
-  if (systemInstruction) {
-    requestBody.systemInstruction = {
-      parts: [{ text: systemInstruction }]
-    };
+      const data = await response.json();
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!text) {
+        throw new Error('Gemini returned an empty response.');
+      }
+
+      return text;
+    } catch (e: any) {
+      lastError = e;
+      if (e.message && e.message.includes('Gemini Link failed:')) {
+        throw e;
+      }
+    }
   }
 
-  if (jsonMode) {
-    requestBody.generationConfig = {
-      responseMimeType: 'application/json'
-    };
-  }
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(requestBody)
-  });
-
-  if (!response.ok) {
-    const errData = await response.json().catch(() => ({}));
-    const errMsg = errData?.error?.message || `HTTP ${response.status} Error`;
-    throw new Error(`Gemini Link failed: ${errMsg}`);
-  }
-
-  const data = await response.json();
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) {
-    throw new Error('Gemini returned an empty response.');
-  }
-
-  return text;
+  throw lastError || new Error('All Gemini API model links failed. Check your API key.');
 }
 
 /**

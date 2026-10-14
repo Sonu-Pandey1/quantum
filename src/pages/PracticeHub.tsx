@@ -246,7 +246,7 @@ export function PracticeHub({ onBack }: { onBack: () => void }) {
   const handleGenerateQuestion = async () => {
     if (!isApiKeyConfigured()) {
       import('react-hot-toast').then(({ default: toast }) => {
-        toast.error("Gemini API Key missing. Please configure key in Neural Settings.");
+        toast.error("Gemini API Key missing. Please configure key in System Settings (Control Room).");
       });
       return;
     }

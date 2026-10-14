@@ -49,7 +49,15 @@ const vows = [
   "I stay locked in on my mission."
 ];
 
-export function Header({ hideVow = false, onNavigateToRank, onNavigateToDashboard }: { hideVow?: boolean, onNavigateToRank?: () => void, onNavigateToDashboard?: () => void }) {
+export function Header({ 
+  hideVow = false, 
+  onNavigateToRank, 
+  onNavigateToDashboard
+}: { 
+  hideVow?: boolean; 
+  onNavigateToRank?: () => void; 
+  onNavigateToDashboard?: () => void;
+}) {
   const { state } = useProgression();
   const displayVows = state.goals && state.goals.length > 0 ? state.goals : vows;
   const [index, setIndex] = useState(0);
@@ -146,6 +154,7 @@ export function Header({ hideVow = false, onNavigateToRank, onNavigateToDashboar
 
       {/* Right: AI Command & Notifications Button & Rank & Progress */}
       <div className="flex items-center space-x-2 md:space-x-3">
+
         {/* AI Command Bar Button */}
         <button
           onClick={() => {
