@@ -4,7 +4,7 @@ import {
   ChevronLeft, ChevronRight,
   BookOpen, Dumbbell, Briefcase, Brain, Trophy,
   Droplets, Moon, Scale, Sparkles, X,
-  Calendar, HeartPulse, Clock
+  Calendar, HeartPulse, Clock, Lightbulb, Copy
 } from 'lucide-react';
 import { useProgression, type Pillar } from '../hooks/useProgression';
 import { useEngagement } from '../hooks/useEngagement';
@@ -12,7 +12,8 @@ import { supabase } from '../lib/supabaseClient';
 import { audio } from '../lib/audio';
 import toast from 'react-hot-toast';
 import { EngineCard } from '../components/EngineCard';
-import { type BioMission, DEFAULT_PROTOCOLS } from './TheLab';
+import { type BioMission, DEFAULT_PROTOCOLS } from '../lib/bioProtocols';
+import { loadSavedThoughts, getTodayThought } from '../lib/dailyThoughts';
 
 // ─── TYPES ─────────────────────────────────────────────────────────────
 export type EnergyMode = 'peak' | 'normal' | 'survival';
@@ -389,6 +390,8 @@ export function CommandDeck({ onNavigate }: CommandDeckProps) {
   const { state, addXp, updateProfile, refuelStreakShield } = useProgression();
   const { stats: engagementStats } = useEngagement();
   const todayStr = useMemo(() => toDateStr(new Date()), []);
+  const dailyThoughtsList = useMemo(() => loadSavedThoughts(state.settings?.customThoughts), [state.settings?.customThoughts]);
+  const todayThought = useMemo(() => getTodayThought(dailyThoughtsList), [dailyThoughtsList]);
   const uid = state.displayName || 'operator';
   const [authUserId, setAuthUserId] = useState<string | null>(null);
   const [dbActivityMap, setDbActivityMap] = useState<Record<string, { count: number; xp: number }>>({});
@@ -1419,98 +1422,150 @@ export function CommandDeck({ onNavigate }: CommandDeckProps) {
   return (
     <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-6 pb-28 md:pb-8 scrollbar-none">
       {/* ─── TOP COMMAND BAR ─── */}
-      <div className="glass-panel p-4 md:p-5 rounded-3xl border border-white/10 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+      <div className="glass-panel p-4 md:p-5 rounded-3xl border border-white/10 flex flex-col xl:flex-row xl:items-center justify-between gap-4">
         {/* Left: Operator Rank, Level & Streak Shields */}
-        <div className="flex flex-wrap items-center gap-3">
-          <div
+        <div className="flex flex-wrap sm:flex-nowrap items-center gap-2.5 w-full xl:w-auto">
+          <button
+            type="button"
             onClick={() => {
               audio.playClick();
               if (onNavigate) onNavigate('rank');
             }}
-            className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-primary/10 border border-primary/30 text-primary text-xs font-black uppercase tracking-wider cursor-pointer hover:border-primary hover:scale-105 transition-all"
+            className="h-10 flex-1 sm:flex-initial sm:min-w-[140px] px-3.5 rounded-xl bg-primary/10 border border-primary/30 text-primary text-xs font-black uppercase tracking-wider cursor-pointer hover:border-primary hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 shadow-sm whitespace-nowrap"
             title="View Ascension Rank & AI Counsel"
           >
-            <Trophy size={14} className="text-primary" />
-            <span>Lv.{state.totalLevel} {state.rank}</span>
-          </div>
+            <Trophy size={14} className="text-primary shrink-0" />
+            <span className="truncate">Lv.{state.totalLevel} {state.rank}</span>
+          </button>
 
-          <div
+          <button
+            type="button"
             onClick={() => {
               audio.playClick();
               if (onNavigate) onNavigate('engagement');
             }}
-            className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-orange-500/10 border border-orange-500/25 text-orange-400 text-xs font-black cursor-pointer hover:border-orange-500/50 hover:scale-105 transition-all"
+            className="h-10 flex-1 sm:flex-initial sm:min-w-[130px] px-3.5 rounded-xl bg-orange-500/10 border border-orange-500/25 text-orange-400 text-xs font-black cursor-pointer hover:border-orange-500/50 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 shadow-sm whitespace-nowrap"
             title="View Streak & Activity in Engagement Hub"
           >
-            <Flame size={14} />
-            <span>{actualStreak}d Streak</span>
-          </div>
+            <Flame size={14} className="shrink-0" />
+            <span className="truncate">{actualStreak}d Streak</span>
+          </button>
 
-          <div
+          <button
+            type="button"
             onClick={() => {
               audio.playClick();
               setShieldModalOpen(true);
             }}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-black cursor-pointer hover:scale-105 transition-all ${
+            className={`h-10 flex-1 sm:flex-initial sm:min-w-[150px] px-3.5 rounded-xl border text-xs font-black cursor-pointer hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 shadow-sm whitespace-nowrap ${
               streakShields > 0
                 ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-300 shadow-[0_0_12px_rgba(6,182,212,0.2)]'
                 : 'bg-white/5 border-white/10 text-textMuted hover:text-white hover:bg-white/10'
             }`}
             title="Open Streak Shield Defense Matrix"
           >
-            <Shield size={14} className={streakShields > 0 ? 'text-cyan-400' : 'text-textMuted'} />
-            <span>{streakShields}/3 Streak Shields</span>
-          </div>
-
-          <div className="text-xs text-textMuted font-medium hidden xl:block">
-            {actualStreak === 0
-              ? '⚡ Check off daily habits and execution blocks to ignite your streak!'
-              : energyMode === 'survival'
-              ? '🛡️ Survival Mode: 2-minute micro-habits active so busy days never break your streak.'
-              : energyMode === 'peak'
-              ? '🔥 Peak Overdrive: +20% Bonus XP active across all habit protocols.'
-              : '⚡ Standard Protocol: Execute daily habits for full consistency rewards.'}
-          </div>
+            <Shield size={14} className={`shrink-0 ${streakShields > 0 ? 'text-cyan-400' : 'text-textMuted'}`} />
+            <span className="truncate">{streakShields}/3 Shields</span>
+          </button>
         </div>
 
         {/* Right: AI Assistant & Energy Mode Switcher */}
-        <div className="flex flex-wrap items-center gap-2 self-start lg:self-auto">
+        <div className="flex flex-wrap sm:flex-nowrap items-center gap-2.5 w-full xl:w-auto">
           <button
             type="button"
             onClick={() => {
               audio.playClick();
               window.dispatchEvent(new CustomEvent('quantum_open_ai_command'));
             }}
-            className="flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-gradient-to-r from-primary/20 via-blue-600/20 to-purple-600/20 hover:from-primary/30 hover:to-purple-600/30 text-white border border-primary/35 text-xs font-black uppercase tracking-wider cursor-pointer hover:border-primary hover:scale-105 active:scale-95 transition-all shadow-[0_0_20px_rgba(59,130,246,0.2)] group"
+            className="h-10 flex-1 sm:flex-initial sm:min-w-[140px] px-4 rounded-xl bg-gradient-to-r from-primary/20 via-blue-600/20 to-purple-600/20 hover:from-primary/30 hover:to-purple-600/30 text-white border border-primary/35 text-xs font-black uppercase tracking-wider cursor-pointer hover:border-primary hover:scale-[1.02] active:scale-95 transition-all shadow-[0_0_15px_rgba(59,130,246,0.2)] flex items-center justify-center gap-2 group whitespace-nowrap"
             title="Tell AI to automate your schedule, todos, habits, or themes (Ctrl + K)"
           >
-            <Sparkles size={14} className="text-amber-300 animate-spin-slow group-hover:rotate-12 transition-transform" />
+            <Sparkles size={14} className="text-amber-300 shrink-0 animate-spin-slow group-hover:rotate-12 transition-transform" />
             <span>AI Co-Pilot</span>
-            <span className="hidden sm:inline text-[9px] font-mono opacity-60 bg-white/10 px-1.5 py-0.5 rounded">Ctrl+K</span>
+            <span className="hidden sm:inline text-[9px] font-mono opacity-60 bg-white/10 px-1 py-0.5 rounded">Ctrl+K</span>
           </button>
 
-          <div className="flex items-center gap-1 bg-black/40 p-1 rounded-2xl border border-white/10">
-          {([
-            { id: 'peak', label: '🔥 Peak (1.2x XP)', active: 'bg-orange-500/20 text-orange-300 border-orange-500/40' },
-            { id: 'normal', label: '⚡ Normal', active: 'bg-blue-500/20 text-blue-300 border-blue-500/40' },
-            { id: 'survival', label: '🛡️ Busy / Survival', active: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' },
-          ] as const).map(m => (
-            <button
-              key={m.id}
-              onClick={() => {
-                audio.playClick();
-                setEnergyMode(m.id);
-              }}
-              className={`px-3 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-wider border transition-all ${
-                energyMode === m.id ? m.active : 'border-transparent text-textMuted hover:text-white'
-              }`}
-            >
-              {m.label}
-            </button>
-          ))}
+          <div className="h-10 flex items-center gap-1 bg-black/40 p-1 rounded-xl border border-white/10 flex-1 sm:flex-initial">
+            {([
+              { id: 'peak', label: '🔥 Peak (1.2x)', shortLabel: '🔥 Peak', active: 'bg-orange-500/20 text-orange-300 border-orange-500/40' },
+              { id: 'normal', label: '⚡ Normal', shortLabel: '⚡ Normal', active: 'bg-blue-500/20 text-blue-300 border-blue-500/40' },
+              { id: 'survival', label: '🛡️ Busy / Survival', shortLabel: '🛡️ Busy', active: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' },
+            ] as const).map(m => (
+              <button
+                key={m.id}
+                onClick={() => {
+                  audio.playClick();
+                  setEnergyMode(m.id);
+                }}
+                className={`h-full flex-1 sm:flex-initial px-3 rounded-lg text-[11px] font-black uppercase tracking-wider border transition-all flex items-center justify-center whitespace-nowrap ${
+                  energyMode === m.id ? m.active : 'border-transparent text-textMuted hover:text-white'
+                }`}
+              >
+                <span className="hidden sm:inline">{m.label}</span>
+                <span className="sm:hidden">{m.shortLabel}</span>
+              </button>
+            ))}
+          </div>
         </div>
       </div>
-    </div>
+
+      {/* ─── DAILY THOUGHT PROTOCOL (BELOW BTNS & ABOVE THE ENGINE) ─── */}
+      <div 
+        onClick={() => {
+          audio.playClick();
+          if (onNavigate) onNavigate('thoughts');
+        }}
+        className="glass-panel p-4 md:p-5 rounded-3xl border border-white/10 hover:border-primary/40 bg-gradient-to-r from-primary/10 via-purple-500/5 to-transparent transition-all duration-300 cursor-pointer group shadow-lg relative overflow-hidden"
+      >
+        <div className="absolute top-0 right-0 w-48 h-48 bg-primary/10 rounded-full blur-3xl pointer-events-none -mr-10 -mt-10" />
+        
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 relative z-10">
+          <div className="flex items-start sm:items-center gap-3.5">
+            <div className="w-10 h-10 rounded-2xl bg-primary/20 border border-primary/30 flex items-center justify-center shrink-0 group-hover:scale-105 group-hover:bg-primary/30 transition-all shadow-[0_0_15px_rgba(59,130,246,0.3)]">
+              <Lightbulb className="text-primary" size={20} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2 mb-1">
+                <span className="text-[10px] font-black uppercase tracking-widest text-primary bg-primary/15 px-2 py-0.5 rounded-md border border-primary/30">
+                  Daily Thought Protocol
+                </span>
+                <span className="text-[10px] font-bold text-textMuted uppercase tracking-wider">
+                  • {todayThought.category}
+                </span>
+                {todayThought.author && (
+                  <span className="text-[10px] text-textMuted/70 italic">
+                    — {todayThought.author}
+                  </span>
+                )}
+              </div>
+              <p className="text-sm md:text-base font-semibold text-textMain/95 italic leading-snug group-hover:text-white transition-colors">
+                "{todayThought.quote}"
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                audio.playSuccess();
+                navigator.clipboard.writeText(`"${todayThought.quote}" - ${todayThought.author || 'Quantum Axiom'}`);
+                toast.success('Thought copied to clipboard! 📋');
+              }}
+              title="Copy quote"
+              className="h-9 px-3 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-textMuted hover:text-white transition-all text-xs font-bold flex items-center gap-1.5"
+            >
+              <Copy size={13} />
+              <span className="hidden sm:inline">Copy</span>
+            </button>
+            <span className="h-9 inline-flex items-center gap-1.5 px-3.5 rounded-xl bg-primary/15 border border-primary/30 text-primary text-xs font-black uppercase tracking-wider group-hover:bg-primary group-hover:text-white transition-all shadow-sm">
+              <span>All Thoughts</span>
+              <span className="text-xs">→</span>
+            </span>
+          </div>
+        </div>
+      </div>
 
       {/* ─── ROW 1: 3 RADIAL RINGS + THE ENGINE (ROUTINE FOCUS TIMER) ─── */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">

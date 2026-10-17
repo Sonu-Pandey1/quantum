@@ -50,6 +50,19 @@ function calculateEndTime(startTime: string, durationMinutes: number): string {
   return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 }
 
+export function getTimeGreeting(): { text: string; icon: string; phase: string } {
+  const hour = new Date().getHours();
+  if (hour >= 5 && hour < 12) {
+    return { text: 'Good Morning', icon: '🌅', phase: 'Morning Phase' };
+  } else if (hour >= 12 && hour < 17) {
+    return { text: 'Good Afternoon', icon: '☀️', phase: 'Afternoon Phase' };
+  } else if (hour >= 17 && hour < 22) {
+    return { text: 'Good Evening', icon: '🌆', phase: 'Evening Phase' };
+  } else {
+    return { text: 'Good Night', icon: '🌙', phase: 'Night Phase' };
+  }
+}
+
 export function EngineCard() {
   const { state: progressionState, updateProfile, claimTimetableTaskXp } = useProgression();
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -1043,8 +1056,27 @@ export function EngineCard() {
             )}
           </div>
           <div>
-            <h2 className="text-lg md:text-xl font-semibold text-textMain">The Engine</h2>
-            <p className="text-[10px] text-primary font-medium tracking-wide mt-0.5 uppercase">Action Protocol</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-lg md:text-xl font-semibold text-textMain">The Engine</h2>
+              {(() => {
+                const greeting = getTimeGreeting();
+                const displayName = progressionState?.displayName || 'Operator';
+                return (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/5 border border-white/10 text-[11px] font-medium text-textMain/80 shadow-sm">
+                    <span>{greeting.icon}</span>
+                    <span>{greeting.text}, <strong className="text-primary font-bold">{displayName}</strong></span>
+                  </span>
+                );
+              })()}
+            </div>
+            {(() => {
+              const greeting = getTimeGreeting();
+              return (
+                <p className="text-[10px] text-primary font-medium tracking-wide mt-0.5 uppercase">
+                  Action Protocol • {greeting.phase}
+                </p>
+              );
+            })()}
           </div>
         </div>
 

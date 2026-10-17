@@ -15,3 +15,5 @@ export default function App() {
 // Introduce peer accountability rooms ("Quantum Cohorts") where operators can see friends' active streaks and shield statuses.
 // Smart Hardware / HealthKit & Google Fit Sync:
 // In TheLab, enable direct webhook or Bluetooth sync for daily step counts, resting heart rate, and sleep duration.
+// perform a unit test for multiple user check how many userworks on this apps can multiple workds oir not if work than howmuch .
+// make apps developr and techer only

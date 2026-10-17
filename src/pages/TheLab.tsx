@@ -25,15 +25,8 @@ export interface BioLedgerEntry {
   xpAwarded: number;
 }
 
-export interface BioMission {
-  id: string;
-  title: string;
-  xp: number;
-  time: string;
-  difficulty: 'Easy' | 'Medium' | 'Hard';
-  completed?: boolean;
-  lastCompletedDate?: string;
-}
+import { type BioMission, DEFAULT_PROTOCOLS } from '../lib/bioProtocols';
+export { type BioMission, DEFAULT_PROTOCOLS };
 
 const CATEGORY_CONFIG: Record<BioCategory, { label: string; color: string; bg: string; border: string; text: string; icon: React.ComponentType<{ size?: number; className?: string }> }> = {
   workout:   { label: 'Workout & Training', color: '#10b981', bg: 'bg-emerald-500/10', border: 'border-emerald-500/20', text: 'text-emerald-400', icon: Dumbbell },
@@ -51,14 +44,6 @@ const DEFAULT_BIO_ENTRIES: BioLedgerEntry[] = [
   { id: 'b-4', title: 'Fasted Morning Weigh-In', category: 'mass', value: 74.8, unit: 'kg', notes: 'Baseline stable, target range maintained', date: '2026-10-13', xpAwarded: 20 },
   { id: 'b-5', title: 'Clean Macronutrient & Protein Fuel', category: 'nutrition', value: 165, unit: 'g protein', notes: 'Target protein met with whole food sources', date: '2026-10-13', xpAwarded: 30 },
   { id: 'b-6', title: 'Cold Shock & Endorphin Protocol', category: 'protocol', value: 3, unit: 'mins', notes: '3-minute cold exposure for norepinephrine release', date: '2026-10-12', xpAwarded: 50 },
-];
-
-export const DEFAULT_PROTOCOLS: BioMission[] = [
-  { id: 'bp-1', title: 'Cold Exposure Protocol (2–3 min cold shower)', xp: 50, time: '3 min', difficulty: 'Hard', completed: false },
-  { id: 'bp-2', title: 'Morning Sunlight Saturation & Optic Flow', xp: 25, time: '15 min', difficulty: 'Easy', completed: false },
-  { id: 'bp-3', title: 'Zone 2 Steady-State Cardio or 8k Steps', xp: 40, time: '40 min', difficulty: 'Medium', completed: false },
-  { id: 'bp-4', title: 'Full Spinal Decompression & Hip Mobility', xp: 30, time: '15 min', difficulty: 'Medium', completed: false },
-  { id: 'bp-5', title: 'Digital Fast & Blue-Light Cutoff (Pre-Sleep)', xp: 35, time: '45 min', difficulty: 'Medium', completed: false },
 ];
 
 export function TheLab() {

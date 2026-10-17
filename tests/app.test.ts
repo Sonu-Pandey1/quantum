@@ -269,3 +269,94 @@ describe('Notification Service Contract', () => {
     assert.equal(result.deliveredVia, 'system_notification');
   });
 });
+
+// ─── 5. Offline Mutation Queue Contract ────────────────────────────────
+describe('Offline Mutation Queue Contract', () => {
+  interface MockMutation {
+    id: string;
+    table: string;
+    action: 'upsert' | 'insert' | 'update';
+    payload: any;
+    retries: number;
+  }
+
+  class MockOfflineSyncQueue {
+    queue: MockMutation[] = [];
+    isOnline = false;
+
+    enqueue(item: Omit<MockMutation, 'id' | 'retries'>) {
+      this.queue.push({
+        ...item,
+        id: `m-${Date.now()}-${Math.random()}`,
+        retries: 0,
+      });
+    }
+
+    flush(canSucceed: boolean) {
+      if (!this.isOnline) return 0;
+      if (canSucceed) {
+        const count = this.queue.length;
+        this.queue = [];
+        return count;
+      }
+      return 0;
+    }
+  }
+
+  test('buffers mutations while offline and flushes when reconnected', () => {
+    const sync = new MockOfflineSyncQueue();
+    sync.enqueue({ table: 'profiles', action: 'update', payload: { settings: { theme: 'quantum' } } });
+    sync.enqueue({ table: 'daily_biometrics', action: 'upsert', payload: { water_liters: 3.5 } });
+
+    assert.equal(sync.queue.length, 2);
+    assert.equal(sync.flush(true), 0); // Still offline
+
+    sync.isOnline = true;
+    const flushed = sync.flush(true);
+    assert.equal(flushed, 2);
+    assert.equal(sync.queue.length, 0);
+  });
+});
+
+// ─── 6. Audio Manager Mute & Volume Contract ───────────────────────────
+describe('Audio Manager Mute & Volume Contract', () => {
+  class MockAudioManager {
+    isMuted = false;
+    volume = 1.0;
+
+    toggleMute() {
+      this.isMuted = !this.isMuted;
+      return this.isMuted;
+    }
+
+    setVolume(v: number) {
+      this.volume = Math.max(0, Math.min(1, v));
+    }
+
+    canPlaySound() {
+      return !this.isMuted && this.volume > 0;
+    }
+  }
+
+  test('toggles mute correctly and inhibits sound playback when muted', () => {
+    const audio = new MockAudioManager();
+    assert.equal(audio.canPlaySound(), true);
+
+    const muted = audio.toggleMute();
+    assert.equal(muted, true);
+    assert.equal(audio.canPlaySound(), false);
+
+    audio.toggleMute();
+    assert.equal(audio.canPlaySound(), true);
+  });
+
+  test('clamps volume between 0 and 1', () => {
+    const audio = new MockAudioManager();
+    audio.setVolume(1.8);
+    assert.equal(audio.volume, 1.0);
+
+    audio.setVolume(-0.5);
+    assert.equal(audio.volume, 0.0);
+    assert.equal(audio.canPlaySound(), false);
+  });
+});

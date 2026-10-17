@@ -5,6 +5,7 @@ import { format } from 'date-fns';
 import confetti from 'canvas-confetti';
 import toast from 'react-hot-toast';
 import { audio } from '../lib/audio';
+import { syncQueue } from '../lib/syncQueue';
 
 export type Pillar = 'Study' | 'Health' | 'Finance' | 'Mind';
 
@@ -917,8 +918,27 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
           }
 
           if (userIdRef.current && supabase) {
-            const { error } = await supabase.from('profiles').update(updates).eq('id', userIdRef.current);
-            if (error) console.error('[useProgression] updateProfile error:', error.message);
+            try {
+              const { error } = await supabase.from('profiles').update(updates).eq('id', userIdRef.current);
+              if (error) {
+                console.warn('[useProgression] updateProfile failed, queued offline:', error.message);
+                syncQueue.enqueue({
+                  table: 'profiles',
+                  action: 'update',
+                  payload: updates,
+                  matchKey: 'id',
+                  matchValue: userIdRef.current
+                });
+              }
+            } catch (err) {
+              syncQueue.enqueue({
+                table: 'profiles',
+                action: 'update',
+                payload: updates,
+                matchKey: 'id',
+                matchValue: userIdRef.current
+              });
+            }
           }
         },
         setTheme: (newTheme: string) => {

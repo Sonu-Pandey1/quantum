@@ -4,20 +4,23 @@ import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { BentoGrid } from './components/BentoGrid';
 import { CommandDeck } from './pages/CommandDeck';
-import { PracticeHub } from './pages/PracticeHub';
-import { RankAndRewards } from './pages/RankAndRewards';
 import { ParticleBackground } from './components/ParticleBackground';
-import { AnalyticsMatrix } from './pages/AnalyticsMatrix';
-import { ControlRoom } from './pages/ControlRoom';
-import { Vault } from './pages/Vault';
-import { TheLab } from './pages/TheLab';
-import { EngagementHub } from './pages/EngagementHub';
-import { Onboarding } from './pages/Onboarding';
-import { StrategicControl } from './pages/StrategicControl';
-import { AiCounsel } from './pages/AiCounsel';
 import { supabase } from './lib/supabaseClient';
 import { recordLoginToday } from './hooks/useEngagement';
 import type { Session } from '@supabase/supabase-js';
+
+// ─── DYNAMIC BUNDLE CODE-SPLITTING (LAZY LOADED SECONDARY VIEWS) ───
+const PracticeHub = React.lazy(() => import('./pages/PracticeHub').then(m => ({ default: m.PracticeHub })));
+const RankAndRewards = React.lazy(() => import('./pages/RankAndRewards').then(m => ({ default: m.RankAndRewards })));
+const AnalyticsMatrix = React.lazy(() => import('./pages/AnalyticsMatrix').then(m => ({ default: m.AnalyticsMatrix })));
+const ControlRoom = React.lazy(() => import('./pages/ControlRoom').then(m => ({ default: m.ControlRoom })));
+const Vault = React.lazy(() => import('./pages/Vault').then(m => ({ default: m.Vault })));
+const TheLab = React.lazy(() => import('./pages/TheLab').then(m => ({ default: m.TheLab })));
+const EngagementHub = React.lazy(() => import('./pages/EngagementHub').then(m => ({ default: m.EngagementHub })));
+const StrategicControl = React.lazy(() => import('./pages/StrategicControl').then(m => ({ default: m.StrategicControl })));
+const AiCounsel = React.lazy(() => import('./pages/AiCounsel').then(m => ({ default: m.AiCounsel })));
+const Onboarding = React.lazy(() => import('./pages/Onboarding').then(m => ({ default: m.Onboarding })));
+const DailyThoughtsPage = React.lazy(() => import('./pages/DailyThoughtsPage').then(m => ({ default: m.DailyThoughtsPage })));
 import { AuthScreen } from './components/AuthScreen';
 import { ProgressionProvider, useProgression } from './hooks/useProgression';
 import { LevelUpModal } from './components/LevelUpModal';
@@ -53,6 +56,17 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
   }
 }
 
+function ViewLoader() {
+  return (
+    <div className="flex-1 h-full flex flex-col items-center justify-center p-8 space-y-4">
+      <div className="w-10 h-10 rounded-2xl border-2 border-primary/30 border-t-primary animate-spin shadow-[0_0_20px_rgba(59,130,246,0.3)]" />
+      <p className="text-[10px] uppercase font-black tracking-widest text-textMuted animate-pulse">
+        Initializing Neural View...
+      </p>
+    </div>
+  );
+}
+
 function AppContent({ currentView, setCurrentView, isPortfolioMode, setIsPortfolioMode, isAdmin }: any) {
   return (
     <div className="flex h-screen w-full bg-background overflow-hidden font-sans text-textMain selection:bg-primary/30 relative">
@@ -73,8 +87,10 @@ function AppContent({ currentView, setCurrentView, isPortfolioMode, setIsPortfol
           hideVow={currentView !== 'dashboard'} 
           onNavigateToRank={() => setCurrentView('rank')} 
           onNavigateToDashboard={() => setCurrentView('dashboard')}
+          onNavigateToThoughts={() => setCurrentView('thoughts')}
         />
-        <AnimatePresence mode="wait">
+        <React.Suspense fallback={<ViewLoader />}>
+          <AnimatePresence mode="wait">
           {currentView === 'dashboard' ? (
             <motion.div 
               key="dashboard"
@@ -189,6 +205,17 @@ function AppContent({ currentView, setCurrentView, isPortfolioMode, setIsPortfol
             >
               <RankAndRewards />
             </motion.div>
+          ) : currentView === 'thoughts' ? (
+            <motion.div 
+              key="thoughts"
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.98 }}
+              transition={{ duration: 0.3 }}
+              className="flex-1 h-full overflow-hidden bg-transparent overflow-y-auto"
+            >
+              <DailyThoughtsPage onBack={() => setCurrentView('dashboard')} />
+            </motion.div>
           ) : (
             <motion.div 
               key="strategic_control"
@@ -201,7 +228,8 @@ function AppContent({ currentView, setCurrentView, isPortfolioMode, setIsPortfol
               <StrategicControl />
             </motion.div>
           )}
-        </AnimatePresence>
+          </AnimatePresence>
+        </React.Suspense>
       </main>
     </div>
   );
@@ -305,7 +333,11 @@ function AppContainer() {
   }
 
   if (!state.onboardingCompleted) {
-    return <Onboarding onComplete={() => {}} />;
+    return (
+      <React.Suspense fallback={<ViewLoader />}>
+        <Onboarding onComplete={() => {}} />
+      </React.Suspense>
+    );
   }
 
   return (

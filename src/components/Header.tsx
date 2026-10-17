@@ -1,67 +1,40 @@
 import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { ShieldCheck, Trophy, Zap, Bell, BellOff, Sparkles } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { Trophy, Zap, Bell, BellOff, Sparkles, Volume2, VolumeX, Lightbulb } from 'lucide-react';
 import { useProgression } from '../hooks/useProgression';
 import { audio } from '../lib/audio';
 import { notifier } from '../lib/notifications';
+import { APP_CORE_LABEL } from '../lib/version';
+import { loadSavedThoughts, getTodayThought } from '../lib/dailyThoughts';
 import toast from 'react-hot-toast';
-
-const vows = [
-  "Action over Thinking.",
-  "I speak with confidence.",
-  "Consistency is the ultimate weapon.",
-  "Discipline equals freedom.",
-  "No excuses. Just execution.",
-  "Small progress is still progress.",
-  "I finish what I start.",
-  "Pressure creates strength.",
-  "Focus builds empires.",
-  "My future is built today.",
-  "Every day is a chance to level up.",
-  "I choose growth over comfort.",
-  "Hard work beats hesitation.",
-  "I trust my preparation.",
-  "Energy flows where focus goes.",
-  "I stay calm under pressure.",
-  "Winning starts with self-control.",
-  "I am stronger than my distractions.",
-  "One step daily changes everything.",
-  "I train my mind to stay sharp.",
-  "Discipline will take me where motivation can't.",
-  "I don't wait for perfect moments.",
-  "Confidence comes from action.",
-  "I move forward no matter what.",
-  "My mindset shapes my reality.",
-  "Stay hungry. Stay focused.",
-  "Success is earned, not wished for.",
-  "I control my habits, not the other way around.",
-  "Silence the doubt. Execute the plan.",
-  "I am becoming unstoppable.",
-  "Progress over perfection.",
-  "Fear disappears through repetition.",
-  "Results come from consistency.",
-  "My limits are meant to be broken.",
-  "I compete only with yesterday’s version of myself.",
-  "Deep focus creates powerful results.",
-  "I was built for bigger things.",
-  "Strong mind. Strong life.",
-  "The grind will pay off.",
-  "I stay locked in on my mission."
-];
 
 export function Header({ 
   hideVow = false, 
   onNavigateToRank, 
-  onNavigateToDashboard
+  onNavigateToDashboard,
+  onNavigateToThoughts
 }: { 
   hideVow?: boolean; 
   onNavigateToRank?: () => void; 
   onNavigateToDashboard?: () => void;
+  onNavigateToThoughts?: () => void;
 }) {
   const { state } = useProgression();
-  const displayVows = state.goals && state.goals.length > 0 ? state.goals : vows;
-  const [index, setIndex] = useState(0);
+  const allThoughts = loadSavedThoughts(state.settings?.customThoughts);
+  const todayThought = getTodayThought(allThoughts);
   const [notifGranted, setNotifGranted] = useState(false);
+  const [isMuted, setIsMuted] = useState(() => audio.isAudioMuted());
+
+  const handleToggleMute = () => {
+    const nextMuted = audio.toggleMute();
+    setIsMuted(nextMuted);
+    if (!nextMuted) {
+      audio.playSuccess();
+      toast.success('Sound Effects Active 🔊', { icon: '🔊' });
+    } else {
+      toast('Sound Effects Muted 🔇', { icon: '🔇' });
+    }
+  };
 
   useEffect(() => {
     setNotifGranted(notifier.isGranted());
@@ -97,14 +70,6 @@ export function Header({
     }
   };
 
-  useEffect(() => {
-    if (hideVow) return;
-    const interval = setInterval(() => {
-      setIndex((prev) => (prev + 1) % displayVows.length);
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [hideVow, displayVows.length]);
-
   const getProgress = (xp: number) => {
     return (Math.max(0, xp) % 100);
   };
@@ -126,28 +91,36 @@ export function Header({
             QUANTUM <span className="text-primary group-hover:text-white transition-colors">GROWTH</span>
           </h2>
           <p className="text-[8px] md:text-[9px] text-textMuted uppercase tracking-[0.2em] font-bold opacity-50">
-            CORE v2.4
+            {APP_CORE_LABEL}
           </p>
         </div>
       </div>
 
-      {/* Center: Global Vow (Conditional) */}
+      {/* Center: Daily Thought & Protocol Affirmation */}
       {!hideVow && (
-        <div className="hidden lg:flex items-center space-x-3 px-6 py-2 rounded-full bg-white/5 border border-white/10 shadow-inner max-w-md overflow-hidden">
-          <ShieldCheck className="text-primary shrink-0" size={16} />
-          <div className="relative h-5 overflow-hidden min-w-[200px]">
-            <AnimatePresence mode="wait">
-              <motion.p
-                key={index}
-                initial={{ y: 15, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                exit={{ y: -15, opacity: 0 }}
-                transition={{ duration: 0.5, ease: "anticipate" }}
-                className="text-xs font-bold text-textMain/80 absolute w-full whitespace-nowrap italic"
-              >
-                "{displayVows[index]}"
-              </motion.p>
-            </AnimatePresence>
+        <div 
+          onClick={() => {
+            audio.playClick();
+            if (onNavigateToThoughts) onNavigateToThoughts();
+          }}
+          title="Daily Thought Protocol - Click to manage & view all thoughts"
+          className="hidden lg:flex items-center space-x-3 px-5 py-2 rounded-2xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 hover:border-primary/40 shadow-inner max-w-lg overflow-hidden cursor-pointer transition-all group"
+        >
+          <div className="w-6 h-6 rounded-lg bg-primary/20 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
+            <Lightbulb className="text-primary" size={13} />
+          </div>
+          <div className="flex flex-col min-w-[240px] max-w-md overflow-hidden">
+            <div className="flex items-center gap-2">
+              <span className="text-[8px] font-black uppercase tracking-widest text-primary">Daily Thought</span>
+              <span className="text-[8px] text-textMuted">• {todayThought.category}</span>
+              {todayThought.author && (
+                <span className="text-[8px] text-textMuted/60 truncate max-w-[120px]">— {todayThought.author}</span>
+              )}
+              <span className="text-[8px] text-white/30 group-hover:text-primary transition-colors ml-auto font-mono">View All →</span>
+            </div>
+            <p className="text-xs font-semibold text-textMain/90 truncate italic">
+              "{todayThought.quote}"
+            </p>
           </div>
         </div>
       )}
@@ -166,6 +139,19 @@ export function Header({
         >
           <Sparkles size={16} className="animate-pulse" />
           <span className="hidden sm:inline text-[10px] font-black uppercase tracking-wider">AI Command</span>
+        </button>
+
+        {/* Audio Mute / Unmute Toggle */}
+        <button
+          onClick={handleToggleMute}
+          title={isMuted ? "Audio Muted - Click to Unmute" : "Audio Active - Click to Mute"}
+          className={`p-2 rounded-xl border transition-all ${
+            !isMuted
+              ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20 shadow-[0_0_12px_rgba(16,185,129,0.2)]'
+              : 'bg-white/5 border-white/10 text-textMuted hover:text-white hover:bg-white/10'
+          }`}
+        >
+          {isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
         </button>
 
         {/* Phone / Device Notification Permission Toggle */}
