@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Activity, HeartPulse, Moon, Scale, Droplets, 
   Plus, Trash2, Sparkles, RefreshCw, Check, 
-  Dumbbell, X, BarChart3, Apple, Timer
+  Dumbbell, X, BarChart3, Apple, Timer, Pencil
 } from 'lucide-react';
 import { useProgression } from '../hooks/useProgression';
 import { audio } from '../lib/audio';
@@ -53,7 +53,7 @@ const DEFAULT_BIO_ENTRIES: BioLedgerEntry[] = [
   { id: 'b-6', title: 'Cold Shock & Endorphin Protocol', category: 'protocol', value: 3, unit: 'mins', notes: '3-minute cold exposure for norepinephrine release', date: '2026-10-12', xpAwarded: 50 },
 ];
 
-const DEFAULT_PROTOCOLS: BioMission[] = [
+export const DEFAULT_PROTOCOLS: BioMission[] = [
   { id: 'bp-1', title: 'Cold Exposure Protocol (2–3 min cold shower)', xp: 50, time: '3 min', difficulty: 'Hard', completed: false },
   { id: 'bp-2', title: 'Morning Sunlight Saturation & Optic Flow', xp: 25, time: '15 min', difficulty: 'Easy', completed: false },
   { id: 'bp-3', title: 'Zone 2 Steady-State Cardio or 8k Steps', xp: 40, time: '40 min', difficulty: 'Medium', completed: false },
@@ -339,10 +339,81 @@ export function TheLab() {
     toast.success(`💧 +${liters}L Water logged! +15 Health XP`);
   };
 
-  // Complete a bio protocol mission
+  // Add / Edit / Delete Protocol Modal State
+  const [protocolModalOpen, setProtocolModalOpen] = useState(false);
+  const [editingProtocol, setEditingProtocol] = useState<BioMission | null>(null);
+  const [protocolForm, setProtocolForm] = useState<{
+    title: string;
+    time: string;
+    xp: number;
+    difficulty: 'Easy' | 'Medium' | 'Hard';
+  }>({
+    title: '',
+    time: '15 min',
+    xp: 30,
+    difficulty: 'Medium',
+  });
+
+  const handleOpenAddProtocol = () => {
+    setEditingProtocol(null);
+    setProtocolForm({ title: '', time: '15 min', xp: 30, difficulty: 'Medium' });
+    setProtocolModalOpen(true);
+  };
+
+  const handleOpenEditProtocol = (p: BioMission, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingProtocol(p);
+    setProtocolForm({
+      title: p.title,
+      time: p.time,
+      xp: p.xp,
+      difficulty: p.difficulty,
+    });
+    setProtocolModalOpen(true);
+  };
+
+  const handleDeleteProtocol = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    audio.playClick();
+    setProtocols(prev => prev.filter(p => p.id !== id));
+    toast.success('Protocol removed.');
+  };
+
+  const handleSaveProtocol = () => {
+    if (!protocolForm.title.trim()) {
+      toast.error('Protocol title required.');
+      return;
+    }
+    audio.playSuccess();
+    if (editingProtocol) {
+      setProtocols(prev => prev.map(p => p.id === editingProtocol.id ? { ...p, ...protocolForm, title: protocolForm.title.trim() } : p));
+      toast.success('Protocol updated.');
+    } else {
+      const newProtocol: BioMission = {
+        id: `bp-${Date.now()}`,
+        title: protocolForm.title.trim(),
+        time: protocolForm.time.trim() || '15 min',
+        xp: Number(protocolForm.xp) || 30,
+        difficulty: protocolForm.difficulty,
+        completed: false,
+      };
+      setProtocols(prev => [newProtocol, ...prev]);
+      toast.success('New health protocol created!');
+    }
+    setProtocolModalOpen(false);
+  };
+
+  // Complete / uncomplete a bio protocol mission
   const handleCompleteProtocol = async (id: string) => {
     const mission = protocols.find(p => p.id === id);
-    if (!mission || mission.completed) return;
+    if (!mission) return;
+
+    if (mission.completed) {
+      audio.playClick();
+      setProtocols(prev => prev.map(p => p.id === id ? { ...p, completed: false } : p));
+      toast.success('Protocol marked pending.');
+      return;
+    }
 
     audio.playSuccess();
     setProtocols(prev => prev.map(p => p.id === id ? { ...p, completed: true, lastCompletedDate: todayDateStr } : p));
@@ -618,9 +689,16 @@ export function TheLab() {
 
           <div className="flex items-center gap-2">
             <button
+              onClick={handleOpenAddProtocol}
+              className="py-1.5 px-3 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer hover:scale-[1.02] active:scale-95"
+            >
+              <Plus size={12} />
+              <span>New Protocol</span>
+            </button>
+            <button
               onClick={handleGenerateAI}
               disabled={generating}
-              className="py-1.5 px-3 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 transition-all disabled:opacity-50 cursor-pointer"
+              className="py-1.5 px-3 bg-white/5 hover:bg-white/10 border border-white/10 text-textMuted hover:text-white rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 transition-all disabled:opacity-50 cursor-pointer"
             >
               {generating ? <RefreshCw size={12} className="animate-spin" /> : <Sparkles size={12} />}
               <span>{generating ? 'Calibrating...' : 'AI Calibrate'}</span>
@@ -633,27 +711,53 @@ export function TheLab() {
             <div
               key={p.id}
               onClick={() => handleCompleteProtocol(p.id)}
-              className={`p-4 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between gap-3 ${
+              className={`p-4 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between gap-3 group/card ${
                 p.completed
                   ? 'bg-emerald-500/10 border-emerald-500/30'
                   : 'bg-white/[0.02] border-white/5 hover:border-emerald-500/30 hover:bg-white/[0.04]'
               }`}
             >
               <div className="flex items-start justify-between gap-2">
-                <div className="flex items-center gap-2.5">
-                  <div className={`w-6 h-6 rounded-lg flex items-center justify-center border transition-all ${
+                <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                  <div className={`w-6 h-6 rounded-lg flex items-center justify-center border transition-all shrink-0 ${
                     p.completed ? 'bg-emerald-500 border-emerald-500 text-black' : 'border-white/20'
                   }`}>
                     {p.completed && <Check size={14} className="stroke-[3]" />}
                   </div>
-                  <h4 className={`text-xs font-bold leading-snug ${p.completed ? 'line-through text-zinc-400' : 'text-textMain'}`}>
+                  <h4 className={`text-xs font-bold leading-snug truncate ${p.completed ? 'line-through text-zinc-400' : 'text-textMain'}`}>
                     {p.title}
                   </h4>
+                </div>
+
+                <div className="flex items-center gap-1 shrink-0 opacity-70 group-hover/card:opacity-100 transition-opacity">
+                  <button
+                    onClick={(e) => handleOpenEditProtocol(p, e)}
+                    title="Edit Protocol"
+                    className="p-1 rounded-md text-textMuted hover:text-white hover:bg-white/10 transition-colors"
+                  >
+                    <Pencil size={11} />
+                  </button>
+                  <button
+                    onClick={(e) => handleDeleteProtocol(p.id, e)}
+                    title="Delete Protocol"
+                    className="p-1 rounded-md text-textMuted hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                  >
+                    <Trash2 size={11} />
+                  </button>
                 </div>
               </div>
 
               <div className="flex items-center justify-between text-[10px] pt-1 border-t border-white/5">
-                <span className="text-textMuted font-mono">{p.time}</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-textMuted font-mono">{p.time}</span>
+                  <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider border ${
+                    p.difficulty === 'Hard' ? 'bg-red-500/10 border-red-500/20 text-red-400' :
+                    p.difficulty === 'Medium' ? 'bg-amber-500/10 border-amber-500/20 text-amber-400' :
+                    'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                  }`}>
+                    {p.difficulty}
+                  </span>
+                </div>
                 <span className="font-black text-emerald-400">+{p.xp} Health XP</span>
               </div>
             </div>
@@ -876,6 +980,116 @@ export function TheLab() {
                   </button>
                 </div>
               </form>
+            </motion.div>
+          </div>
+        )}
+
+        {/* ─── MODAL: ADD / EDIT BIO PROTOCOL ─── */}
+        {protocolModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-surface border border-white/10 p-6 rounded-3xl w-full max-w-md space-y-4 shadow-2xl relative"
+            >
+              <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                <h3 className="text-sm font-black uppercase tracking-wider text-textMain flex items-center gap-2">
+                  <Timer size={16} className="text-emerald-400" />
+                  <span>{editingProtocol ? 'Edit Health Protocol' : 'New Health Protocol'}</span>
+                </h3>
+                <button
+                  onClick={() => setProtocolModalOpen(false)}
+                  className="text-textMuted hover:text-white transition-colors"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-wider text-textMuted block mb-1">
+                    Protocol Title
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Zone 2 Cardio 40m, Cold Shower 3m..."
+                    value={protocolForm.title}
+                    onChange={e => setProtocolForm(prev => ({ ...prev, title: e.target.value }))}
+                    className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-zinc-500 focus:border-emerald-500 outline-none"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-wider text-textMuted block mb-1">
+                      Target Duration
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. 15 min, 30 min..."
+                      value={protocolForm.time}
+                      onChange={e => setProtocolForm(prev => ({ ...prev, time: e.target.value }))}
+                      className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-zinc-500 focus:border-emerald-500 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-wider text-textMuted block mb-1">
+                      Health XP Reward
+                    </label>
+                    <input
+                      type="number"
+                      min={10}
+                      max={150}
+                      value={protocolForm.xp}
+                      onChange={e => setProtocolForm(prev => ({ ...prev, xp: parseInt(e.target.value, 10) || 30 }))}
+                      className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-zinc-500 focus:border-emerald-500 outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-wider text-textMuted block mb-1.5">
+                    Difficulty Tier
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(['Easy', 'Medium', 'Hard'] as const).map(d => (
+                      <button
+                        type="button"
+                        key={d}
+                        onClick={() => setProtocolForm(prev => ({ ...prev, difficulty: d }))}
+                        className={`py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider border transition-all ${
+                          protocolForm.difficulty === d
+                            ? d === 'Hard' ? 'bg-red-500/20 text-red-300 border-red-500/40' :
+                              d === 'Medium' ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' :
+                              'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                            : 'bg-white/5 text-textMuted border-white/5 hover:text-white'
+                        }`}
+                      >
+                        {d}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="pt-2 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setProtocolModalOpen(false)}
+                    className="flex-1 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-textMuted hover:text-white font-black text-xs uppercase tracking-wider transition-all"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveProtocol}
+                    className="flex-1 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-black text-xs uppercase tracking-wider transition-all shadow-[0_0_15px_rgba(16,185,129,0.3)]"
+                  >
+                    {editingProtocol ? 'Update Protocol' : 'Create Protocol'}
+                  </button>
+                </div>
+              </div>
             </motion.div>
           </div>
         )}

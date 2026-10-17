@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import {
   Flame, Trophy, Calendar, Zap, Clock, Activity, Target,
@@ -8,7 +8,7 @@ import { Skeleton, ListSkeleton } from '../components/Skeleton';
 import { useEngagement } from '../hooks/useEngagement';
 import { ActivityGraph } from '../components/ActivityGraph';
 import { useProgression } from '../hooks/useProgression';
-import { format, parseISO } from 'date-fns';
+import { format, parseISO, isSameDay } from 'date-fns';
 import { ProgressAnalytics } from '../components/ProgressAnalytics';
 
 export function EngagementHub({ onNavigateToRank }: { onNavigateToRank?: () => void }) {
@@ -43,67 +43,113 @@ export function EngagementHub({ onNavigateToRank }: { onNavigateToRank?: () => v
   const consistencyPct =
     stats.totalLoginDays > 0
       ? Math.min(100, Math.round((stats.currentLoginStreak / stats.totalLoginDays) * 100))
-      : 0;
+      : (stats.currentLoginStreak > 0 ? 100 : 0);
 
   // Focus Session Calculations
   const executionLogs = settings?.execution_logs || [];
   
-  // Total focused hours
-  const totalMinutesFocused = executionLogs.reduce((sum: number, log: any) => sum + (log.duration_spent || 0), 0);
-  const totalHoursFocused = (totalMinutesFocused / 60).toFixed(1);
+  // Real-time Day Tracker (auto-refreshes every 30s & on window focus)
+  const [currentDateStr, setCurrentDateStr] = useState(() => format(new Date(), 'yyyy-MM-dd'));
+  const [focusScope, setFocusScope] = useState<'today' | 'all'>('today');
 
-  // Session completion rate
-  const totalStartedSessions = executionLogs.length;
-  const completedSessions = executionLogs.filter((log: any) => log.status === 'completed').length;
-  const sessionCompletionRate = totalStartedSessions > 0 ? Math.round((completedSessions / totalStartedSessions) * 100) : 0;
+  useEffect(() => {
+    const checkDay = () => {
+      const today = format(new Date(), 'yyyy-MM-dd');
+      if (today !== currentDateStr) {
+        setCurrentDateStr(today);
+      }
+    };
+    const interval = setInterval(checkDay, 30000);
+    window.addEventListener('focus', checkDay);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', checkDay);
+    };
+  }, [currentDateStr]);
+
+  // Today's specific logs
+  const todayLogs = useMemo(() => {
+    return executionLogs.filter((log: any) => log.date === currentDateStr);
+  }, [executionLogs, currentDateStr]);
+
+  // Active logs based on current scope ('today' | 'all')
+  const scopeExecutionLogs = useMemo(() => {
+    if (focusScope === 'today') {
+      return todayLogs;
+    }
+    return executionLogs;
+  }, [focusScope, todayLogs, executionLogs]);
+
+  // Focused minutes & formatted hours for active scope
+  const scopeMinutesFocused = useMemo(() => {
+    return scopeExecutionLogs.reduce((sum: number, log: any) => sum + (log.duration_spent || 0), 0);
+  }, [scopeExecutionLogs]);
+
+  const scopeHoursFormatted = useMemo(() => {
+    if (scopeMinutesFocused === 0) return '0h 0m';
+    const hrs = Math.floor(scopeMinutesFocused / 60);
+    const mins = scopeMinutesFocused % 60;
+    if (hrs === 0) return `${mins}m`;
+    return `${hrs}h ${mins}m`;
+  }, [scopeMinutesFocused]);
+
+  // Session completion rate for active scope
+  const scopeStartedSessions = scopeExecutionLogs.length;
+  const scopeCompletedSessions = scopeExecutionLogs.filter((log: any) => log.status === 'completed').length;
+  const scopeCompletionRate = scopeStartedSessions > 0 ? Math.round((scopeCompletedSessions / scopeStartedSessions) * 100) : 0;
 
   // Today's attempted vs scheduled timetable tasks
-  const todayStr = format(new Date(), 'yyyy-MM-dd');
   const todayDow = new Date().getDay();
-  const todayAttemptedSessions = executionLogs.filter((log: any) => log.date === todayStr).length;
+  const todayAttemptedSessions = todayLogs.length;
   const todayTimetableTasksCount = (settings?.timetable || []).filter((t: any) => {
     const d = t.dayOfWeek !== undefined ? t.dayOfWeek : t.day_of_week;
     return d === undefined || d === todayDow;
-  }).length || 5; // fallback to default 5
+  }).length || 5;
 
-  // Pillar time spent distribution (in minutes)
-  const pillarDurations: Record<string, number> = { Study: 0, Health: 0, Finance: 0, Mind: 0 };
-  executionLogs.forEach((log: any) => {
-    const p = log.pillar || 'Mind';
-    if (pillarDurations[p] !== undefined) {
-      pillarDurations[p] += (log.duration_spent || 0);
-    }
-  });
+  // Pillar time spent distribution (in minutes) for active scope
+  const scopePillarDurations = useMemo(() => {
+    const durations: Record<string, number> = { Study: 0, Health: 0, Finance: 0, Mind: 0 };
+    scopeExecutionLogs.forEach((log: any) => {
+      const p = log.pillar || 'Mind';
+      if (durations[p] !== undefined) {
+        durations[p] += (log.duration_spent || 0);
+      }
+    });
+    return durations;
+  }, [scopeExecutionLogs]);
 
-  // Smart rule-based AI Discipline Analyst Insights
+  // Smart rule-based AI Discipline Analyst Insights (analyzes active scope with graceful fallback)
   const generateAiInsights = () => {
-    if (executionLogs.length === 0) {
+    const logsToAnalyze = scopeExecutionLogs.length > 0 ? scopeExecutionLogs : executionLogs;
+    if (logsToAnalyze.length === 0) {
       return [
-        "AI Advisor: System initialization is complete, but no active focus logs are recorded yet.",
+        focusScope === 'today'
+          ? "AI Advisor: No focus sessions recorded yet today."
+          : "AI Advisor: System initialization is complete, but no active focus logs are recorded yet.",
         "Tip: Start an Action Protocol session in 'The Engine' to begin generating discipline analytics.",
-        "Recommendation: Aim to log a 30-minute Study block tomorrow to verify database sync."
+        "Recommendation: Aim to log a 30-minute Study block to verify real-time telemetry."
       ];
     }
 
     const insights = [];
     
     // Check midway drops
-    const midwayLogs = executionLogs.filter((log: any) => log.status === 'left_midway');
+    const midwayLogs = logsToAnalyze.filter((log: any) => log.status === 'left_midway');
     if (midwayLogs.length > 0) {
-      const percentageMidway = Math.round((midwayLogs.length / executionLogs.length) * 100);
+      const percentageMidway = Math.round((midwayLogs.length / logsToAnalyze.length) * 100);
       if (percentageMidway >= 20) {
-        insights.push(`AI Advisor: We detected that ${percentageMidway}% of focus sessions were terminated midway. This suggests a pattern of split attention. Consider breaking study sessions into shorter 25m Pomodoros.`);
+        insights.push(`AI Advisor: ${percentageMidway}% of ${focusScope === 'today' ? "today's" : ""} focus sessions were terminated midway. This suggests split attention. Consider 25m Pomodoros.`);
       } else {
-        insights.push(`AI Advisor: You completed most of your started sessions. Keep using detailed justifications for early endings to refine focus metrics.`);
+        insights.push(`AI Advisor: High follow-through rate! Most of your sessions reached completion without early dropout.`);
       }
     } else {
-      insights.push(`AI Advisor: Outstanding discipline! 100% of your started sessions reached completion without midway cancellations.`);
+      insights.push(`AI Advisor: Outstanding discipline! 100% of ${focusScope === 'today' ? "today's" : "your"} started sessions reached full completion.`);
     }
 
     // Check most focused pillar
     let topPillar = 'Study';
     let maxMinutes = 0;
-    Object.entries(pillarDurations).forEach(([p, mins]) => {
+    Object.entries(scopePillarDurations).forEach(([p, mins]) => {
       if (mins > maxMinutes) {
         maxMinutes = mins;
         topPillar = p;
@@ -111,21 +157,41 @@ export function EngagementHub({ onNavigateToRank }: { onNavigateToRank?: () => v
     });
 
     if (maxMinutes > 0) {
-      insights.push(`Pillar Analysis: Your highest focus volume is in the '${topPillar}' pillar (${Math.round(maxMinutes)} minutes). Ensure you balance study blocks with recovery protocols in 'Mind'.`);
+      insights.push(`Pillar Analysis: Highest focus volume is in '${topPillar}' (${Math.round(maxMinutes)}m). Balance with recovery protocols in 'Mind'.`);
     }
 
     // Check average session length
-    const avgSessionLength = Math.round(totalMinutesFocused / executionLogs.length);
+    const totalMins = logsToAnalyze.reduce((sum: number, log: any) => sum + (log.duration_spent || 0), 0);
+    const avgSessionLength = Math.round(totalMins / logsToAnalyze.length);
     if (avgSessionLength < 25) {
-      insights.push(`Efficiency Alert: Your average focus duration is ${avgSessionLength} mins. Shorter sessions are useful, but extending continuous focus blocks to 45m will trigger deeper cognitive consolidation.`);
+      insights.push(`Efficiency Alert: Average focus duration is ${avgSessionLength}m. Extending focus blocks to 45m triggers deeper cognitive consolidation.`);
     } else {
-      insights.push(`Focus Range: Your average focus block duration is ${avgSessionLength} mins. This is within the optimal cognitive window for deep work.`);
+      insights.push(`Focus Range: Average focus duration is ${avgSessionLength}m — inside the optimal cognitive window for deep work.`);
     }
 
     return insights;
   };
 
   const aiInsights = generateAiInsights();
+
+  // Execution Logs sorted newest / latest on top
+  const sortedExecutionLogs = useMemo(() => {
+    return [...executionLogs].sort((a: any, b: any) => {
+      const timeA = new Date(a.ended_at || a.started_at || a.created_at || (a.date ? `${a.date}T00:00:00` : 0)).getTime();
+      const timeB = new Date(b.ended_at || b.started_at || b.created_at || (b.date ? `${b.date}T00:00:00` : 0)).getTime();
+      if (timeA !== timeB) return timeB - timeA;
+      const idA = typeof a.id === 'number' ? a.id : parseInt(String(a.id).replace(/\D/g, '') || '0', 10);
+      const idB = typeof b.id === 'number' ? b.id : parseInt(String(b.id).replace(/\D/g, '') || '0', 10);
+      return idB - idA;
+    });
+  }, [executionLogs]);
+
+  // Recent Activity Feed sorted newest / latest on top
+  const sortedRecentActivity = useMemo(() => {
+    return [...stats.recentActivity].sort((a, b) => {
+      return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+    });
+  }, [stats.recentActivity]);
 
   return (
     <motion.div
@@ -164,9 +230,9 @@ export function EngagementHub({ onNavigateToRank }: { onNavigateToRank?: () => v
               value={stats.loading ? '—' : String(stats.currentLoginStreak)}
               unit="Days"
               icon={<Flame className="text-orange-500" size={18} />}
-              sub={stats.lastLoginDate
+              sub={stats.lastLoginDate && !isSameDay(parseISO(stats.lastLoginDate), new Date())
                 ? `Last: ${format(parseISO(stats.lastLoginDate), 'MMM d')}`
-                : 'None'}
+                : 'Active Today 🔥'}
               color="orange"
             />
           </div>
@@ -176,6 +242,7 @@ export function EngagementHub({ onNavigateToRank }: { onNavigateToRank?: () => v
               value={stats.loading ? '—' : String(stats.longestLoginStreak)}
               unit="Days"
               icon={<Trophy className="text-amber-500" size={18} />}
+              sub="Longest Streak"
               color="amber"
             />
           </div>
@@ -185,6 +252,7 @@ export function EngagementHub({ onNavigateToRank }: { onNavigateToRank?: () => v
               value={stats.loading ? '—' : String(stats.totalLoginDays)}
               unit="Days"
               icon={<Calendar className="text-primary" size={18} />}
+              sub="Lifetime Logins"
               color="blue"
             />
           </div>
@@ -194,18 +262,14 @@ export function EngagementHub({ onNavigateToRank }: { onNavigateToRank?: () => v
               value={stats.loading ? '—' : String(consistencyPct)}
               unit="%"
               icon={<ShieldCheck className="text-emerald-500" size={18} />}
+              sub="Consistency Rate"
               color="emerald"
             />
           </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mt-6">
-          {/* ─── Neural Progress Analytics ────────────────────────── */}
-          <div className="lg:col-span-12">
-            <ProgressAnalytics />
-          </div>
-
-          {/* XP Summary */}
+          {/* ─── XP & Profile Summary ─────────────────────────────── */}
           <div className="lg:col-span-12 glass-panel p-4 md:p-6 border border-primary/10 rounded-2xl flex flex-col md:flex-row flex-wrap gap-4 md:items-center">
             {stats.loading ? (
               <>
@@ -267,35 +331,80 @@ export function EngagementHub({ onNavigateToRank }: { onNavigateToRank?: () => v
             <ActivityGraph />
           </div>
 
+          {/* ─── Neural Progress Analytics ────────────────────────── */}
+          <div className="lg:col-span-12">
+            <ProgressAnalytics />
+          </div>
+
           {/* ─── Focus Session Metrics & logs ────────────────────── */}
           <div className="lg:col-span-12 grid grid-cols-1 lg:grid-cols-3 gap-6">
             
             {/* Focus Metrics Panel */}
             <div className="lg:col-span-1 glass-panel p-5 rounded-2xl border border-primary/10 flex flex-col justify-between space-y-4">
-              <h4 className="text-[10px] font-black text-textMuted uppercase tracking-widest flex items-center">
-                <Target size={14} className="mr-2 text-primary" /> Focus Statistics
-              </h4>
+              <div className="flex items-center justify-between">
+                <h4 className="text-[10px] font-black text-textMuted uppercase tracking-widest flex items-center">
+                  <Target size={14} className="mr-2 text-primary" /> Focus Statistics
+                </h4>
+                {/* Day-Wise vs All-Time Switcher */}
+                <div className="flex items-center bg-surfaceHighlight/60 p-0.5 rounded-lg border border-white/5 text-[9px] font-black uppercase tracking-wider">
+                  <button
+                    onClick={() => setFocusScope('today')}
+                    className={`px-2.5 py-1 rounded-md transition-all ${
+                      focusScope === 'today'
+                        ? 'bg-primary text-background shadow-xs font-black'
+                        : 'text-textMuted hover:text-textMain'
+                    }`}
+                  >
+                    Today
+                  </button>
+                  <button
+                    onClick={() => setFocusScope('all')}
+                    className={`px-2.5 py-1 rounded-md transition-all ${
+                      focusScope === 'all'
+                        ? 'bg-primary text-background shadow-xs font-black'
+                        : 'text-textMuted hover:text-textMain'
+                    }`}
+                  >
+                    All Time
+                  </button>
+                </div>
+              </div>
               <div className="space-y-4 flex-1 flex flex-col justify-center">
                 <div>
-                  <p className="text-3xl font-black text-textMain">{totalHoursFocused} hrs</p>
-                  <p className="text-[10px] text-textMuted uppercase">Total Time Focused</p>
+                  <div className="flex items-baseline space-x-2">
+                    <p className="text-3xl font-black text-textMain">{scopeHoursFormatted}</p>
+                    <span className="text-[10px] text-textMuted font-mono">({scopeMinutesFocused}m)</span>
+                  </div>
+                  <p className="text-[10px] text-textMuted uppercase tracking-wider mt-0.5">
+                    {focusScope === 'today' ? `Focus Time Today (${format(new Date(), 'MMM d')})` : 'Total Time Focused (All Time)'}
+                  </p>
                 </div>
                 <div>
-                  <p className="text-3xl font-black text-primary">{sessionCompletionRate}%</p>
-                  <p className="text-[10px] text-textMuted uppercase">Session Completion Rate</p>
+                  <div className="flex items-baseline space-x-2">
+                    <p className="text-3xl font-black text-primary">{scopeCompletionRate}%</p>
+                    <span className="text-[10px] text-textMuted font-mono">({scopeCompletedSessions}/{scopeStartedSessions} done)</span>
+                  </div>
+                  <p className="text-[10px] text-textMuted uppercase tracking-wider mt-0.5">
+                    {focusScope === 'today' ? "Today's Completion Rate" : 'Session Completion Rate'}
+                  </p>
                 </div>
                 <div>
                   <p className="text-3xl font-black text-emerald-400">{todayAttemptedSessions} / {todayTimetableTasksCount}</p>
-                  <p className="text-[10px] text-textMuted uppercase">Protocols Attempted Today</p>
+                  <p className="text-[10px] text-textMuted uppercase tracking-wider mt-0.5">Protocols Attempted Today</p>
                 </div>
               </div>
             </div>
 
             {/* Pillar Focus Distribution Chart */}
             <div className="lg:col-span-1 glass-panel p-5 rounded-2xl border border-primary/10 space-y-4">
-              <h4 className="text-[10px] font-black text-textMuted uppercase tracking-widest flex items-center">
-                <Activity size={14} className="mr-2 text-emerald-400" /> Pillar Focus Volume
-              </h4>
+              <div className="flex items-center justify-between">
+                <h4 className="text-[10px] font-black text-textMuted uppercase tracking-widest flex items-center">
+                  <Activity size={14} className="mr-2 text-emerald-400" /> Pillar Focus Volume
+                </h4>
+                <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-surfaceHighlight/60 border border-white/5 text-emerald-400">
+                  {focusScope === 'today' ? 'Day-Wise' : 'All Time'}
+                </span>
+              </div>
               <div className="space-y-3.5 pt-2">
                 {[
                   { name: 'Study', color: 'bg-blue-500', text: 'text-blue-400', border: 'border-blue-500/20' },
@@ -303,8 +412,8 @@ export function EngagementHub({ onNavigateToRank }: { onNavigateToRank?: () => v
                   { name: 'Finance', color: 'bg-amber-500', text: 'text-amber-400', border: 'border-amber-500/20' },
                   { name: 'Mind', color: 'bg-purple-500', text: 'text-purple-400', border: 'border-purple-500/20' },
                 ].map(pillar => {
-                  const mins = pillarDurations[pillar.name] || 0;
-                  const pct = totalMinutesFocused > 0 ? Math.round((mins / totalMinutesFocused) * 100) : 0;
+                  const mins = scopePillarDurations[pillar.name] || 0;
+                  const pct = scopeMinutesFocused > 0 ? Math.round((mins / scopeMinutesFocused) * 100) : 0;
                   return (
                     <div key={pillar.name} className="space-y-1">
                       <div className="flex justify-between text-xs font-bold">
@@ -312,11 +421,18 @@ export function EngagementHub({ onNavigateToRank }: { onNavigateToRank?: () => v
                         <span className="text-textMuted">{Math.round(mins)} mins ({pct}%)</span>
                       </div>
                       <div className="w-full h-2 bg-surfaceHighlight rounded-full overflow-hidden border border-white/5">
-                        <div className={`h-full ${pillar.color} rounded-full`} style={{ width: `${pct}%` }} />
+                        <div className={`h-full ${pillar.color} rounded-full transition-all duration-500`} style={{ width: `${pct}%` }} />
                       </div>
                     </div>
                   );
                 })}
+                {scopeMinutesFocused === 0 && (
+                  <p className="text-[10px] text-textMuted italic text-center pt-2">
+                    {focusScope === 'today'
+                      ? "No sessions logged today yet · Start in The Engine"
+                      : "No focus sessions logged so far"}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -363,12 +479,24 @@ export function EngagementHub({ onNavigateToRank }: { onNavigateToRank?: () => v
                       </tr>
                     </thead>
                     <tbody>
-                      {executionLogs.map((log: any, idx: number) => {
-                        const dateStr = log.date ? format(new Date(log.date), 'MMM d, yyyy') : 'Recent';
+                      {sortedExecutionLogs.map((log: any, idx: number) => {
+                        const dateStr = log.ended_at
+                          ? format(parseISO(log.ended_at), 'MMM d, yyyy · h:mm a')
+                          : log.date
+                          ? `${format(new Date(log.date), 'MMM d, yyyy')}${log.scheduled_start ? ` · ${log.scheduled_start}` : ''}`
+                          : 'Recent';
+                        const isLatest = idx === 0;
                         return (
-                          <tr key={log.id || idx} className="border-b border-white/5 hover:bg-surfaceHighlight/20 transition-colors">
+                          <tr key={log.id || idx} className={`border-b border-white/5 hover:bg-surfaceHighlight/20 transition-colors ${isLatest ? 'bg-primary/[0.03]' : ''}`}>
                             <td className="p-3 font-bold text-textMain">
-                              <div>{log.title}</div>
+                              <div className="flex items-center space-x-2">
+                                <span>{log.title}</span>
+                                {isLatest && (
+                                  <span className="px-1.5 py-0.2 bg-primary/20 text-primary border border-primary/30 rounded text-[8px] font-black uppercase tracking-wider">
+                                    Latest
+                                  </span>
+                                )}
+                              </div>
                               <div className="text-[9px] text-textMuted font-medium">{dateStr} · {log.scheduled_start || '--'} - {log.scheduled_end || '--'}</div>
                             </td>
                             <td className="p-3">
@@ -420,12 +548,14 @@ export function EngagementHub({ onNavigateToRank }: { onNavigateToRank?: () => v
             ) : stats.recentActivity.length > 0 ? (
               <>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-4">
-                  {stats.recentActivity.map((act, idx) => (
+                  {sortedRecentActivity.map((act, idx) => (
                     <motion.div
                       key={`${act.id}-${idx}`}
                       initial={{ opacity: 0, x: -8 }}
                       animate={{ opacity: 1, x: 0 }}
-                      className="glass-panel p-4 flex items-center justify-between group hover:bg-surfaceHighlight/30 transition-all border border-white/5 rounded-xl"
+                      className={`glass-panel p-4 flex items-center justify-between group hover:bg-surfaceHighlight/30 transition-all border rounded-xl ${
+                        idx === 0 ? 'border-primary/30 bg-primary/[0.02]' : 'border-white/5'
+                      }`}
                     >
                       <div className="flex items-center space-x-4">
                         <div className={`p-3 rounded-xl ${
@@ -437,9 +567,16 @@ export function EngagementHub({ onNavigateToRank }: { onNavigateToRank?: () => v
                           <Target size={18} />
                         </div>
                         <div>
-                          <p className="text-sm font-bold text-textMain group-hover:text-primary transition-colors">
-                            {act.type}
-                          </p>
+                          <div className="flex items-center space-x-2">
+                            <p className="text-sm font-bold text-textMain group-hover:text-primary transition-colors">
+                              {act.type}
+                            </p>
+                            {idx === 0 && (
+                              <span className="text-[8px] font-black px-1.5 py-0.2 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded uppercase tracking-wider">
+                                Latest
+                              </span>
+                            )}
+                          </div>
                           {act.breakdown && (
                             <div className="flex items-center space-x-2 mt-0.5">
                               <span className="text-[9px] font-black px-1.5 py-0.5 bg-primary/10 text-primary border border-primary/20 rounded">

@@ -58,10 +58,14 @@ export function useEngagement() {
     }
 
     try {
-      // Initial load: Only show today's activity for speed
-      const todayStart = new Date();
-      todayStart.setHours(0, 0, 0, 0);
-      const todayIso = todayStart.toISOString();
+      // First record today's login if RPC is available
+      await recordLoginToday(user.id);
+
+      // Initial load: Fetch last 15 days of activity
+      const fifteenDaysAgo = new Date();
+      fifteenDaysAgo.setDate(fifteenDaysAgo.getDate() - 15);
+      fifteenDaysAgo.setHours(0, 0, 0, 0);
+      const fifteenDaysIso = fifteenDaysAgo.toISOString();
 
       // Optimize: Use Promise.all to fetch all data in parallel
       const [
@@ -72,7 +76,7 @@ export function useEngagement() {
       ] = await Promise.all([
         supabase
           .from('profiles')
-          .select('current_login_streak, longest_login_streak, last_login_date')
+          .select('current_login_streak, longest_login_streak, last_login_date, streak_count, last_activity_date')
           .eq('id', user.id)
           .single(),
         supabase
@@ -88,7 +92,7 @@ export function useEngagement() {
           .from('activity_logs')
           .select('id, action_type, pillar, xp_earned, created_at')
           .eq('user_id', user.id)
-          .gte('created_at', todayIso)
+          .gte('created_at', fifteenDaysIso)
           .order('created_at', { ascending: false })
           .range(0, ITEMS_PER_PAGE - 1)
       ]);
@@ -106,12 +110,34 @@ export function useEngagement() {
         };
       });
 
+      const todayStr = format(new Date(), 'yyyy-MM-dd');
+      const effectiveStreak = Math.max(
+        profile?.current_login_streak ?? 0,
+        profile?.streak_count ?? 0,
+        1
+      );
+      const effectiveLongest = Math.max(
+        profile?.longest_login_streak ?? 0,
+        effectiveStreak
+      );
+      const effectiveLoginDays = Math.max(
+        totalLoginDays ?? 0,
+        totalActiveDays ?? 0,
+        effectiveStreak,
+        1
+      );
+      const effectiveActiveDays = Math.max(
+        totalActiveDays ?? 0,
+        (activityRows?.length ?? 0) > 0 ? 1 : 0,
+        effectiveStreak > 0 ? 1 : 0
+      );
+
       setStats({
-        currentLoginStreak: profile?.current_login_streak ?? 0,
-        longestLoginStreak: profile?.longest_login_streak ?? 0,
-        lastLoginDate: profile?.last_login_date ?? null,
-        totalLoginDays: totalLoginDays ?? 0,
-        totalActiveDays: totalActiveDays ?? 0,
+        currentLoginStreak: effectiveStreak,
+        longestLoginStreak: effectiveLongest,
+        lastLoginDate: profile?.last_login_date || profile?.last_activity_date || todayStr,
+        totalLoginDays: effectiveLoginDays,
+        totalActiveDays: effectiveActiveDays,
         recentActivity,
         loading: false,
         hasMore: (activityRows?.length ?? 0) === ITEMS_PER_PAGE,
@@ -139,11 +165,17 @@ export function useEngagement() {
       const start = stats.recentActivity.length;
       const end = start + ITEMS_PER_PAGE - 1;
 
-      // When loading more, we don't restrict to today
+      const fifteenDaysAgo = new Date();
+      fifteenDaysAgo.setDate(fifteenDaysAgo.getDate() - 15);
+      fifteenDaysAgo.setHours(0, 0, 0, 0);
+      const fifteenDaysIso = fifteenDaysAgo.toISOString();
+
+      // Load next page of 15-day activity logs
       const { data: activityRows } = await supabase
         .from('activity_logs')
         .select('id, action_type, pillar, xp_earned, created_at')
         .eq('user_id', user.id)
+        .gte('created_at', fifteenDaysIso)
         .order('created_at', { ascending: false })
         .range(start, end);
 

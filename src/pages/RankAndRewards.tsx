@@ -5,22 +5,9 @@ import {
   Heart, DollarSign, Brain, Sparkles, Check, TrendingUp,
   BrainCircuit, Copy
 } from 'lucide-react';
-import { useProgression } from '../hooks/useProgression';
-import { supabase } from '../lib/supabaseClient';
+import { useProgression, BADGES } from '../hooks/useProgression';
+import type { Badge } from '../hooks/useProgression';
 import { generateRankCalibrationInsights, isApiKeyConfigured } from '../lib/aiService';
-
-interface Reward {
-  id: string;
-  title: string;
-  description: string;
-  required_level: number;
-  pillar: string;
-  icon: string;
-}
-
-const ICON_MAP: Record<string, any> = {
-  Sun: Zap, Code: Target, DollarSign, Heart, Brain, Star, Crown, Trophy, Sparkles, Zap, Shield, Target
-};
 
 // Full Ascension Path: negative penalty ranks → positive achievement ranks
 const ASCENSION_RANKS = [
@@ -46,10 +33,6 @@ const ASCENSION_RANKS = [
 function xpForLevel(lvl: number): number {
   if (lvl <= 1) return 0;
   return Math.ceil(100 * Math.pow(lvl - 1, 1.5));
-}
-function levelFromXp(xp: number): number {
-  if (xp <= 0) return 1;
-  return Math.floor(Math.pow(xp / 100, 1 / 1.5)) + 1;
 }
 
 // Symmetric helper functions for dynamic display level-to-raw level mapping
@@ -88,23 +71,11 @@ const PILLARS = [
 ];
 
 
-const DEFAULT_STAGE_REWARDS: Reward[] = [
-  { id: 'stage_1',   title: 'Initiate Crest',        description: 'Achieved Level 1 baseline',              required_level: 1,   pillar: 'Mind',    icon: 'Shield' },
-  { id: 'stage_5',   title: 'Apprentice Badge',      description: 'Reached Level 5 milestone',              required_level: 5,   pillar: 'Study',   icon: 'Star' },
-  { id: 'stage_10',  title: 'Specialist Emblem',     description: 'Reached Level 10 mastery',              required_level: 10,  pillar: 'Health',  icon: 'Target' },
-  { id: 'stage_15',  title: 'Rising Analyst Pin',    description: 'Reached Level 15 analytical rank',       required_level: 15,  pillar: 'Finance', icon: 'Sun' },
-  { id: 'stage_20',  title: 'Analyst Insignia',      description: 'Reached Level 20 protocol proficiency',  required_level: 20,  pillar: 'Study',   icon: 'Brain' },
-  { id: 'stage_30',  title: 'Commander Aegis',       description: 'Reached Level 30 tactical leadership',   required_level: 30,  pillar: 'Mind',    icon: 'Trophy' },
-  { id: 'stage_45',  title: 'Elite Vanguard Crown',  description: 'Reached Level 45 elite status',          required_level: 45,  pillar: 'Health',  icon: 'Zap' },
-  { id: 'stage_60',  title: 'Grandmaster Sigil',     description: 'Reached Level 60 grandmaster rank',      required_level: 60,  pillar: 'Finance', icon: 'Crown' },
-  { id: 'stage_80',  title: 'Legend Aura',           description: 'Reached Level 80 legendary tier',        required_level: 80,  pillar: 'Study',   icon: 'Sparkles' },
-  { id: 'stage_100', title: 'Quantum Mythic Relic',   description: 'Reached Level 100 ultimate ascension',   required_level: 100, pillar: 'Mind',    icon: 'Trophy' },
-];
+
 
 export function RankAndRewards() {
   const { state } = useProgression();
-  const [rewards, setRewards]   = useState<Reward[]>([]);
-  const [rewardLoad, setRewardLoad] = useState(true);
+  const [badgeCategory, setBadgeCategory] = useState<'all' | 'xp' | 'level' | 'streak' | 'protocol' | 'action'>('all');
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // AI Rank Calibration Insights state
@@ -168,28 +139,21 @@ export function RankAndRewards() {
     setTimeout(() => setCopying(false), 2000);
   };
 
-  useEffect(() => {
-    async function loadRewards() {
-      if (!supabase) {
-        setRewards(DEFAULT_STAGE_REWARDS);
-        setRewardLoad(false);
-        return;
-      }
-      try {
-        const { data, error } = await supabase.from('rewards').select('*').order('required_level', { ascending: true });
-        if (!error && data && data.length > 0) {
-          setRewards(data);
-        } else {
-          setRewards(DEFAULT_STAGE_REWARDS);
-        }
-      } catch (e) {
-        setRewards(DEFAULT_STAGE_REWARDS);
-      } finally {
-        setRewardLoad(false);
-      }
-    }
-    loadRewards();
-  }, []);
+  // ── Badges derived metrics ──
+  const unlockedBadgesCount = BADGES.filter(b =>
+    Boolean(
+      state.earnedBadgeIds?.includes(b.id) ||
+      (b.requiredXp !== undefined && state.totalXp >= b.requiredXp) ||
+      (b.requiredLevel !== undefined && state.totalLevel >= b.requiredLevel) ||
+      (b.requiredStreak !== undefined && state.streakCount >= b.requiredStreak)
+    )
+  ).length;
+  const lockedBadgesCount = BADGES.length - unlockedBadgesCount;
+
+  const filteredBadges = BADGES.filter(b => {
+    if (badgeCategory === 'all') return true;
+    return b.category === badgeCategory;
+  });
 
 
   // Scroll active rank node into view
@@ -400,10 +364,11 @@ export function RankAndRewards() {
       >
         {PILLARS.map(p => {
           const pXp   = state.xp[p.key] ?? 0;
-          const pLvl  = levelFromXp(pXp);
-          const pCurXp = xpForLevel(pLvl);
-          const pNxtXp = xpForLevel(pLvl + 1);
-          const pProg  = Math.min(100, Math.max(0, ((pXp - pCurXp) / (pNxtXp - pCurXp)) * 100));
+          const pLvl  = state.level[p.key] ?? 1;
+          const rawL  = getRawLevelFromDisplay(pLvl, baselineOffset);
+          const pCurXp = xpForLevel(rawL);
+          const pNxtXp = xpForLevel(rawL + 1);
+          const pProg  = Math.min(100, Math.max(0, ((pXp - pCurXp) / Math.max(1, pNxtXp - pCurXp)) * 100));
           const PIcon  = p.icon;
           return (
             <div key={p.key} className="glass-panel p-4 rounded-2xl flex flex-col gap-2">
@@ -412,7 +377,7 @@ export function RankAndRewards() {
                 <span className="text-[10px] font-black uppercase tracking-widest text-textMuted">{p.label}</span>
               </div>
               <div className="flex items-end justify-between">
-                <span className={`text-2xl font-black ${p.color}`}>Lv.{pLvl + baselineOffset}</span>
+                <span className={`text-2xl font-black ${p.color}`}>Lv.{pLvl}</span>
                 <span className="text-[10px] text-textMuted">{pXp.toLocaleString()} XP</span>
               </div>
               <div className="h-1.5 bg-surfaceHighlight rounded-full overflow-hidden">
@@ -424,7 +389,7 @@ export function RankAndRewards() {
                 />
               </div>
               <div className="text-[9px] text-textMuted">
-                {(pNxtXp - pXp).toLocaleString()} XP to Lv.{pLvl + baselineOffset + 1}
+                {Math.max(0, pNxtXp - pXp).toLocaleString()} XP to Lv.{pLvl + 1}
               </div>
             </div>
           );
@@ -520,70 +485,133 @@ export function RankAndRewards() {
         transition={{ delay: 0.25 }}
         className="glass-panel rounded-3xl p-6 md:p-8"
       >
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-3">
-          <h2 className="text-base font-black text-textMain uppercase tracking-widest flex items-center gap-2">
-            <Crown className="text-amber-400" size={18} /> Unlockable Badges
-          </h2>
-          <div className="flex gap-2">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-5 gap-3">
+          <div>
+            <h2 className="text-base font-black text-textMain uppercase tracking-widest flex items-center gap-2">
+              <Crown className="text-amber-400" size={18} /> Master Ascension Badges
+            </h2>
+            <p className="text-[10px] text-textMuted uppercase font-semibold mt-0.5">Real-time Progression Milestones & Special Honors</p>
+          </div>
+          <div className="flex gap-2 items-center">
             <span className="px-3 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-full text-[10px] font-black uppercase">
-              {rewards.filter(r => state.totalLevel >= r.required_level).length} Unlocked
+              {unlockedBadgesCount} Unlocked
             </span>
             <span className="px-3 py-1 bg-surfaceHighlight text-textMuted border border-white/5 rounded-full text-[10px] font-black uppercase">
-              {rewards.filter(r => state.totalLevel < r.required_level).length} Locked
+              {lockedBadgesCount} Locked
             </span>
           </div>
         </div>
 
-        {rewardLoad ? (
-          <div className="h-40 flex items-center justify-center">
-            <div className="w-8 h-8 border-2 border-primary/20 border-t-primary rounded-full animate-spin" />
-          </div>
-        ) : rewards.length === 0 ? (
-          <div className="p-12 flex flex-col items-center text-center bg-surface border border-dashed border-border rounded-2xl">
-            <Target size={40} className="text-textMuted/40 mb-4" />
-            <p className="text-textMuted text-sm">No badges configured yet.</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {rewards.map(reward => {
-              const unlocked = state.totalLevel >= reward.required_level;
-              const Icon = ICON_MAP[reward.icon] ?? Target;
-              const pct = Math.min(100, Math.max(0, (state.totalLevel / reward.required_level) * 100));
-              return (
-                <div key={reward.id} className={`relative p-5 rounded-2xl border transition-all group flex flex-col gap-3
-                  ${unlocked
-                    ? 'bg-gradient-to-br from-surface to-surfaceHighlight border-white/10 hover:border-primary/30'
-                    : 'bg-surface border-border/50 opacity-70 hover:opacity-100'}`}
-                >
-                  <div className="flex justify-between items-start">
-                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center border shadow-lg transition-transform group-hover:scale-110
-                      ${unlocked ? 'bg-primary/10 border-primary/30' : 'bg-surfaceHighlight border-white/5'}`}>
-                      {unlocked ? <Icon className="text-primary" size={22} /> : <Lock className="text-textMuted" size={18} />}
-                    </div>
-                    <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded border
-                      ${unlocked ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-surfaceHighlight text-textMuted border-white/5'}`}>
-                      {unlocked ? 'Unlocked' : `Lv. ${reward.required_level}`}
+        {/* Filter Category Tabs */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-3 mb-5 scrollbar-none border-b border-white/5">
+          {[
+            { id: 'all', label: `All (${BADGES.length})` },
+            { id: 'xp', label: 'XP Milestones' },
+            { id: 'level', label: 'Level Ranks' },
+            { id: 'streak', label: 'Streaks' },
+            { id: 'protocol', label: 'Protocols' },
+            { id: 'action', label: 'Combat & Focus' },
+          ].map(tab => {
+            const active = badgeCategory === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setBadgeCategory(tab.id as any)}
+                className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${
+                  active
+                    ? 'bg-primary/20 text-primary border border-primary/40 shadow-sm'
+                    : 'bg-white/5 text-textMuted hover:text-white hover:bg-white/10 border border-white/5'
+                }`}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filteredBadges.map((badge: Badge) => {
+            const isUnlocked = Boolean(
+              state.earnedBadgeIds?.includes(badge.id) ||
+              (badge.requiredXp !== undefined && state.totalXp >= badge.requiredXp) ||
+              (badge.requiredLevel !== undefined && state.totalLevel >= badge.requiredLevel) ||
+              (badge.requiredStreak !== undefined && state.streakCount >= badge.requiredStreak)
+            );
+
+            let pct = 0;
+            let progressLabel = '';
+            if (isUnlocked) {
+              pct = 100;
+              progressLabel = 'Completed';
+            } else if (badge.requiredXp) {
+              pct = Math.min(100, Math.round((state.totalXp / badge.requiredXp) * 100));
+              progressLabel = `${state.totalXp.toLocaleString()} / ${badge.requiredXp.toLocaleString()} XP`;
+            } else if (badge.requiredLevel) {
+              pct = Math.min(100, Math.max(0, Math.round((state.totalLevel / badge.requiredLevel) * 100)));
+              progressLabel = `Lv. ${state.totalLevel} / ${badge.requiredLevel}`;
+            } else if (badge.requiredStreak) {
+              pct = Math.min(100, Math.round((state.streakCount / badge.requiredStreak) * 100));
+              progressLabel = `${state.streakCount} / ${badge.requiredStreak} Days`;
+            } else {
+              pct = 0;
+              progressLabel = 'Protocol Trigger';
+            }
+
+            return (
+              <div
+                key={badge.id}
+                className={`relative p-5 rounded-2xl border transition-all group flex flex-col justify-between gap-3 ${
+                  isUnlocked
+                    ? 'bg-gradient-to-br from-surface to-surfaceHighlight/80 border-primary/30 shadow-[0_4px_20px_rgba(59,130,246,0.06)]'
+                    : 'bg-surface/60 border-border/40 opacity-70 hover:opacity-100'
+                }`}
+              >
+                <div className="flex justify-between items-start">
+                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center border shadow-lg text-2xl transition-transform group-hover:scale-110 ${
+                    isUnlocked ? 'bg-primary/10 border-primary/40' : 'bg-surfaceHighlight border-white/5 opacity-70'
+                  }`}>
+                    {badge.icon}
+                  </div>
+                  <span className={`text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border ${
+                    isUnlocked
+                      ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                      : 'bg-surfaceHighlight text-textMuted border-white/5'
+                  }`}>
+                    {isUnlocked ? 'Earned' : badge.requiredLevel ? `Lv. ${badge.requiredLevel}` : badge.requiredStreak ? `${badge.requiredStreak}d Streak` : badge.requiredXp ? `${badge.requiredXp.toLocaleString()} XP` : 'Locked'}
+                  </span>
+                </div>
+
+                <div>
+                  <h5 className={`font-bold text-sm mb-1 ${isUnlocked ? 'text-textMain' : 'text-textMuted'}`}>
+                    {badge.name}
+                  </h5>
+                  <p className="text-xs text-textMuted leading-relaxed">
+                    {badge.desc}
+                  </p>
+                </div>
+
+                <div className="mt-auto pt-2 border-t border-white/5">
+                  <div className="flex justify-between text-[9px] font-bold text-textMuted mb-1.5 uppercase tracking-wider">
+                    <span>Progress</span>
+                    <span className={isUnlocked ? 'text-emerald-400 font-black' : 'text-primary'}>
+                      {isUnlocked ? '✓ 100%' : progressLabel}
                     </span>
                   </div>
-                  <div>
-                    <h5 className={`font-bold mb-1 ${unlocked ? 'text-textMain' : 'text-textMuted'}`}>{reward.title}</h5>
-                    <p className="text-xs text-textMuted leading-relaxed">{reward.description}</p>
+                  <div className="h-1.5 bg-surfaceHighlight rounded-full overflow-hidden">
+                    <div
+                      className={`h-full transition-all duration-700 ${
+                        isUnlocked
+                          ? 'bg-gradient-to-r from-emerald-500 to-teal-400'
+                          : 'bg-gradient-to-r from-primary to-blue-400'
+                      }`}
+                      style={{ width: `${pct}%` }}
+                    />
                   </div>
-                  {!unlocked && (
-                    <div className="mt-auto pt-2">
-                      <div className="flex justify-between text-[9px] font-bold text-textMuted mb-1 uppercase tracking-wider">
-                        <span>Progress</span><span>{Math.round(pct)}%</span>
-                      </div>
-                      <div className="h-1.5 bg-surfaceHighlight rounded-full overflow-hidden">
-                        <div className="h-full bg-textMuted/30 transition-all" style={{ width: `${pct}%` }} />
-                      </div>
-                    </div>
-                  )}
                 </div>
-              );
-            })}
-          </div>
-        )}
+              </div>
+            );
+          })}
+        </div>
       </motion.div>
 
       {/* ── AI RANK STRATEGY DOSSIER ────────────────────────────────────────── */}

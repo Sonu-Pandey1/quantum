@@ -4,7 +4,7 @@ import {
   ChevronLeft, ChevronRight,
   BookOpen, Dumbbell, Briefcase, Brain, Trophy,
   Droplets, Moon, Scale, Sparkles, X,
-  Calendar, CheckCircle2, HeartPulse
+  Calendar, HeartPulse, Clock
 } from 'lucide-react';
 import { useProgression, type Pillar } from '../hooks/useProgression';
 import { useEngagement } from '../hooks/useEngagement';
@@ -12,6 +12,7 @@ import { supabase } from '../lib/supabaseClient';
 import { audio } from '../lib/audio';
 import toast from 'react-hot-toast';
 import { EngineCard } from '../components/EngineCard';
+import { type BioMission, DEFAULT_PROTOCOLS } from './TheLab';
 
 // ─── TYPES ─────────────────────────────────────────────────────────────
 export type EnergyMode = 'peak' | 'normal' | 'survival';
@@ -48,6 +49,21 @@ export interface TimetableBlock {
   completedDates: string[];
 }
 
+export interface ProtocolTodoItem {
+  id: number;
+  title: string;
+  dayOfWeek: number; // 0=Sun … 6=Sat
+  time?: string;
+  pillar: Pillar;
+  isOneOff?: boolean;
+  completed?: boolean;
+  completedDates?: string[];
+  task_target?: 'High' | 'Medium' | 'Low';
+  xpAwarded?: boolean;
+  xpAwardedDates?: string[];
+  recurrence?: 'daily' | 'weekly' | 'monthly' | 'one-off';
+}
+
 export interface QuickTodoItem {
   id: string;
   title: string;
@@ -64,10 +80,148 @@ const DEFAULT_TIMELINE: TimetableBlock[] = [
   { id: 'tb-5', start: '22:00', end: '22:45', title: 'Decompression & Daily Retrospective', pillar: 'Mind', priority: 'Medium', completedDates: [] },
 ];
 
-const DEFAULT_QUICK_TODOS: QuickTodoItem[] = [
-  { id: 'td-1', title: 'Review RAP Behavior Definition validations', pillar: 'Study', priority: 'High', completed: false },
-  { id: 'td-2', title: 'Update daily retail inventory & cashbook', pillar: 'Finance', priority: 'Medium', completed: false },
-];
+function getSystemTimetableTasks(authId: string | null, displayName?: string): any[] | null {
+  const keys = [
+    authId ? `quantum_timetable_${authId}` : null,
+    displayName ? `quantum_timetable_${displayName}` : null,
+    'quantum_timetable_default',
+    'quantum_timetable',
+  ].filter(Boolean) as string[];
+
+  for (const k of keys) {
+    const raw = localStorage.getItem(k);
+    if (raw && raw !== 'undefined' && raw !== 'null') {
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch {}
+    }
+  }
+  return null;
+}
+
+function getSystemTodos(authId: string | null, displayName?: string, settingsTodos?: ProtocolTodoItem[]): ProtocolTodoItem[] {
+  // 1. Prioritize live Supabase profile settings if available
+  if (Array.isArray(settingsTodos) && settingsTodos.length > 0) {
+    return settingsTodos;
+  }
+
+  // 2. Check prioritized specific localStorage keys
+  const keys = [
+    authId ? `quantum_todos_${authId}` : null,
+    displayName ? `quantum_todos_${displayName}` : null,
+    'quantum_todos_default',
+    'quantum_todos',
+    'quantum_pulse_quicktodos_default',
+    displayName ? `quantum_pulse_quicktodos_${displayName}` : null,
+  ].filter(Boolean) as string[];
+
+  for (const k of keys) {
+    const raw = localStorage.getItem(k);
+    if (raw && raw !== 'undefined' && raw !== 'null') {
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch {}
+    }
+  }
+
+  // 3. Scan all localStorage keys for any saved protocol todos
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && (k.startsWith('quantum_todos_') || k.startsWith('quantum_pulse_quicktodos_'))) {
+        const raw = localStorage.getItem(k);
+        if (raw && raw !== 'undefined' && raw !== 'null') {
+          try {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+          } catch {}
+        }
+      }
+    }
+  } catch {}
+
+  return [];
+}
+
+function loadTodayTimeline(authId: string | null, displayName: string): TimetableBlock[] {
+  const todayDay = new Date().getDay();
+  const systemTasks = getSystemTimetableTasks(authId, displayName);
+
+  let completionsMap: Record<string, string[]> = {};
+  const completionKeys = [
+    authId ? `quantum_pulse_timeline_completions_${authId}` : null,
+    `quantum_pulse_timeline_completions_${displayName || 'operator'}`,
+    `quantum_pulse_timeline_completions_default`,
+  ].filter(Boolean) as string[];
+
+  for (const k of completionKeys) {
+    const raw = localStorage.getItem(k);
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+          completionsMap = { ...completionsMap, ...parsed };
+        }
+      } catch {}
+    }
+  }
+
+  const oldKeys = [
+    authId ? `quantum_pulse_timeline_${authId}` : null,
+    `quantum_pulse_timeline_${displayName || 'operator'}`,
+    `quantum_pulse_timeline_default`,
+  ].filter(Boolean) as string[];
+
+  for (const k of oldKeys) {
+    const old = localStorage.getItem(k);
+    if (old) {
+      try {
+        const parsed = JSON.parse(old);
+        if (Array.isArray(parsed)) {
+          parsed.forEach((b: any) => {
+            if (b.id && Array.isArray(b.completedDates)) {
+              completionsMap[b.id] = Array.from(new Set([...(completionsMap[b.id] || []), ...b.completedDates]));
+            }
+          });
+        }
+      } catch {}
+    }
+  }
+
+  if (systemTasks && systemTasks.length > 0) {
+    const filtered = systemTasks.filter((t: any) => t.dayOfWeek === undefined || t.dayOfWeek === null || t.dayOfWeek === todayDay);
+    if (filtered.length > 0) {
+      filtered.sort((a: any, b: any) => (a.start || '00:00').localeCompare(b.start || '00:00'));
+      return filtered.map((t: any, idx: number) => {
+        const id = `tb-${t.id || idx}`;
+        return {
+          id,
+          start: t.start || '09:00',
+          end: t.end || '10:00',
+          title: t.title || 'Focus Protocol',
+          pillar: (t.pillar || (t.category === 'gym' ? 'Health' : t.category === 'study' ? 'Study' : t.category === 'work' ? 'Finance' : 'Mind')) as Pillar,
+          priority: (t.task_target || 'High') as 'High' | 'Medium' | 'Low',
+          completedDates: completionsMap[id] || [],
+        };
+      });
+    }
+  }
+
+  return DEFAULT_TIMELINE;
+}
+
+function isTodoDoneToday(t: ProtocolTodoItem, todayStr: string): boolean {
+  const rec = t.recurrence || (t.isOneOff ? 'one-off' : 'weekly');
+  if (rec === 'one-off') return !!t.completed;
+  if (rec === 'daily') return !!t.completedDates?.includes(todayStr);
+  if (rec === 'monthly') {
+    const month = todayStr.substring(0, 7);
+    return !!t.completedDates?.some(d => d.startsWith(month));
+  }
+  return !!t.completedDates?.includes(todayStr);
+}
 
 interface CommandDeckProps {
   onNavigate?: (view: string) => void;
@@ -232,10 +386,202 @@ function RadialRing({
 
 // ─── MAIN COMMAND DECK COMPONENT ───────────────────────────────────────
 export function CommandDeck({ onNavigate }: CommandDeckProps) {
-  const { state, addXp } = useProgression();
+  const { state, addXp, updateProfile, refuelStreakShield } = useProgression();
   const { stats: engagementStats } = useEngagement();
   const todayStr = useMemo(() => toDateStr(new Date()), []);
   const uid = state.displayName || 'operator';
+  const [authUserId, setAuthUserId] = useState<string | null>(null);
+  const [dbActivityMap, setDbActivityMap] = useState<Record<string, { count: number; xp: number }>>({});
+  const [shieldModalOpen, setShieldModalOpen] = useState(false);
+
+  // ─── BIO-OPTIMIZATION PROTOCOLS (HEALTH TASKS) ─────────────────────────
+  const bioMissionsKey = `quantum_bio_missions_${uid}`;
+  const [protocols, setProtocols] = useState<BioMission[]>(() => {
+    if (state.settings?.bioMissions && Array.isArray(state.settings.bioMissions) && state.settings.bioMissions.length > 0) {
+      return state.settings.bioMissions.map((m: BioMission) => ({
+        ...m,
+        completed: m.lastCompletedDate === todayStr ? (m.completed ?? false) : false
+      }));
+    }
+    const saved = localStorage.getItem(bioMissionsKey);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map((m: BioMission) => ({
+            ...m,
+            completed: m.lastCompletedDate === todayStr ? (m.completed ?? false) : false
+          }));
+        }
+      } catch {}
+    }
+    return DEFAULT_PROTOCOLS;
+  });
+
+  useEffect(() => {
+    localStorage.setItem(bioMissionsKey, JSON.stringify(protocols));
+    if (supabase) {
+      const client = supabase;
+      client.auth.getSession().then(async ({ data: { session } }) => {
+        if (session?.user && updateProfile) {
+          try {
+            await updateProfile({
+              settings: {
+                ...state.settings,
+                bioMissions: protocols
+              }
+            });
+          } catch (err) {
+            console.warn('Profile protocol sync warning:', err);
+          }
+        }
+      });
+    }
+  }, [protocols, bioMissionsKey]);
+
+  const [protocolModalOpen, setProtocolModalOpen] = useState(false);
+  const [editingProtocol, setEditingProtocol] = useState<BioMission | null>(null);
+  const [protocolForm, setProtocolForm] = useState<{
+    title: string;
+    time: string;
+    xp: number;
+    difficulty: 'Easy' | 'Medium' | 'Hard';
+  }>({
+    title: '',
+    time: '15 min',
+    xp: 30,
+    difficulty: 'Medium',
+  });
+
+  const handleOpenAddProtocol = () => {
+    setEditingProtocol(null);
+    setProtocolForm({ title: '', time: '15 min', xp: 30, difficulty: 'Medium' });
+    setProtocolModalOpen(true);
+  };
+
+  const handleOpenEditProtocol = (p: BioMission, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingProtocol(p);
+    setProtocolForm({
+      title: p.title,
+      time: p.time,
+      xp: p.xp,
+      difficulty: p.difficulty,
+    });
+    setProtocolModalOpen(true);
+  };
+
+  const handleDeleteProtocol = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    audio.playClick();
+    setProtocols(prev => prev.filter(p => p.id !== id));
+    toast.success('Protocol removed.');
+  };
+
+  const handleSaveProtocol = () => {
+    if (!protocolForm.title.trim()) {
+      toast.error('Protocol title required.');
+      return;
+    }
+    audio.playSuccess();
+    if (editingProtocol) {
+      setProtocols(prev => prev.map(p => p.id === editingProtocol.id ? { ...p, ...protocolForm, title: protocolForm.title.trim() } : p));
+      toast.success('Protocol updated.');
+    } else {
+      const newProtocol: BioMission = {
+        id: `bp-${Date.now()}`,
+        title: protocolForm.title.trim(),
+        time: protocolForm.time.trim() || '15 min',
+        xp: Number(protocolForm.xp) || 30,
+        difficulty: protocolForm.difficulty,
+        completed: false,
+      };
+      setProtocols(prev => [newProtocol, ...prev]);
+      toast.success('New health protocol created!');
+    }
+    setProtocolModalOpen(false);
+  };
+
+  const handleToggleProtocol = async (id: string) => {
+    const mission = protocols.find(p => p.id === id);
+    if (!mission) return;
+
+    if (mission.completed) {
+      audio.playClick();
+      setProtocols(prev => prev.map(p => p.id === id ? { ...p, completed: false } : p));
+      toast.success('Protocol marked pending.');
+      return;
+    }
+
+    audio.playSuccess();
+    setProtocols(prev => prev.map(p => p.id === id ? { ...p, completed: true, lastCompletedDate: todayStr } : p));
+    const earned = await addXp('Health', `Bio Protocol: ${mission.title}`, mission.xp);
+    toast.success(`⚡ Protocol Mastered! +${earned} Health XP`);
+  };
+
+  useEffect(() => {
+    if (!supabase) return;
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        setAuthUserId(session.user.id);
+      }
+    });
+  }, []);
+
+  // Fetch real activity logs from Supabase for the last 28 days
+  useEffect(() => {
+    async function loadActivityData() {
+      if (!supabase) return;
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
+      if (!user) return;
+
+      const startDate = toDateStr(addDays(new Date(), -28));
+      const startIso = new Date(Date.now() - 28 * 24 * 60 * 60 * 1000).toISOString();
+
+      try {
+        const [{ data: dailyRows }, { data: logs }] = await Promise.all([
+          supabase
+            .from('daily_activity')
+            .select('date, activity_count, xp_earned')
+            .eq('user_id', user.id)
+            .gte('date', startDate),
+          supabase
+            .from('activity_logs')
+            .select('created_at, xp_earned, action_type')
+            .eq('user_id', user.id)
+            .gte('created_at', startIso)
+        ]);
+
+        const map: Record<string, { count: number; xp: number }> = {};
+        if (dailyRows) {
+          dailyRows.forEach((r: any) => {
+            if (r.date) {
+              map[r.date] = {
+                count: Number(r.activity_count || 0),
+                xp: Number(r.xp_earned || 0),
+              };
+            }
+          });
+        }
+        if (logs) {
+          logs.forEach((l: any) => {
+            const d = l.created_at?.split('T')[0];
+            if (d) {
+              if (!map[d]) map[d] = { count: 0, xp: 0 };
+              map[d].count += 1;
+              map[d].xp += Number(l.xp_earned || 0);
+            }
+          });
+        }
+        setDbActivityMap(map);
+      } catch (err) {
+        console.warn('Error fetching engagement activity data:', err);
+      }
+    }
+
+    loadActivityData();
+  }, [authUserId]);
 
   // ── Energy Mode ──────────────────────────────────────────────────────
   const [energyMode, setEnergyMode] = useState<EnergyMode>(() => {
@@ -368,14 +714,47 @@ export function CommandDeck({ onNavigate }: CommandDeckProps) {
     return { weightKg: 75.0, waterLiters: 2.0, sleepHours: 7.5, dailyWin: '', tomorrowPriority: '' };
   });
 
+  // Pull latest daily biometrics from Supabase if logged in The Lab
+  useEffect(() => {
+    const client = supabase;
+    if (!client) return;
+    const fetchRemoteBio = async () => {
+      try {
+        const { data: { session } } = await client.auth.getSession();
+        if (!session?.user) return;
+        const { data, error } = await client
+          .from('daily_biometrics')
+          .select('weight_kg, water_liters, sleep_hours, daily_win, tomorrow_priority')
+          .eq('user_id', session.user.id)
+          .eq('log_date', todayStr)
+          .maybeSingle();
+
+        if (data && !error) {
+          setBio(prev => ({
+            ...prev,
+            weightKg: Number(data.weight_kg) || prev.weightKg,
+            waterLiters: Number(data.water_liters) || prev.waterLiters,
+            sleepHours: Number(data.sleep_hours) || prev.sleepHours,
+            dailyWin: data.daily_win || prev.dailyWin,
+            tomorrowPriority: data.tomorrow_priority || prev.tomorrowPriority,
+          }));
+        }
+      } catch (err) {
+        console.warn('Remote bio fetch error:', err);
+      }
+    };
+    fetchRemoteBio();
+  }, [todayStr]);
+
   useEffect(() => {
     localStorage.setItem(`quantum_pulse_bio_${uid}_${todayStr}`, JSON.stringify(bio));
     const syncBio = async () => {
-      if (!supabase) return;
+      const client = supabase;
+      if (!client) return;
       try {
-        const { data: { session } } = await supabase.auth.getSession();
+        const { data: { session } } = await client.auth.getSession();
         if (!session?.user) return;
-        await supabase.from('daily_biometrics').upsert({
+        await client.from('daily_biometrics').upsert({
           user_id: session.user.id,
           log_date: todayStr,
           weight_kg: bio.weightKg,
@@ -391,24 +770,60 @@ export function CommandDeck({ onNavigate }: CommandDeckProps) {
     syncBio();
   }, [bio, todayStr, uid]);
 
-  // Health bio readiness score (0-100)
+  // Real Health Telemetry derived from app state
+  const healthHabits = useMemo(() => habits.filter(h => h.pillar === 'Health'), [habits]);
+  const completedHealthHabits = useMemo(() => {
+    return healthHabits.filter(h => {
+      const key = `${h.id}_${todayStr}`;
+      const count = habitLogs[key] || 0;
+      const dayGoal = getGoalForHabit(h);
+      return count >= dayGoal;
+    });
+  }, [healthHabits, habitLogs, energyMode, todayStr]);
+
+  const todayHealthFocusMins = useMemo(() => {
+    const logs = state.settings?.execution_logs || [];
+    return logs
+      .filter((l: any) => l.date === todayStr && l.pillar === 'Health')
+      .reduce((sum: number, l: any) => sum + (Number(l.minutes) || 0), 0);
+  }, [state.settings?.execution_logs, todayStr]);
+
+  // Real Dynamic Health bio readiness score (0-100)
   const healthReadinessScore = useMemo(() => {
-    let score = 50;
-    if (bio.waterLiters >= 3.0) score += 25;
-    else score += Math.round((bio.waterLiters / 3.0) * 25);
+    let score = 20; // baseline
 
-    if (bio.sleepHours >= 7.0 && bio.sleepHours <= 9.0) score += 25;
-    else if (bio.sleepHours > 0) score += Math.min(20, Math.round((bio.sleepHours / 7.0) * 20));
+    // Hydration score (up to 30 pts)
+    const waterScore = Math.min(30, Math.round((bio.waterLiters / 3.5) * 30));
+    score += waterScore;
 
-    return Math.min(100, Math.max(20, score));
-  }, [bio.waterLiters, bio.sleepHours]);
+    // Sleep score (up to 30 pts)
+    if (bio.sleepHours >= 7.0 && bio.sleepHours <= 9.0) {
+      score += 30;
+    } else if (bio.sleepHours > 0) {
+      score += Math.min(25, Math.round((bio.sleepHours / 7.0) * 25));
+    }
+
+    // Health habit completion score (up to 15 pts)
+    if (healthHabits.length > 0) {
+      score += Math.round((completedHealthHabits.length / healthHabits.length) * 15);
+    } else {
+      score += 10;
+    }
+
+    // Active health conditioning / focus minutes (up to 5 pts)
+    if (todayHealthFocusMins > 0) {
+      score += Math.min(5, Math.round((todayHealthFocusMins / 30) * 5));
+    }
+
+    return Math.min(100, Math.max(10, score));
+  }, [bio.waterLiters, bio.sleepHours, healthHabits.length, completedHealthHabits.length, todayHealthFocusMins]);
 
   const handleUpdateBio = async (field: 'weightKg' | 'waterLiters' | 'sleepHours', delta: number) => {
     audio.playSuccess();
     setBio(prev => {
       let nextVal = prev[field] + delta;
       if (field === 'weightKg') nextVal = Math.max(30, Number(nextVal.toFixed(1)));
-      if (field === 'waterLiters') nextVal = Math.max(0, Number(nextVal.toFixed(1)));
+      if (field === 'waterLiters') nextVal = Math.max(0, Number(nextVal.toFixed(2)));
       if (field === 'sleepHours') nextVal = Math.max(0, Number(nextVal.toFixed(1)));
       return { ...prev, [field]: nextVal };
     });
@@ -420,65 +835,28 @@ export function CommandDeck({ onNavigate }: CommandDeckProps) {
 
   // ── Timetable Timeline State ─────────────────────────────────────────
   const [timeline, setTimeline] = useState<TimetableBlock[]>(() => {
-    const saved = localStorage.getItem(`quantum_pulse_timeline_${uid}`);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      } catch {}
-    }
-    const systemTimetable = localStorage.getItem(`quantum_timetable_${uid}`);
-    if (systemTimetable) {
-      try {
-        const parsed = JSON.parse(systemTimetable);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed.map((t: any, idx: number) => ({
-            id: `tb-${t.id || idx}`,
-            start: t.start || '09:00',
-            end: t.end || '10:00',
-            title: t.title || 'Focus Protocol',
-            pillar: (t.pillar || 'Study') as Pillar,
-            priority: (t.task_target || 'High') as 'High' | 'Medium' | 'Low',
-            completedDates: [],
-          }));
-        }
-      } catch {}
-    }
-    return DEFAULT_TIMELINE;
+    return loadTodayTimeline(null, uid);
   });
-
-  useEffect(() => {
-    localStorage.setItem(`quantum_pulse_timeline_${uid}`, JSON.stringify(timeline));
-  }, [timeline, uid]);
-
-  // ── Quick Todo Protocol Deck State ───────────────────────────────────
-  const [quickTodos, setQuickTodos] = useState<QuickTodoItem[]>(() => {
-    const saved = localStorage.getItem(`quantum_pulse_quicktodos_${uid}`);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) return parsed;
-      } catch {}
-    }
-    return DEFAULT_QUICK_TODOS;
-  });
-
-  const [newTodoTitle, setNewTodoTitle] = useState('');
-  const [newTodoPillar, setNewTodoPillar] = useState<Pillar>('Study');
-
-  useEffect(() => {
-    localStorage.setItem(`quantum_pulse_quicktodos_${uid}`, JSON.stringify(quickTodos));
-  }, [quickTodos, uid]);
 
   const toggleTimelineBlock = async (block: TimetableBlock) => {
     const done = block.completedDates.includes(todayStr);
+    const updatedDates = !done 
+      ? Array.from(new Set([...block.completedDates, todayStr]))
+      : block.completedDates.filter(d => d !== todayStr);
+
+    const updatedTimeline = timeline.map(b => b.id === block.id ? { ...b, completedDates: updatedDates } : b);
+    setTimeline(updatedTimeline);
+
+    const completionsMap: Record<string, string[]> = {};
+    updatedTimeline.forEach(b => { completionsMap[b.id] = b.completedDates; });
+    localStorage.setItem(`quantum_pulse_timeline_completions_${uid}`, JSON.stringify(completionsMap));
+    localStorage.setItem(`quantum_pulse_timeline_completions_default`, JSON.stringify(completionsMap));
+    if (authUserId) {
+      localStorage.setItem(`quantum_pulse_timeline_completions_${authUserId}`, JSON.stringify(completionsMap));
+    }
+
     if (!done) {
       audio.playSuccess();
-      setTimeline(prev =>
-        prev.map(b =>
-          b.id === block.id ? { ...b, completedDates: [...b.completedDates, todayStr] } : b
-        )
-      );
       const earned = block.priority === 'High' ? 60 : 40;
       await addXp(block.pillar, `Timeline Block: ${block.title}`, earned);
       toast.success(`⚡ Block Executed! +${earned} ${block.pillar} XP`);
@@ -501,53 +879,149 @@ export function CommandDeck({ onNavigate }: CommandDeckProps) {
       }
     } else {
       audio.playClick();
-      setTimeline(prev =>
-        prev.map(b =>
-          b.id === block.id
-            ? { ...b, completedDates: b.completedDates.filter(d => d !== todayStr) }
-            : b
-        )
-      );
     }
   };
 
-  const handleAddQuickTodo = () => {
-    if (!newTodoTitle.trim()) return;
-    audio.playClick();
-    setQuickTodos(prev => [
-      ...prev,
-      {
-        id: `td-${Date.now()}`,
-        title: newTodoTitle.trim(),
-        pillar: newTodoPillar,
-        priority: 'Medium',
-        completed: false,
-      },
-    ]);
-    setNewTodoTitle('');
-    toast.success('Task Added to Deck');
-  };
+  // ── Daily Protocol Deck Todos State ──────────────────────────────────
+  const [allTodos, setAllTodos] = useState<ProtocolTodoItem[]>(() => {
+    return getSystemTodos(authUserId, uid, state.settings?.todos);
+  });
 
-  const toggleQuickTodo = async (id: string) => {
-    const target = quickTodos.find(x => x.id === id);
+  const todayDay = new Date().getDay();
+  const todayTodos = useMemo(() => {
+    return allTodos.filter(t => {
+      const rec = t.recurrence || (t.isOneOff ? 'one-off' : 'weekly');
+      if (rec === 'daily' || rec === 'monthly') return true;
+      if (rec === 'one-off') {
+        if (!t.completed) return true;
+        if (t.completedDates?.includes(todayStr)) return true;
+        return false;
+      }
+      // If no dayOfWeek specified, applies to all days
+      if (t.dayOfWeek === undefined || t.dayOfWeek === null) return true;
+      return Number(t.dayOfWeek) === todayDay;
+    });
+  }, [allTodos, todayDay, todayStr]);
+
+  const toggleProtocolTodo = async (todoId: number) => {
+    const target = allTodos.find(t => t.id === todoId);
     if (!target) return;
-    const next = !target.completed;
 
-    setQuickTodos(prev => prev.map(td => (td.id === id ? { ...td, completed: next } : td)));
+    const done = isTodoDoneToday(target, todayStr);
+    const rec = target.recurrence || (target.isOneOff ? 'one-off' : 'weekly');
+    const xpAmt = target.task_target === 'High' ? 100 : target.task_target === 'Low' ? 40 : 60;
 
-    if (next) {
+    let updatedTodos: ProtocolTodoItem[];
+    if (!done) {
       audio.playSuccess();
-      await addXp(target.pillar, `Todo: ${target.title}`, 35);
-      toast.success(`✓ Completed! +35 ${target.pillar} XP`);
+      updatedTodos = allTodos.map(t => {
+        if (t.id !== todoId) return t;
+        const newDates = Array.from(new Set([...(t.completedDates || []), todayStr]));
+        return {
+          ...t,
+          completed: true,
+          completedDates: newDates,
+        };
+      });
+      await addXp(target.pillar, `Protocol Deck: ${target.title}`, xpAmt);
+      toast.success(`✓ Protocol Executed! +${xpAmt} ${target.pillar} XP`);
     } else {
       audio.playClick();
+      updatedTodos = allTodos.map(t => {
+        if (t.id !== todoId) return t;
+        const newDates = (t.completedDates || []).filter(d => d !== todayStr);
+        return {
+          ...t,
+          completed: rec === 'one-off' ? false : t.completed,
+          completedDates: newDates,
+        };
+      });
+    }
+
+    setAllTodos(updatedTodos);
+    localStorage.setItem(`quantum_todos_${uid}`, JSON.stringify(updatedTodos));
+    localStorage.setItem(`quantum_todos_default`, JSON.stringify(updatedTodos));
+    localStorage.setItem(`quantum_todos`, JSON.stringify(updatedTodos));
+    if (authUserId) {
+      localStorage.setItem(`quantum_todos_${authUserId}`, JSON.stringify(updatedTodos));
+    }
+    window.dispatchEvent(new CustomEvent('quantum_todos_updated', { detail: updatedTodos }));
+
+    if (supabase) {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          const { data } = await supabase.from('profiles').select('settings').eq('id', session.user.id).single();
+          const currentSettings = data?.settings || {};
+          await supabase.from('profiles').update({
+            settings: { ...currentSettings, todos: updatedTodos }
+          }).eq('id', session.user.id);
+        }
+      } catch (e) {
+        console.warn('Todo sync warning:', e);
+      }
     }
   };
 
-  const deleteQuickTodo = (id: string) => {
+  const deleteProtocolTodo = async (todoId: number) => {
     audio.playClick();
-    setQuickTodos(prev => prev.filter(x => x.id !== id));
+    const updated = allTodos.filter(t => t.id !== todoId);
+    setAllTodos(updated);
+    localStorage.setItem(`quantum_todos_${uid}`, JSON.stringify(updated));
+    localStorage.setItem(`quantum_todos_default`, JSON.stringify(updated));
+    localStorage.setItem(`quantum_todos`, JSON.stringify(updated));
+    if (authUserId) {
+      localStorage.setItem(`quantum_todos_${authUserId}`, JSON.stringify(updated));
+    }
+    window.dispatchEvent(new CustomEvent('quantum_todos_updated', { detail: updated }));
+    toast.success('Task removed from deck');
+
+    if (supabase && authUserId) {
+      try {
+        const { data } = await supabase.from('profiles').select('settings').eq('id', authUserId).single();
+        const currentSettings = data?.settings || {};
+        await supabase.from('profiles').update({
+          settings: { ...currentSettings, todos: updated }
+        }).eq('id', authUserId);
+      } catch (e) {
+        console.warn('Delete todo sync error:', e);
+      }
+    }
   };
+
+  // Sync timeline and todos when config is updated or user logs in
+  useEffect(() => {
+    const handleSync = () => {
+      setTimeline(loadTodayTimeline(authUserId, uid));
+      setAllTodos(getSystemTodos(authUserId, uid, state.settings?.todos));
+    };
+
+    const handleTodoUpdate = (e: any) => {
+      if (e.detail && Array.isArray(e.detail)) {
+        setAllTodos(e.detail);
+      } else {
+        setAllTodos(getSystemTodos(authUserId, uid, state.settings?.todos));
+      }
+    };
+
+    window.addEventListener('quantum_config_updated', handleSync);
+    window.addEventListener('quantum_todos_updated', handleTodoUpdate);
+    window.addEventListener('storage', handleSync);
+    return () => {
+      window.removeEventListener('quantum_config_updated', handleSync);
+      window.removeEventListener('quantum_todos_updated', handleTodoUpdate);
+      window.removeEventListener('storage', handleSync);
+    };
+  }, [authUserId, uid, state.settings?.todos]);
+
+  useEffect(() => {
+    if (authUserId) {
+      setTimeline(loadTodayTimeline(authUserId, uid));
+      setAllTodos(getSystemTodos(authUserId, uid, state.settings?.todos));
+    }
+  }, [authUserId, uid, state.settings?.todos]);
+
+
 
   // ── Habit Check-in / Toggle ──────────────────────────────────────────
   const toggleHabitDay = async (h: QuantumHabit, dateStr: string) => {
@@ -657,10 +1131,17 @@ export function CommandDeck({ onNavigate }: CommandDeckProps) {
     return { completed, total, pct };
   }, [timeline, todayStr]);
 
-  // Real combined daily focus (habits + scheduled execution blocks)
+  const protocolDeckStats = useMemo(() => {
+    const total = todayTodos.length;
+    const completed = todayTodos.filter(t => isTodoDoneToday(t, todayStr)).length;
+    const pct = total > 0 ? (completed / total) * 100 : 0;
+    return { completed, total, pct };
+  }, [todayTodos, todayStr]);
+
+  // Real combined daily focus (habits + scheduled execution blocks + daily protocol deck tasks)
   const todayFocus = useMemo(() => {
-    const totalActions = todayHabitsStats.total + timelineStats.total;
-    const completedActions = todayHabitsStats.completed + timelineStats.completed;
+    const totalActions = todayHabitsStats.total + timelineStats.total + protocolDeckStats.total;
+    const completedActions = todayHabitsStats.completed + timelineStats.completed + protocolDeckStats.completed;
     const pct = totalActions > 0 ? Math.round((completedActions / totalActions) * 100) : 0;
     return {
       completedActions,
@@ -670,8 +1151,10 @@ export function CommandDeck({ onNavigate }: CommandDeckProps) {
       habitsTotal: todayHabitsStats.total,
       timelineCompleted: timelineStats.completed,
       timelineTotal: timelineStats.total,
+      protocolDeckCompleted: protocolDeckStats.completed,
+      protocolDeckTotal: protocolDeckStats.total,
     };
-  }, [todayHabitsStats, timelineStats]);
+  }, [todayHabitsStats, timelineStats, protocolDeckStats]);
 
   const weeklyStats = useMemo(() => {
     let targetCheckins = 0;
@@ -801,53 +1284,131 @@ export function CommandDeck({ onNavigate }: CommandDeckProps) {
     }
   };
 
-  // ── Row 3: 7-Day Completion Bars & 28-Day Heatmap Data ───────────────
+  // ── Row 3: 7-Day Completion Bars & 28-Day Heatmap Data (Real App Telemetry) ─
   const weeklyCompletionBars = useMemo(() => {
     return currentWeekDays.map(day => {
       let done = 0;
-      let total = habits.length;
+      let total = 0;
+
+      // 1. Habits
       habits.forEach(h => {
+        total++;
         const val = habitLogs[`${h.id}_${day.dateStr}`] || 0;
         const req = h.habitType === 'counter' ? h.dailyGoal : 1;
         if (val >= req) done++;
       });
+
+      // 2. Timetable blocks
       timeline.forEach(b => {
-        if (b.completedDates.includes(day.dateStr)) done++;
         total++;
+        if (b.completedDates?.includes(day.dateStr)) done++;
       });
-      const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-      return { short: day.short, dateStr: day.dateStr, pct, done, total };
+
+      // 3. Protocol deck todos
+      const dayOfWeekNum = new Date(day.dateStr + 'T12:00:00').getDay();
+      const todosForDay = allTodos.filter(t => {
+        const rec = t.recurrence || (t.isOneOff ? 'one-off' : 'weekly');
+        if (rec === 'daily' || rec === 'monthly') return true;
+        if (rec === 'one-off') return t.completedDates?.includes(day.dateStr) || !t.completed;
+        return t.dayOfWeek === undefined || Number(t.dayOfWeek) === dayOfWeekNum;
+      });
+      todosForDay.forEach(t => {
+        total++;
+        if (t.completedDates?.includes(day.dateStr)) done++;
+      });
+
+      // 4. Focus session execution logs from settings
+      const execLogs = (state.settings?.execution_logs || []).filter((l: any) => l.date === day.dateStr && l.status === 'completed');
+      done += execLogs.length;
+
+      // 5. Database activity logs from Supabase
+      const dbInfo = dbActivityMap[day.dateStr] || { count: 0, xp: 0 };
+
+      let pct = 0;
+      if (total > 0) {
+        pct = Math.min(100, Math.round((done / total) * 100));
+      }
+      // If no tasks were scheduled or completed, but user had real DB activity (XP / questions / logins)
+      if (pct === 0 && (dbInfo.count > 0 || dbInfo.xp > 0)) {
+        pct = Math.min(100, Math.max(30, Math.min(100, dbInfo.count * 20, Math.round(dbInfo.xp / 5))));
+      }
+
+      return {
+        short: day.short,
+        dateStr: day.dateStr,
+        pct,
+        done,
+        total,
+        dbCount: dbInfo.count,
+        dbXp: dbInfo.xp,
+        details: `${done}/${total} protocols done${dbInfo.xp > 0 ? ` · +${dbInfo.xp} XP` : ''}`
+      };
     });
-  }, [currentWeekDays, habits, habitLogs, timeline]);
+  }, [currentWeekDays, habits, habitLogs, timeline, allTodos, state.settings?.execution_logs, dbActivityMap]);
 
   const last28Days = useMemo(() => {
-    const list: { dateStr: string; pct: number }[] = [];
+    const list: { dateStr: string; pct: number; details: string }[] = [];
     const today = new Date();
     for (let i = 27; i >= 0; i--) {
       const d = addDays(today, -i);
       const dStr = toDateStr(d);
+      const dayOfWeekNum = d.getDay();
+
       let done = 0;
-      let total = habits.length;
+      let total = 0;
+
       habits.forEach(h => {
+        total++;
         const val = habitLogs[`${h.id}_${dStr}`] || 0;
         const req = h.habitType === 'counter' ? h.dailyGoal : 1;
         if (val >= req) done++;
       });
+
       timeline.forEach(b => {
-        if (b.completedDates.includes(dStr)) done++;
         total++;
+        if (b.completedDates?.includes(dStr)) done++;
       });
-      const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-      list.push({ dateStr: dStr, pct });
+
+      const todosForDay = allTodos.filter(t => {
+        const rec = t.recurrence || (t.isOneOff ? 'one-off' : 'weekly');
+        if (rec === 'daily' || rec === 'monthly') return true;
+        if (rec === 'one-off') return t.completedDates?.includes(dStr) || !t.completed;
+        return t.dayOfWeek === undefined || Number(t.dayOfWeek) === dayOfWeekNum;
+      });
+      todosForDay.forEach(t => {
+        total++;
+        if (t.completedDates?.includes(dStr)) done++;
+      });
+
+      const execLogs = (state.settings?.execution_logs || []).filter((l: any) => l.date === dStr && l.status === 'completed');
+      done += execLogs.length;
+
+      const dbInfo = dbActivityMap[dStr] || { count: 0, xp: 0 };
+
+      let pct = 0;
+      if (total > 0) {
+        pct = Math.min(100, Math.round((done / total) * 100));
+      }
+      if (pct === 0 && (dbInfo.count > 0 || dbInfo.xp > 0)) {
+        pct = Math.min(100, Math.max(30, Math.min(100, dbInfo.count * 20, Math.round(dbInfo.xp / 5))));
+      }
+
+      list.push({
+        dateStr: dStr,
+        pct,
+        details: `${dStr}: ${pct}% velocity (${done}/${total} tasks · ${dbInfo.count} activities · +${dbInfo.xp} XP)`
+      });
     }
     return list;
-  }, [habits, habitLogs, timeline]);
+  }, [habits, habitLogs, timeline, allTodos, state.settings?.execution_logs, dbActivityMap]);
 
   // Real actual streak count (truthful, matches Engagement Hub exactly)
   const actualStreak = engagementStats.currentLoginStreak || state.streakCount || 0;
 
-  // Streak shields: Earned 1 shield per 7 consecutive days of actual streak (0-6d = 0, 7-13d = 1, 14-20d = 2, 21+d = 3)
-  const streakShields = Math.min(3, Math.floor(actualStreak / 7));
+  // Streak shields: stored in profile settings or computed from streak (max 3)
+  const streakShields = state.settings?.streakShields !== undefined
+    ? Math.min(3, Math.max(0, Number(state.settings.streakShields)))
+    : Math.min(3, Math.floor(actualStreak / 7));
 
   // Filtered habits by pillar
   const displayedHabits = useMemo(() => {
@@ -888,16 +1449,16 @@ export function CommandDeck({ onNavigate }: CommandDeckProps) {
           <div
             onClick={() => {
               audio.playClick();
-              if (onNavigate) onNavigate('engagement');
+              setShieldModalOpen(true);
             }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-500/10 border border-cyan-500/25 text-cyan-400 text-xs font-black cursor-pointer hover:border-cyan-500/50 hover:scale-105 transition-all"
-            title={
-              actualStreak >= 7
-                ? `${streakShields}/3 Streak Shields active. Earn 1 shield per 7 days of consistency.`
-                : '0/3 Streak Shields. Reach a 7-day streak to unlock your first Streak Shield!'
-            }
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-black cursor-pointer hover:scale-105 transition-all ${
+              streakShields > 0
+                ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-300 shadow-[0_0_12px_rgba(6,182,212,0.2)]'
+                : 'bg-white/5 border-white/10 text-textMuted hover:text-white hover:bg-white/10'
+            }`}
+            title="Open Streak Shield Defense Matrix"
           >
-            <Shield size={14} />
+            <Shield size={14} className={streakShields > 0 ? 'text-cyan-400' : 'text-textMuted'} />
             <span>{streakShields}/3 Streak Shields</span>
           </div>
 
@@ -912,8 +1473,23 @@ export function CommandDeck({ onNavigate }: CommandDeckProps) {
           </div>
         </div>
 
-        {/* Right: Energy Mode Switcher */}
-        <div className="flex items-center gap-1.5 bg-black/40 p-1.5 rounded-2xl border border-white/10 self-start lg:self-auto">
+        {/* Right: AI Assistant & Energy Mode Switcher */}
+        <div className="flex flex-wrap items-center gap-2 self-start lg:self-auto">
+          <button
+            type="button"
+            onClick={() => {
+              audio.playClick();
+              window.dispatchEvent(new CustomEvent('quantum_open_ai_command'));
+            }}
+            className="flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-gradient-to-r from-primary/20 via-blue-600/20 to-purple-600/20 hover:from-primary/30 hover:to-purple-600/30 text-white border border-primary/35 text-xs font-black uppercase tracking-wider cursor-pointer hover:border-primary hover:scale-105 active:scale-95 transition-all shadow-[0_0_20px_rgba(59,130,246,0.2)] group"
+            title="Tell AI to automate your schedule, todos, habits, or themes (Ctrl + K)"
+          >
+            <Sparkles size={14} className="text-amber-300 animate-spin-slow group-hover:rotate-12 transition-transform" />
+            <span>AI Co-Pilot</span>
+            <span className="hidden sm:inline text-[9px] font-mono opacity-60 bg-white/10 px-1.5 py-0.5 rounded">Ctrl+K</span>
+          </button>
+
+          <div className="flex items-center gap-1 bg-black/40 p-1 rounded-2xl border border-white/10">
           {([
             { id: 'peak', label: '🔥 Peak (1.2x XP)', active: 'bg-orange-500/20 text-orange-300 border-orange-500/40' },
             { id: 'normal', label: '⚡ Normal', active: 'bg-blue-500/20 text-blue-300 border-blue-500/40' },
@@ -934,11 +1510,17 @@ export function CommandDeck({ onNavigate }: CommandDeckProps) {
           ))}
         </div>
       </div>
+    </div>
 
       {/* ─── ROW 1: 3 RADIAL RINGS + THE ENGINE (ROUTINE FOCUS TIMER) ─── */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
+        {/* The Engine (Real-Time Routine Timer & Execution Engine) — shown first on mobile */}
+        <div className="order-first lg:order-last lg:col-span-7 glass-panel rounded-3xl border border-white/10 overflow-hidden min-h-[380px] flex flex-col">
+          <EngineCard />
+        </div>
+
         {/* 3 Radial Progress Rings */}
-        <div className="lg:col-span-5 glass-panel p-5 rounded-3xl border border-white/10 flex flex-col justify-between gap-4">
+        <div className="order-last lg:order-first lg:col-span-5 glass-panel p-5 rounded-3xl border border-white/10 flex flex-col justify-between gap-4">
           <div className="space-y-3">
             <h3 className="text-xs font-black uppercase tracking-wider text-textMain flex items-center gap-2">
               <Sparkles size={15} className="text-primary" />
@@ -1002,10 +1584,6 @@ export function CommandDeck({ onNavigate }: CommandDeckProps) {
           </div>
         </div>
 
-        {/* The Engine (Real-Time Routine Timer & Execution Engine) */}
-        <div className="lg:col-span-7 glass-panel rounded-3xl border border-white/10 overflow-hidden min-h-[380px] flex flex-col">
-          <EngineCard />
-        </div>
       </div>
 
       {/* ─── ROW 2: 7-DAY HABITPULSE MATRIX ─── */}
@@ -1234,32 +1812,60 @@ export function CommandDeck({ onNavigate }: CommandDeckProps) {
         </div>
       </div>
 
-      {/* ─── ROW 3: LIVE DAY TIMELINE BLOCKS + QUICK TODO PROTOCOL DECK (1ST SCREENSHOT SECTION) ─── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        {/* Day Timeline Blocks */}
-        <div className="bg-[#11131e] p-5 rounded-3xl border border-white/10 space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-xs font-black uppercase tracking-widest text-white flex items-center gap-2">
-              <Calendar size={15} className="text-primary" /> Daily Execution Timeline
+      {/* ─── ROW 3: LIVE DAY TIMELINE BLOCKS & TODAY'S PROTOCOL DECK ─── */}
+      <div className="glass-panel bg-[#11131e] p-5 sm:p-6 rounded-3xl border border-white/10 space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h3 className="text-xs sm:text-sm font-black uppercase tracking-widest text-white flex items-center gap-2">
+              <Calendar size={16} className="text-primary" /> Daily Execution Timeline
             </h3>
-            <div className="flex items-center gap-2.5">
+            <p className="text-[10px] text-zinc-400 mt-0.5">
+              Scheduled protocol blocks and today's active tasks from System Configuration
+            </p>
+          </div>
+          <div className="flex items-center gap-2.5">
+            <button
+              onClick={() => {
+                audio.playClick();
+                if (onNavigate) onNavigate('strategic_control');
+              }}
+              className="text-[10px] font-black uppercase tracking-wider text-primary hover:text-blue-300 transition-colors bg-primary/10 border border-primary/20 px-3 py-1.5 rounded-lg flex items-center gap-1.5"
+              title="Configure Timetable & Protocols in System Config"
+            >
+              Configure System <ChevronRight size={12} />
+            </button>
+          </div>
+        </div>
+
+        {/* 1. Scheduled Time Blocks from System Config Timetable */}
+        <div className="space-y-2.5">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400 block opacity-70">
+              Scheduled Time Blocks ({timeline.length})
+            </span>
+            <div className="flex items-center gap-2">
               <button
+                type="button"
                 onClick={() => {
                   audio.playClick();
-                  if (onNavigate) onNavigate('control_room');
+                  window.dispatchEvent(new CustomEvent('quantum_open_ai_command'));
                 }}
-                className="text-[10px] font-black uppercase tracking-wider text-primary hover:text-blue-300 transition-colors"
-                title="Configure Timetable & Engine in System"
+                className="text-[9px] font-black uppercase text-primary hover:text-blue-300 bg-primary/10 border border-primary/25 px-2 py-0.5 rounded-lg flex items-center gap-1 transition-all hover:scale-105 active:scale-95"
+                title="Tell AI to auto-schedule or reschedule execution blocks"
               >
-                Configure System →
+                <Sparkles size={11} className="text-amber-300" />
+                <span>AI Re-Schedule</span>
               </button>
+              <span className="text-[9px] font-mono text-zinc-500">
+                {timeline.filter(b => b.completedDates.includes(todayStr)).length}/{timeline.length} done
+              </span>
             </div>
           </div>
 
           <div className="space-y-2.5">
             {timeline.map(block => {
               const done = block.completedDates.includes(todayStr);
-              const pCfg = PILLAR_CONFIG[block.pillar];
+              const pCfg = PILLAR_CONFIG[block.pillar] || PILLAR_CONFIG.Study;
               return (
                 <div
                   key={block.id}
@@ -1296,82 +1902,136 @@ export function CommandDeck({ onNavigate }: CommandDeckProps) {
           </div>
         </div>
 
-        {/* Quick Todo Protocol Deck */}
-        <div className="bg-[#11131e] p-5 rounded-3xl border border-white/10 flex flex-col justify-between space-y-4">
-          <div className="space-y-3">
-            <h3 className="text-xs font-black uppercase tracking-widest text-white flex items-center gap-2">
-              <CheckCircle2 size={15} className="text-emerald-400" /> Quick Todo Protocol Deck
-            </h3>
-
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={newTodoTitle}
-                onChange={e => setNewTodoTitle(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter') handleAddQuickTodo();
-                }}
-                placeholder="Add quick task & press Enter..."
-                className="flex-1 bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs text-white outline-none focus:border-primary"
-              />
-              <select
-                value={newTodoPillar}
-                onChange={e => setNewTodoPillar(e.target.value as Pillar)}
-                className="bg-black/40 border border-white/10 rounded-xl px-2.5 py-2 text-xs font-bold text-white outline-none"
-              >
-                <option value="Study">Study</option>
-                <option value="Health">Health</option>
-                <option value="Finance">Finance</option>
-                <option value="Mind">Mind</option>
-              </select>
+        {/* 2. Today's Tasks from Daily Protocol Deck */}
+        <div className="pt-5 border-t border-white/10 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400 flex items-center gap-1.5 opacity-80">
+                <Clock size={13} className="text-primary" /> Today's Protocol Deck Tasks ({todayTodos.length})
+              </span>
+              <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-lg bg-primary/10 border border-primary/20 text-primary">
+                {['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][todayDay]}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
               <button
-                onClick={handleAddQuickTodo}
-                className="px-3.5 py-2 rounded-xl text-white text-xs font-black bg-primary hover:bg-primary/80 transition-all flex items-center justify-center shadow-[0_0_12px_rgba(59,130,246,0.3)]"
+                type="button"
+                onClick={() => {
+                  audio.playClick();
+                  window.dispatchEvent(new CustomEvent('quantum_open_ai_command'));
+                }}
+                className="text-[9px] font-black uppercase text-amber-300 hover:text-amber-200 bg-amber-500/10 border border-amber-500/25 px-2 py-0.5 rounded-lg flex items-center gap-1 transition-all hover:scale-105 active:scale-95"
+                title="Tell AI to schedule a new task to your protocol deck"
               >
-                <Plus size={15} />
+                <Sparkles size={11} />
+                <span>+ AI Add Task</span>
+              </button>
+              <button
+                onClick={() => {
+                  audio.playClick();
+                  if (onNavigate) onNavigate('strategic_control');
+                }}
+                className="text-[9px] font-bold text-primary hover:underline flex items-center gap-1"
+                title="Manage and edit all days' tasks in System Configuration"
+              >
+                Manage in Config →
               </button>
             </div>
-
-            <div className="space-y-2 max-h-60 overflow-y-auto pr-1 scrollbar-thin">
-              {quickTodos.map(td => (
-                <div
-                  key={td.id}
-                  className="p-3 rounded-2xl bg-white/[0.02] border border-white/10 flex items-center justify-between gap-2"
-                >
-                  <button
-                    onClick={() => toggleQuickTodo(td.id)}
-                    className="flex items-center gap-2.5 text-left flex-1 min-w-0"
-                  >
-                    <div
-                      className={`w-5 h-5 rounded-md border flex items-center justify-center shrink-0 transition-all ${
-                        td.completed ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-white/20'
-                      }`}
-                    >
-                      {td.completed && <Check size={12} className="stroke-[3]" />}
-                    </div>
-                    <span className={`text-xs font-bold truncate ${td.completed ? 'line-through text-zinc-500' : 'text-zinc-200'}`}>
-                      {td.title}
-                    </span>
-                  </button>
-
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span
-                      className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-md border ${PILLAR_CONFIG[td.pillar].text} ${PILLAR_CONFIG[td.pillar].bg} ${PILLAR_CONFIG[td.pillar].border}`}
-                    >
-                      {td.pillar}
-                    </span>
-                    <button
-                      onClick={() => deleteQuickTodo(td.id)}
-                      className="p-1 text-zinc-500 hover:text-red-400 transition-colors"
-                      title="Delete Task"
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
           </div>
+
+          {todayTodos.length > 0 ? (
+            <div className="space-y-2.5">
+              {todayTodos.map(todo => {
+                const rec = todo.recurrence || (todo.isOneOff ? 'one-off' : 'weekly');
+                const done = isTodoDoneToday(todo, todayStr);
+                const pCfg = PILLAR_CONFIG[todo.pillar] || PILLAR_CONFIG.Study;
+                const xpAmt = todo.task_target === 'High' ? 100 : todo.task_target === 'Low' ? 40 : 60;
+                return (
+                  <div
+                    key={todo.id}
+                    onClick={() => toggleProtocolTodo(todo.id)}
+                    className={`p-3.5 rounded-2xl border flex items-center justify-between gap-3 cursor-pointer transition-all ${
+                      done
+                        ? 'bg-emerald-500/10 border-emerald-500/30'
+                        : 'bg-white/[0.02] border-white/10 hover:border-white/25'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div
+                        className={`w-6 h-6 rounded-lg flex items-center justify-center border transition-all ${
+                          done ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-white/20'
+                        }`}
+                      >
+                        {done && <Check size={14} className="stroke-[3]" />}
+                      </div>
+                      <div className="min-w-0">
+                        <p className={`text-xs font-bold truncate ${done ? 'line-through text-zinc-400' : 'text-white'}`}>
+                          {todo.title}
+                        </p>
+                        <p className="text-[10px] text-zinc-400 flex items-center gap-2">
+                          <span className={pCfg.text}>{todo.pillar}</span>
+                          <span>•</span>
+                          <span>{todo.time ? `⏰ ${todo.time}` : '📅 Day Task'}</span>
+                          <span>•</span>
+                          <span className="capitalize">{rec}</span>
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-white/5 text-zinc-300">
+                        +{xpAmt} XP
+                      </span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          audio.playClick();
+                          if (onNavigate) onNavigate('strategic_control');
+                        }}
+                        className="p-1 text-zinc-500 hover:text-primary transition-colors"
+                        title="Edit or reassign task in System Config"
+                      >
+                        <Pencil size={13} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteProtocolTodo(todo.id);
+                        }}
+                        className="p-1 text-zinc-500 hover:text-red-400 transition-colors"
+                        title="Remove from deck"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="text-center py-6 px-4 rounded-2xl border border-dashed border-white/10 bg-white/[0.01] space-y-2">
+              <p className="text-xs text-zinc-300 font-semibold">
+                No tasks scheduled for today ({['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][todayDay]}).
+              </p>
+              {allTodos.length > 0 && (
+                <p className="text-[10px] text-zinc-400">
+                  You have {allTodos.length} protocol {allTodos.length === 1 ? 'task' : 'tasks'} configured across the week.
+                </p>
+              )}
+              <button
+                onClick={() => {
+                  audio.playClick();
+                  if (onNavigate) onNavigate('strategic_control');
+                }}
+                className="mt-2 text-xs font-black uppercase tracking-wider text-primary hover:text-blue-300 inline-flex items-center gap-1.5 bg-primary/10 border border-primary/20 px-3.5 py-1.5 rounded-xl transition-all hover:scale-105"
+              >
+                <Pencil size={12} />
+                <span>Manage & Edit in System Config →</span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -1419,7 +2079,7 @@ export function CommandDeck({ onNavigate }: CommandDeckProps) {
                     if (onNavigate) onNavigate('engagement');
                   }}
                   className="flex flex-col items-center gap-1 h-full justify-end cursor-pointer group"
-                  title={`${bar.short} (${bar.dateStr}): ${bar.pct}% completed. Click to view Engagement Hub.`}
+                  title={`${bar.short} (${bar.dateStr}): ${bar.pct}% velocity (${bar.details}). Click to view Engagement Hub.`}
                 >
                   <span className="text-[9px] font-bold text-textMuted group-hover:text-primary transition-colors">{bar.pct}%</span>
                   <div className="w-full bg-white/5 rounded-lg h-20 flex items-end overflow-hidden p-0.5 group-hover:bg-white/10 transition-colors">
@@ -1479,7 +2139,7 @@ export function CommandDeck({ onNavigate }: CommandDeckProps) {
                       audio.playClick();
                       if (onNavigate) onNavigate('engagement');
                     }}
-                    title={`${item.dateStr}: ${Math.round(item.pct)}% habits done. Click to view Engagement Hub.`}
+                    title={`${item.details}. Click to view Engagement Hub.`}
                     className={`h-7 rounded-lg border flex items-center justify-center text-[9px] font-bold text-white/90 transition-all cursor-pointer hover:scale-110 ${bg}`}
                   >
                     {item.pct > 0 ? `${Math.round(item.pct)}%` : ''}
@@ -1513,11 +2173,13 @@ export function CommandDeck({ onNavigate }: CommandDeckProps) {
                   <p className="text-[9px] text-textMuted uppercase font-semibold">Health & Bio-Optimization</p>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] px-2 py-0.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-black uppercase tracking-wider">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[9px] px-2 py-0.5 rounded-lg bg-primary/10 border border-primary/30 text-primary font-black uppercase tracking-wider">
+                  Health Lv. {state.level?.Health || 1}
+                </span>
+                <span className="text-[9px] px-2 py-0.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-black uppercase tracking-wider">
                   {healthReadinessScore}% Ready
                 </span>
-                <span className="text-[10px] text-zinc-500 font-bold uppercase">{todayStr}</span>
               </div>
             </div>
 
@@ -1532,6 +2194,12 @@ export function CommandDeck({ onNavigate }: CommandDeckProps) {
                   className="h-full bg-gradient-to-r from-emerald-500 to-cyan-400 transition-all duration-500 rounded-full"
                   style={{ width: `${healthReadinessScore}%` }}
                 />
+              </div>
+              <div className="flex items-center justify-between text-[9px] text-textMuted pt-0.5">
+                <span>💧 {bio.waterLiters.toFixed(1)}L water</span>
+                <span>🌙 {bio.sleepHours.toFixed(1)}h sleep</span>
+                <span>❤️ {completedHealthHabits.length}/{healthHabits.length} habits</span>
+                {todayHealthFocusMins > 0 && <span>⚡ {todayHealthFocusMins}m focus</span>}
               </div>
             </div>
 
@@ -1564,19 +2232,25 @@ export function CommandDeck({ onNavigate }: CommandDeckProps) {
                 <div className="flex items-center gap-1 text-[10px] font-bold uppercase text-textMuted">
                   <Droplets size={11} className="text-cyan-400" /> Water
                 </div>
-                <div className="text-base font-black text-white">{bio.waterLiters.toFixed(1)} / 4.0L</div>
+                <div className="text-base font-black text-white">{bio.waterLiters.toFixed(1)} / 3.5L</div>
                 <div className="flex gap-1 pt-1">
                   <button
-                    onClick={() => handleUpdateBio('waterLiters', -0.5)}
-                    className="flex-1 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-[10px] font-black text-textMain transition-colors"
+                    onClick={() => handleUpdateBio('waterLiters', 0.25)}
+                    className="flex-1 py-1 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 text-[9px] font-black text-cyan-300 transition-colors"
                   >
-                    -0.5
+                    +0.25
                   </button>
                   <button
                     onClick={() => handleUpdateBio('waterLiters', 0.5)}
-                    className="flex-1 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-[10px] font-black text-textMain transition-colors"
+                    className="flex-1 py-1 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 text-[9px] font-black text-cyan-300 transition-colors"
                   >
                     +0.5
+                  </button>
+                  <button
+                    onClick={() => handleUpdateBio('waterLiters', 1.0)}
+                    className="flex-1 py-1 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-[9px] font-black text-cyan-200 transition-colors"
+                  >
+                    +1.0
                   </button>
                 </div>
               </div>
@@ -1603,6 +2277,41 @@ export function CommandDeck({ onNavigate }: CommandDeckProps) {
                 </div>
               </div>
             </div>
+
+            {/* Live Today's Health Habits Protocols */}
+            {healthHabits.length > 0 && (
+              <div className="p-3 rounded-2xl bg-white/[0.02] border border-white/5 space-y-2">
+                <div className="flex items-center justify-between text-[10px] font-bold">
+                  <span className="text-textMuted uppercase tracking-wider flex items-center gap-1.5">
+                    <HeartPulse size={12} className="text-emerald-400" />
+                    <span>Active Bio Protocols ({completedHealthHabits.length}/{healthHabits.length})</span>
+                  </span>
+                  <span className="text-emerald-400 font-black">
+                    {Math.round((completedHealthHabits.length / Math.max(1, healthHabits.length)) * 100)}% Done
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+                  {healthHabits.map(h => {
+                    const isDone = (habitLogs[`${h.id}_${todayStr}`] || 0) >= getGoalForHabit(h);
+                    return (
+                      <button
+                        key={h.id}
+                        onClick={() => toggleHabitDay(h, todayStr)}
+                        className={`px-2.5 py-1 rounded-xl text-[10px] font-bold border transition-all flex items-center gap-1.5 shrink-0 hover:scale-[1.02] active:scale-95 ${
+                          isDone
+                            ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
+                            : 'bg-white/5 border-white/5 text-textMuted hover:text-white hover:bg-white/10'
+                        }`}
+                      >
+                        <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: h.color || '#10b981' }} />
+                        <span className="truncate max-w-[100px]">{h.name}</span>
+                        {isDone && <Check size={10} className="text-emerald-400 shrink-0" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Direct jump to Health & Bio Lab */}
@@ -1618,6 +2327,123 @@ export function CommandDeck({ onNavigate }: CommandDeckProps) {
               <span>Launch Health & Bio-Optimization Lab →</span>
             </button>
           </div>
+        </div>
+      </div>
+
+      {/* ─── ROW 5: ACTIVE BIO-OPTIMIZATION PROTOCOLS (HEALTH TASKS) ─── */}
+      <div className="glass-panel p-6 rounded-3xl border border-white/10 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-white/5">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
+              <HeartPulse size={20} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-black uppercase tracking-wider text-textMain">
+                  Active Bio-Optimization Protocols
+                </h3>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-black">
+                  {protocols.filter(p => p.completed).length}/{protocols.length} Done
+                </span>
+              </div>
+              <p className="text-[11px] text-textMuted">
+                Daily physical conditioning, recovery, and cognitive vitality tasks synced with Health Lab
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleOpenAddProtocol}
+              className="px-3 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-[0_0_15px_rgba(16,185,129,0.15)]"
+            >
+              <Plus size={14} />
+              <span>New Protocol</span>
+            </button>
+            <button
+              onClick={() => {
+                audio.playClick();
+                if (onNavigate) onNavigate('lab');
+              }}
+              className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-textMuted hover:text-white text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all"
+            >
+              <span>Full Lab →</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Protocols Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          {protocols.map(p => {
+            const isCompleted = p.completed;
+            const diffColor =
+              p.difficulty === 'Hard' ? 'text-red-400 bg-red-500/10 border-red-500/20' :
+              p.difficulty === 'Medium' ? 'text-amber-400 bg-amber-500/10 border-amber-500/20' :
+              'text-emerald-400 bg-emerald-500/10 border-emerald-500/20';
+
+            return (
+              <div
+                key={p.id}
+                onClick={() => handleToggleProtocol(p.id)}
+                className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 group select-none ${
+                  isCompleted
+                    ? 'bg-emerald-950/20 border-emerald-500/40'
+                    : 'bg-white/[0.02] border-white/5 hover:border-white/20 hover:bg-white/[0.04]'
+                }`}
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div
+                    className={`w-7 h-7 rounded-xl border flex items-center justify-center shrink-0 transition-all ${
+                      isCompleted
+                        ? 'bg-emerald-500 border-emerald-400 text-black shadow-[0_0_12px_rgba(16,185,129,0.5)]'
+                        : 'border-white/20 bg-white/5 text-transparent group-hover:border-emerald-400/50'
+                    }`}
+                  >
+                    <Check size={14} className={isCompleted ? 'text-black stroke-[3]' : 'opacity-0'} />
+                  </div>
+                  <div className="min-w-0">
+                    <p className={`text-xs font-bold truncate transition-colors ${
+                      isCompleted ? 'line-through text-textMuted' : 'text-textMain group-hover:text-emerald-300'
+                    }`}>
+                      {p.title}
+                    </p>
+                    <div className="flex items-center gap-2 text-[10px] text-textMuted mt-0.5">
+                      <span className="flex items-center gap-0.5">
+                        <Clock size={10} />
+                        {p.time}
+                      </span>
+                      <span>•</span>
+                      <span className="text-emerald-400 font-bold flex items-center gap-0.5">
+                        <Sparkles size={10} />
+                        +{p.xp} XP
+                      </span>
+                      <span>•</span>
+                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase border ${diffColor}`}>
+                        {p.difficulty}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    onClick={(e) => handleOpenEditProtocol(p, e)}
+                    title="Edit Protocol"
+                    className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-textMuted hover:text-white transition-colors"
+                  >
+                    <Pencil size={12} />
+                  </button>
+                  <button
+                    onClick={(e) => handleDeleteProtocol(p.id, e)}
+                    title="Delete Protocol"
+                    className="p-1.5 rounded-lg bg-white/5 hover:bg-red-500/20 text-textMuted hover:text-red-400 transition-colors"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
 
@@ -1810,6 +2636,222 @@ export function CommandDeck({ onNavigate }: CommandDeckProps) {
             >
               Save Daily Debrief
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* ─── MODAL: ADD / EDIT HEALTH PROTOCOL ─── */}
+      {protocolModalOpen && (
+        <div className="fixed inset-0 z-[200] bg-black/75 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-[#11131e] border border-white/20 rounded-3xl p-6 w-full max-w-md space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <h3 className="text-sm font-black uppercase tracking-wider text-white flex items-center gap-2">
+                <HeartPulse size={16} className="text-emerald-400" />
+                <span>{editingProtocol ? 'Edit Health Protocol' : 'New Health Protocol'}</span>
+              </h3>
+              <button onClick={() => setProtocolModalOpen(false)} className="text-textMuted hover:text-white">
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-wider text-textMuted block mb-1">
+                  Protocol Title
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Zone 2 Cardio 40m, Cold Shower 3m..."
+                  value={protocolForm.title}
+                  onChange={e => setProtocolForm(prev => ({ ...prev, title: e.target.value }))}
+                  className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-zinc-500 focus:border-emerald-500 outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-wider text-textMuted block mb-1">
+                    Target Duration
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. 15 min, 30 min..."
+                    value={protocolForm.time}
+                    onChange={e => setProtocolForm(prev => ({ ...prev, time: e.target.value }))}
+                    className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-zinc-500 focus:border-emerald-500 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-wider text-textMuted block mb-1">
+                    Health XP Reward
+                  </label>
+                  <input
+                    type="number"
+                    min={10}
+                    max={150}
+                    value={protocolForm.xp}
+                    onChange={e => setProtocolForm(prev => ({ ...prev, xp: parseInt(e.target.value, 10) || 30 }))}
+                    className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-zinc-500 focus:border-emerald-500 outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-wider text-textMuted block mb-1.5">
+                  Difficulty Tier
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {(['Easy', 'Medium', 'Hard'] as const).map(d => (
+                    <button
+                      type="button"
+                      key={d}
+                      onClick={() => setProtocolForm(prev => ({ ...prev, difficulty: d }))}
+                      className={`py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider border transition-all ${
+                        protocolForm.difficulty === d
+                          ? d === 'Hard' ? 'bg-red-500/20 text-red-300 border-red-500/40' :
+                            d === 'Medium' ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' :
+                            'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                          : 'bg-white/5 text-textMuted border-white/5 hover:text-white'
+                      }`}
+                    >
+                      {d}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="pt-2 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setProtocolModalOpen(false)}
+                  className="flex-1 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-textMuted hover:text-white font-bold text-xs uppercase tracking-wider transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveProtocol}
+                  className="flex-1 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-black text-xs uppercase tracking-wider transition-all shadow-[0_0_15px_rgba(16,185,129,0.3)]"
+                >
+                  {editingProtocol ? 'Update Protocol' : 'Save Protocol'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── MODAL: STREAK SHIELD DEFENSE MATRIX ─── */}
+      {shieldModalOpen && (
+        <div className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-[#11131e] border border-cyan-500/30 rounded-3xl p-6 w-full max-w-md space-y-5 shadow-2xl relative">
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-cyan-500/15 text-cyan-400 border border-cyan-500/30">
+                  <Shield size={20} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black uppercase tracking-wider text-white">
+                    Streak Shield Defense Matrix
+                  </h3>
+                  <p className="text-[10px] text-textMuted uppercase font-semibold">
+                    Automated Inactivity Protection
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShieldModalOpen(false)}
+                className="text-textMuted hover:text-white p-1 rounded-lg hover:bg-white/5 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* 3 Shield Chamber Slots */}
+            <div className="grid grid-cols-3 gap-3">
+              {[1, 2, 3].map((slot) => {
+                const isArmed = slot <= streakShields;
+                return (
+                  <div
+                    key={slot}
+                    className={`p-4 rounded-2xl border text-center transition-all flex flex-col items-center justify-center gap-2 ${
+                      isArmed
+                        ? 'bg-cyan-950/30 border-cyan-500/50 shadow-[0_0_15px_rgba(6,182,212,0.25)]'
+                        : 'bg-white/[0.02] border-dashed border-white/10 opacity-60'
+                    }`}
+                  >
+                    <div
+                      className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                        isArmed
+                          ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-400/40'
+                          : 'bg-white/5 text-textMuted border border-white/10'
+                      }`}
+                    >
+                      <Shield size={20} className={isArmed ? 'fill-cyan-400/30' : ''} />
+                    </div>
+                    <div>
+                      <p className={`text-[11px] font-black uppercase ${isArmed ? 'text-cyan-300' : 'text-textMuted'}`}>
+                        Slot {slot}
+                      </p>
+                      <p className="text-[9px] text-textMuted">
+                        {isArmed ? 'Armed & Ready' : 'Depleted'}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Defense Status & Rules */}
+            <div className="p-3.5 rounded-2xl bg-white/[0.02] border border-white/5 space-y-2 text-xs">
+              <div className="flex items-center justify-between text-[11px] font-bold">
+                <span className="text-textMuted uppercase tracking-wider">Defense Status:</span>
+                <span className={streakShields > 0 ? 'text-emerald-400 font-black' : 'text-amber-400 font-black'}>
+                  {streakShields > 0 ? '● Active Failsafe Armed' : '○ Defense Disarmed (No Shields)'}
+                </span>
+              </div>
+              <p className="text-[11px] text-textMuted leading-relaxed">
+                If you miss a day of protocol execution, an armed Streak Shield automatically absorbs the gap so your active {actualStreak}-day streak will <strong className="text-white">not reset to 0</strong>.
+              </p>
+              <div className="pt-1 border-t border-white/5 flex items-center justify-between text-[10px] text-textMuted">
+                <span>Next Free Shield:</span>
+                <span className="text-cyan-400 font-bold">
+                  {7 - (actualStreak % 7)} days of consistency remaining
+                </span>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="space-y-2 pt-1">
+              {streakShields < 3 ? (
+                <button
+                  onClick={async () => {
+                    audio.playClick();
+                    await refuelStreakShield(100);
+                  }}
+                  className="w-full py-2.5 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-black text-xs uppercase tracking-wider shadow-lg shadow-cyan-500/20 transition-all flex items-center justify-center gap-2"
+                >
+                  <Shield size={14} />
+                  <span>Refuel Streak Shield (Cost: 100 XP)</span>
+                </button>
+              ) : (
+                <div className="w-full py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-center text-xs font-bold uppercase">
+                  ✓ Shield Matrix Full (3/3 Armed)
+                </div>
+              )}
+
+              <button
+                onClick={() => {
+                  audio.playClick();
+                  setShieldModalOpen(false);
+                  if (onNavigate) onNavigate('engagement');
+                }}
+                className="w-full py-2 rounded-xl bg-white/5 hover:bg-white/10 text-textMuted hover:text-white font-bold text-xs uppercase tracking-wider transition-all"
+              >
+                View Streak & Velocity in Engagement Hub →
+              </button>
+            </div>
           </div>
         </div>
       )}

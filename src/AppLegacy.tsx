@@ -229,6 +229,18 @@ function AppContainer() {
     } else if (state.theme === 'gold') {
       root.style.setProperty('--color-primary', '234 179 8');
       root.style.setProperty('--color-primary-hover', '250 204 21');
+    } else if (state.theme === 'rose') {
+      root.style.setProperty('--color-primary', '244 63 94');
+      root.style.setProperty('--color-primary-hover', '251 113 133');
+    } else if (state.theme === 'cyan') {
+      root.style.setProperty('--color-primary', '6 182 212');
+      root.style.setProperty('--color-primary-hover', '34 211 238');
+    } else if (state.theme === 'orange') {
+      root.style.setProperty('--color-primary', '249 115 22');
+      root.style.setProperty('--color-primary-hover', '251 146 60');
+    } else if (state.theme === 'indigo') {
+      root.style.setProperty('--color-primary', '99 102 241');
+      root.style.setProperty('--color-primary-hover', '129 140 248');
     } else {
       root.style.setProperty('--color-primary', '59 130 246');
       root.style.setProperty('--color-primary-hover', '96 165 250');
@@ -243,9 +255,38 @@ function AppContainer() {
         setCurrentView(hash === 'logic' || hash === 'dojo' ? 'practice' : hash);
       }
     };
+
+    const handleAiNav = (e: any) => {
+      const view = e.detail;
+      if (view) {
+        const viewMap: Record<string, string> = {
+          'settings': 'strategic_control',
+          'control_room': 'strategic_control',
+          'strategic_control': 'strategic_control',
+          'arena': 'practice',
+          'the_arena': 'practice',
+          'practice': 'practice',
+          'dashboard': 'dashboard',
+          'command_deck': 'dashboard',
+          'vault': 'vault',
+          'pulse': 'vault',
+          'engagement': 'engagement',
+          'rank': 'rank',
+          'ascension': 'rank',
+          'ai_counsel': 'ai_counsel'
+        };
+        const target = viewMap[view.toLowerCase()] || view;
+        setCurrentView(target);
+      }
+    };
+
     window.addEventListener('hashchange', handleHashChange);
+    window.addEventListener('quantum_navigate' as any, handleAiNav);
     if (window.location.hash) handleHashChange();
-    return () => window.removeEventListener('hashchange', handleHashChange);
+    return () => {
+      window.removeEventListener('hashchange', handleHashChange);
+      window.removeEventListener('quantum_navigate' as any, handleAiNav);
+    };
   }, []);
 
   useEffect(() => {

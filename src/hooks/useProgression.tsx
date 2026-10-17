@@ -11,7 +11,7 @@ function rawLevel(xp: number): number {
   if (xp <= 0) return 1;
   return Math.floor(Math.pow(xp / 100, 1 / 1.5)) + 1;
 }
-function calculateLevel(xp: number, baselineOffset: number = 0): number {
+export function calculateLevel(xp: number, baselineOffset: number = 0): number {
   const rLvl = rawLevel(xp);
   if (baselineOffset >= 0) {
     return rLvl + baselineOffset;
@@ -26,93 +26,103 @@ function calculateLevel(xp: number, baselineOffset: number = 0): number {
   }
 }
 // ── Badge definitions — auto-awarded when totalXp / totalLevel hits threshold ─
-export interface Badge { id: string; name: string; desc: string; icon: string; }
+export interface Badge {
+  id: string;
+  name: string;
+  desc: string;
+  icon: string;
+  category?: 'xp' | 'level' | 'streak' | 'protocol' | 'action';
+  requiredLevel?: number;
+  requiredXp?: number;
+  requiredStreak?: number;
+}
+
 export const BADGES: Badge[] = [
   // ── XP milestones
-  { id: 'first_xp',       name: 'First Step',         desc: 'Earn your first XP',                    icon: '⚡' },
-  { id: 'xp_100',         name: 'Century',             desc: 'Earn 100 total XP',                     icon: '💯' },
-  { id: 'xp_500',         name: 'Rising Star',         desc: 'Earn 500 total XP',                     icon: '🌟' },
-  { id: 'xp_1000',        name: 'Power User',          desc: 'Earn 1,000 total XP',                   icon: '🔋' },
-  { id: 'xp_2500',        name: 'Grinder',             desc: 'Earn 2,500 total XP',                   icon: '⚙️' },
-  { id: 'xp_5000',        name: 'Momentum Engine',     desc: 'Earn 5,000 total XP',                   icon: '🚀' },
-  { id: 'xp_10000',       name: 'XP Titan',            desc: 'Earn 10,000 total XP',                  icon: '🏆' },
-  { id: 'xp_25000',       name: 'Quantum Grinder',     desc: 'Earn 25,000 total XP',                  icon: '💎' },
-  { id: 'xp_50000',       name: 'Legend Status',       desc: 'Earn 50,000 total XP',                  icon: '👑' },
-  { id: 'xp_100000',      name: 'Transcendent',        desc: 'Earn 100,000 total XP',                 icon: '🌌' },
+  { id: 'first_xp',       name: 'First Step',         desc: 'Earn your first XP',                    icon: '⚡', category: 'xp', requiredXp: 1 },
+  { id: 'xp_100',         name: 'Century',             desc: 'Earn 100 total XP',                     icon: '💯', category: 'xp', requiredXp: 100 },
+  { id: 'xp_500',         name: 'Rising Star',         desc: 'Earn 500 total XP',                     icon: '🌟', category: 'xp', requiredXp: 500 },
+  { id: 'xp_1000',        name: 'Power User',          desc: 'Earn 1,000 total XP',                   icon: '🔋', category: 'xp', requiredXp: 1000 },
+  { id: 'xp_2500',        name: 'Grinder',             desc: 'Earn 2,500 total XP',                   icon: '⚙️', category: 'xp', requiredXp: 2500 },
+  { id: 'xp_5000',        name: 'Momentum Engine',     desc: 'Earn 5,000 total XP',                   icon: '🚀', category: 'xp', requiredXp: 5000 },
+  { id: 'xp_10000',       name: 'XP Titan',            desc: 'Earn 10,000 total XP',                  icon: '🏆', category: 'xp', requiredXp: 10000 },
+  { id: 'xp_25000',       name: 'Quantum Grinder',     desc: 'Earn 25,000 total XP',                  icon: '💎', category: 'xp', requiredXp: 25000 },
+  { id: 'xp_50000',       name: 'Legend Status',       desc: 'Earn 50,000 total XP',                  icon: '👑', category: 'xp', requiredXp: 50000 },
+  { id: 'xp_100000',      name: 'Transcendent',        desc: 'Earn 100,000 total XP',                 icon: '🌌', category: 'xp', requiredXp: 100000 },
   // ── Level milestones
-  { id: 'lvl_3',          name: 'Getting Started',     desc: 'Reach Level 3',                         icon: '🌱' },
-  { id: 'lvl_5',          name: 'Apprentice',          desc: 'Reach Level 5',                         icon: '🎯' },
-  { id: 'lvl_10',         name: 'Specialist',          desc: 'Reach Level 10',                        icon: '🔵' },
-  { id: 'lvl_15',         name: 'Rising Analyst',      desc: 'Reach Level 15',                        icon: '📊' },
-  { id: 'lvl_20',         name: 'Analyst',             desc: 'Reach Level 20',                        icon: '🟣' },
-  { id: 'lvl_30',         name: 'Commander',           desc: 'Reach Level 30',                        icon: '⚔️' },
-  { id: 'lvl_45',         name: 'Elite Vanguard',      desc: 'Reach Level 45',                        icon: '🦅' },
-  { id: 'lvl_60',         name: 'Grandmaster',         desc: 'Reach Level 60',                        icon: '🧠' },
-  { id: 'lvl_80',         name: 'Legend',              desc: 'Reach Level 80',                        icon: '🌠' },
-  { id: 'lvl_100',        name: 'Mythic',              desc: 'Reach Level 100',                       icon: '🌌' },
+  { id: 'lvl_3',          name: 'Getting Started',     desc: 'Reach Level 3',                         icon: '🌱', category: 'level', requiredLevel: 3 },
+  { id: 'lvl_5',          name: 'Apprentice',          desc: 'Reach Level 5',                         icon: '🎯', category: 'level', requiredLevel: 5 },
+  { id: 'lvl_10',         name: 'Specialist',          desc: 'Reach Level 10',                        icon: '🔵', category: 'level', requiredLevel: 10 },
+  { id: 'lvl_15',         name: 'Rising Analyst',      desc: 'Reach Level 15',                        icon: '📊', category: 'level', requiredLevel: 15 },
+  { id: 'lvl_20',         name: 'Analyst',             desc: 'Reach Level 20',                        icon: '🟣', category: 'level', requiredLevel: 20 },
+  { id: 'lvl_30',         name: 'Commander',           desc: 'Reach Level 30',                        icon: '⚔️', category: 'level', requiredLevel: 30 },
+  { id: 'lvl_45',         name: 'Elite Vanguard',      desc: 'Reach Level 45',                        icon: '🦅', category: 'level', requiredLevel: 45 },
+  { id: 'lvl_60',         name: 'Grandmaster',         desc: 'Reach Level 60',                        icon: '🧠', category: 'level', requiredLevel: 60 },
+  { id: 'lvl_80',         name: 'Legend',              desc: 'Reach Level 80',                        icon: '🌠', category: 'level', requiredLevel: 80 },
+  { id: 'lvl_100',        name: 'Mythic',              desc: 'Reach Level 100',                       icon: '🌌', category: 'level', requiredLevel: 100 },
   // ── Streak milestones
-  { id: 'streak_2',       name: 'Back to Back',        desc: '2-day activity streak',                 icon: '✌️' },
-  { id: 'streak_3',       name: 'On a Roll',           desc: '3-day activity streak',                 icon: '🔥' },
-  { id: 'streak_7',       name: 'Week Warrior',        desc: '7-day activity streak',                 icon: '📅' },
-  { id: 'streak_14',      name: 'Two-Week Titan',      desc: '14-day activity streak',                icon: '🔗' },
-  { id: 'streak_30',      name: 'Iron Discipline',     desc: '30-day activity streak',                icon: '🧲' },
-  { id: 'streak_60',      name: 'Unstoppable',         desc: '60-day activity streak',                icon: '🌪️' },
+  { id: 'streak_2',       name: 'Back to Back',        desc: '2-day activity streak',                 icon: '✌️', category: 'streak', requiredStreak: 2 },
+  { id: 'streak_3',       name: 'On a Roll',           desc: '3-day activity streak',                 icon: '🔥', category: 'streak', requiredStreak: 3 },
+  { id: 'streak_7',       name: 'Week Warrior',        desc: '7-day activity streak',                 icon: '📅', category: 'streak', requiredStreak: 7 },
+  { id: 'streak_14',      name: 'Two-Week Titan',      desc: '14-day activity streak',                icon: '🔗', category: 'streak', requiredStreak: 14 },
+  { id: 'streak_30',      name: 'Iron Discipline',     desc: '30-day activity streak',                icon: '🧲', category: 'streak', requiredStreak: 30 },
+  { id: 'streak_60',      name: 'Unstoppable',         desc: '60-day activity streak',                icon: '🌪️', category: 'streak', requiredStreak: 60 },
   // ── Timetable / consistency
-  { id: 'timetable_pro',  name: 'Timetable Pro',       desc: 'Claim your first daily bonus',          icon: '📋' },
-  { id: 'perfectionist',  name: 'Perfectionist',       desc: 'Complete 100% of a day\'s tasks',       icon: '✨' },
-  { id: 'disciplined',    name: 'Disciplined',         desc: 'Complete 80%+ tasks 5 days',            icon: '🎖️' },
-  { id: 'weekend_warrior',name: 'Weekend Warrior',     desc: 'Complete 80%+ tasks on a weekend',      icon: '🏖️' },
-  { id: 'consistency_10', name: 'Consistent',          desc: 'Use timetable 10 days in a row',        icon: '📆' },
+  { id: 'timetable_pro',  name: 'Timetable Pro',       desc: 'Claim your first daily timetable bonus', icon: '📋', category: 'protocol' },
+  { id: 'perfectionist',  name: 'Perfectionist',       desc: 'Complete 100% of a day\'s tasks',       icon: '✨', category: 'protocol' },
+  { id: 'disciplined',    name: 'Disciplined',         desc: 'Complete 80%+ tasks 5 days',            icon: '🎖️', category: 'protocol' },
+  { id: 'weekend_warrior',name: 'Weekend Warrior',     desc: 'Complete 80%+ tasks on a weekend',      icon: '🏖️', category: 'protocol' },
+  { id: 'consistency_10', name: 'Consistent',          desc: 'Use timetable 10 days in a row',        icon: '📆', category: 'protocol' },
   // ── Action-specific
-  { id: 'first_solve',    name: 'First Blood',         desc: 'Solve your first question',             icon: '🩸' },
-  { id: 'speed_demon',    name: 'Speed Demon',         desc: 'Earn a speed bonus on an answer',       icon: '💨' },
-  { id: 'logic_master',   name: 'Logic Master',        desc: 'Complete a Logic Hub problem',          icon: '🧩' },
-  { id: 'pattern_eye',    name: 'Pattern Eye',         desc: 'Complete a Pattern Dojo session',       icon: '👁️' },
-  { id: 'lab_rat',        name: 'Lab Rat',             desc: 'Complete a Bio-Mission',                icon: '🔬' },
-  { id: 'night_owl',      name: 'Night Owl',           desc: 'Study after 10 PM',                     icon: '🦉' },
-  { id: 'early_bird',     name: 'Early Bird',          desc: 'Study before 6 AM',                     icon: '🐦' },
-  { id: 'engine_master',  name: 'Engine Master',       desc: 'Complete a Progression Engine task',    icon: '⚙️' },
-  { id: 'practice_10',    name: 'Practice Addict',     desc: 'Solve 10 practice questions',           icon: '📝' },
-  { id: 'deep_focus',     name: 'Deep Focus',          desc: 'Log a 60+ minute study task',           icon: '🧘' },
+  { id: 'first_solve',    name: 'First Blood',         desc: 'Solve your first question',             icon: '🩸', category: 'action' },
+  { id: 'speed_demon',    name: 'Speed Demon',         desc: 'Earn a speed bonus on an answer',       icon: '💨', category: 'action' },
+  { id: 'logic_master',   name: 'Logic Master',        desc: 'Complete a Logic Hub problem',          icon: '🧩', category: 'action' },
+  { id: 'pattern_eye',    name: 'Pattern Eye',         desc: 'Complete a Pattern Dojo session',       icon: '👁️', category: 'action' },
+  { id: 'lab_rat',        name: 'Lab Rat',             desc: 'Complete a Bio-Mission',                icon: '🔬', category: 'action' },
+  { id: 'night_owl',      name: 'Night Owl',           desc: 'Execute protocol after 10 PM',          icon: '🦉', category: 'action' },
+  { id: 'early_bird',     name: 'Early Bird',          desc: 'Execute protocol before 6 AM',          icon: '🐦', category: 'action' },
+  { id: 'engine_master',  name: 'Engine Master',       desc: 'Complete a Progression Engine task',    icon: '⚙️', category: 'action' },
+  { id: 'practice_10',    name: 'Practice Addict',     desc: 'Solve 10 practice questions',           icon: '📝', category: 'action' },
+  { id: 'deep_focus',     name: 'Deep Focus',          desc: 'Log a 60+ minute study task',           icon: '🧘', category: 'action' },
 ];
 
-// Map badge id → condition checker (returns true if this action triggers the badge)
-function checkBadgeTriggers(
+// Map badge id → condition checker (returns true if user qualifies for the badge)
+export function checkBadgeTriggers(
   badgeId: string,
   opts: { totalXp: number; newTotalXp: number; oldLevel: number; newLevel: number; streak: number; actionType: string; }
 ): boolean {
-  const { totalXp, newTotalXp, oldLevel, newLevel, streak, actionType } = opts;
+  const { newTotalXp, newLevel, streak, actionType } = opts;
   const hour = new Date().getHours();
   switch (badgeId) {
     // XP
-    case 'first_xp':       return totalXp === 0 && newTotalXp > 0;
-    case 'xp_100':         return totalXp < 100 && newTotalXp >= 100;
-    case 'xp_500':         return totalXp < 500 && newTotalXp >= 500;
-    case 'xp_1000':        return totalXp < 1000 && newTotalXp >= 1000;
-    case 'xp_2500':        return totalXp < 2500 && newTotalXp >= 2500;
-    case 'xp_5000':        return totalXp < 5000 && newTotalXp >= 5000;
-    case 'xp_10000':       return totalXp < 10000 && newTotalXp >= 10000;
-    case 'xp_25000':       return totalXp < 25000 && newTotalXp >= 25000;
-    case 'xp_50000':       return totalXp < 50000 && newTotalXp >= 50000;
-    case 'xp_100000':      return totalXp < 100000 && newTotalXp >= 100000;
+    case 'first_xp':       return newTotalXp > 0;
+    case 'xp_100':         return newTotalXp >= 100;
+    case 'xp_500':         return newTotalXp >= 500;
+    case 'xp_1000':        return newTotalXp >= 1000;
+    case 'xp_2500':        return newTotalXp >= 2500;
+    case 'xp_5000':        return newTotalXp >= 5000;
+    case 'xp_10000':       return newTotalXp >= 10000;
+    case 'xp_25000':       return newTotalXp >= 25000;
+    case 'xp_50000':       return newTotalXp >= 50000;
+    case 'xp_100000':      return newTotalXp >= 100000;
     // Levels
-    case 'lvl_3':          return oldLevel < 3 && newLevel >= 3;
-    case 'lvl_5':          return oldLevel < 5 && newLevel >= 5;
-    case 'lvl_10':         return oldLevel < 10 && newLevel >= 10;
-    case 'lvl_15':         return oldLevel < 15 && newLevel >= 15;
-    case 'lvl_20':         return oldLevel < 20 && newLevel >= 20;
-    case 'lvl_30':         return oldLevel < 30 && newLevel >= 30;
-    case 'lvl_45':         return oldLevel < 45 && newLevel >= 45;
-    case 'lvl_60':         return oldLevel < 60 && newLevel >= 60;
-    case 'lvl_80':         return oldLevel < 80 && newLevel >= 80;
-    case 'lvl_100':        return oldLevel < 100 && newLevel >= 100;
+    case 'lvl_3':          return newLevel >= 3;
+    case 'lvl_5':          return newLevel >= 5;
+    case 'lvl_10':         return newLevel >= 10;
+    case 'lvl_15':         return newLevel >= 15;
+    case 'lvl_20':         return newLevel >= 20;
+    case 'lvl_30':         return newLevel >= 30;
+    case 'lvl_45':         return newLevel >= 45;
+    case 'lvl_60':         return newLevel >= 60;
+    case 'lvl_80':         return newLevel >= 80;
+    case 'lvl_100':        return newLevel >= 100;
     // Streaks
-    case 'streak_2':       return streak === 2;
-    case 'streak_3':       return streak === 3;
-    case 'streak_7':       return streak === 7;
-    case 'streak_14':      return streak === 14;
-    case 'streak_30':      return streak === 30;
-    case 'streak_60':      return streak === 60;
+    case 'streak_2':       return streak >= 2;
+    case 'streak_3':       return streak >= 3;
+    case 'streak_7':       return streak >= 7;
+    case 'streak_14':      return streak >= 14;
+    case 'streak_30':      return streak >= 30;
+    case 'streak_60':      return streak >= 60;
     // Timetable
     case 'timetable_pro':  return actionType.startsWith('timetable_');
     case 'perfectionist':  return actionType === 'timetable_perfect';
@@ -128,8 +138,8 @@ function checkBadgeTriggers(
     case 'engine_master':  return actionType.startsWith('Engine:') || actionType.startsWith('Mind:');
     case 'practice_10':    return newTotalXp >= 500 && (actionType.includes('Practice') || actionType.includes('Solved'));
     case 'deep_focus':     return actionType.includes('60min') || actionType.includes('deep_focus');
-    case 'night_owl':      return (hour >= 22 || hour < 4) && newTotalXp > totalXp;
-    case 'early_bird':     return hour < 6 && hour >= 4 && newTotalXp > totalXp;
+    case 'night_owl':      return (hour >= 22 || hour < 4) && newTotalXp > 0;
+    case 'early_bird':     return hour < 6 && hour >= 4 && newTotalXp > 0;
     default: return false;
   }
 }
@@ -162,6 +172,7 @@ interface ProgressionState {
   baselineLevel: number;
   timetableXpClaims: Record<string, string[]>;
   settings?: any;
+  earnedBadgeIds: string[];
 }
 
 export interface XpBreakdown {
@@ -184,6 +195,7 @@ interface ProgressionContextType {
   closeLevelUp: () => void;
   loading: boolean;
   claimTimetableTaskXp: (taskId: string, pillar: Pillar, label: string, baseAmount: number) => Promise<{ awarded: boolean; xpEarned: number; breakdown: XpBreakdown }>;
+  refuelStreakShield: (costXp?: number) => Promise<boolean>;
 }
 
 const ProgressionContext = createContext<ProgressionContextType | null>(null);
@@ -347,6 +359,29 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
             try { badgeIds = JSON.parse(local); } catch (err) {}
           }
         }
+
+        // Auto-reconciliation: award any milestone badges already earned based on current DB XP, Level, Streak
+        const dbTotalLvl = calculateLevel(dbTotalXp, dbBaselineLevel);
+        const reconcileOpts = {
+          totalXp: dbTotalXp,
+          newTotalXp: dbTotalXp,
+          oldLevel: dbTotalLvl,
+          newLevel: dbTotalLvl,
+          streak: dbStreak,
+          actionType: 'reconcile_load',
+        };
+        const qualifiedBadges = BADGES.filter(b => checkBadgeTriggers(b.id, reconcileOpts));
+        const newBadgeIds = qualifiedBadges.map(b => b.id).filter(id => !badgeIds.includes(id));
+        if (newBadgeIds.length > 0) {
+          badgeIds = Array.from(new Set([...badgeIds, ...newBadgeIds]));
+          if (supabase) {
+            void supabase.from('user_earned_badges').upsert(
+              newBadgeIds.map(id => ({ user_id: user.id, badge_id: id, earned_at: new Date().toISOString() })),
+              { onConflict: 'user_id,badge_id', ignoreDuplicates: true }
+            );
+          }
+        }
+
         setEarnedBadgeIds(badgeIds);
         earnedBadgeIdsRef.current = badgeIds;
         localStorage.setItem(`quantum_badges_${user.id}`, JSON.stringify(badgeIds));
@@ -403,16 +438,78 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
     let currentStreak = streakCountRef.current;
     let newLastActivity = lastActivityRef.current;
 
-    // Activity streak logic
+    // Activity streak logic with Streak Shield defense
+    let shieldUsed = false;
     if (newLastActivity) {
       const diffDays = Math.round(
         (new Date(today).getTime() - new Date(newLastActivity).getTime()) / 86400000
       );
-      if (diffDays === 1) { currentStreak += 1; newLastActivity = today; }
-      else if (diffDays > 1) { currentStreak = 1; newLastActivity = today; }
+      if (diffDays === 1) {
+        currentStreak += 1;
+        newLastActivity = today;
+      } else if (diffDays > 1) {
+        const availableShields = settingsRef.current?.streakShields !== undefined
+          ? Number(settingsRef.current.streakShields)
+          : Math.min(3, Math.floor(prevStreak / 7));
+        const missedDays = diffDays - 1;
+
+        if (missedDays <= availableShields && availableShields > 0) {
+          shieldUsed = true;
+          currentStreak = prevStreak + 1;
+          newLastActivity = today;
+          const remainingShields = Math.max(0, availableShields - missedDays);
+
+          const updatedSettings = {
+            ...settingsRef.current,
+            streakShields: remainingShields,
+            lastShieldUsedDate: today,
+          };
+          setSettings(updatedSettings);
+          settingsRef.current = updatedSettings;
+
+          if (supabase && userIdRef.current) {
+            supabase.from('profiles').update({ settings: updatedSettings }).eq('id', userIdRef.current).then();
+          }
+
+          import('react-hot-toast').then(({ default: toast }) => {
+            toast.success(`🛡️ Streak Shield Activated! Consumed ${missedDays} shield(s) to protect your ${currentStreak}-day streak!`, {
+              icon: '🛡️',
+              duration: 5000,
+            });
+          }).catch(() => {});
+        } else {
+          currentStreak = 1;
+          newLastActivity = today;
+        }
+      }
     } else {
       currentStreak = 1;
       newLastActivity = today;
+    }
+
+    // Auto-award free Streak Shield every 7 consecutive days if not capped at 3
+    if (!shieldUsed && currentStreak > prevStreak && currentStreak % 7 === 0) {
+      const currentShields = settingsRef.current?.streakShields !== undefined
+        ? Number(settingsRef.current.streakShields)
+        : Math.min(3, Math.floor((currentStreak - 1) / 7));
+      if (currentShields < 3) {
+        const nextShields = Math.min(3, currentShields + 1);
+        const updatedSettings = {
+          ...settingsRef.current,
+          streakShields: nextShields,
+        };
+        setSettings(updatedSettings);
+        settingsRef.current = updatedSettings;
+        if (supabase && userIdRef.current) {
+          supabase.from('profiles').update({ settings: updatedSettings }).eq('id', userIdRef.current).then();
+        }
+        import('react-hot-toast').then(({ default: toast }) => {
+          toast.success(`🛡️ New Streak Shield Earned! (${nextShields}/3 Armed)`, {
+            icon: '🛡️',
+            duration: 5000,
+          });
+        }).catch(() => {});
+      }
     }
 
     // ── Multipliers ──────────────────
@@ -688,6 +785,56 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
     }
   }, [displayName]);
 
+  const refuelStreakShield = async (costXp: number = 100): Promise<boolean> => {
+    const currentShields = settingsRef.current?.streakShields !== undefined
+      ? Number(settingsRef.current.streakShields)
+      : Math.min(3, Math.floor(streakCountRef.current / 7));
+
+    if (currentShields >= 3) {
+      import('react-hot-toast').then(({ default: toast }) => {
+        toast.error('Streak Shield Matrix already at maximum capacity (3/3).');
+      });
+      return false;
+    }
+
+    if (totalXpRef.current < costXp) {
+      import('react-hot-toast').then(({ default: toast }) => {
+        toast.error(`Insufficient XP to refuel shield. Required: ${costXp} XP (Current: ${totalXpRef.current} XP)`);
+      });
+      return false;
+    }
+
+    const newTotalXp = Math.max(0, totalXpRef.current - costXp);
+    totalXpRef.current = newTotalXp;
+    setTotalXp(newTotalXp);
+
+    const nextShields = currentShields + 1;
+    const updatedSettings = {
+      ...settingsRef.current,
+      streakShields: nextShields,
+      lastRefuelDate: new Date().toISOString(),
+    };
+    setSettings(updatedSettings);
+    settingsRef.current = updatedSettings;
+
+    if (supabase && userIdRef.current) {
+      await supabase.from('profiles').update({
+        total_xp: newTotalXp,
+        settings: updatedSettings
+      }).eq('id', userIdRef.current);
+    }
+
+    audio.playSuccess();
+    import('react-hot-toast').then(({ default: toast }) => {
+      toast.success(`🛡️ Streak Shield Armed! (${nextShields}/3 Armed)`, {
+        icon: '🛡️',
+        duration: 4000,
+      });
+    });
+
+    return true;
+  };
+
   const closeLevelUp = useCallback(() => {
     setShowLevelUp(false);
     setLevelUpData(null);
@@ -722,7 +869,8 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
           theme,
           baselineLevel,
           timetableXpClaims,
-          settings
+          settings,
+          earnedBadgeIds
         },
         addXp,
         claimTimetableTaskXp,
@@ -789,6 +937,7 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
         levelUpData,
         closeLevelUp,
         loading,
+        refuelStreakShield,
       }}
     >
       {children}

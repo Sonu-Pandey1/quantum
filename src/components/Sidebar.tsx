@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { DatabaseBackup, Check, Target, LogOut, Settings, User, Eye, EyeOff, Zap, BrainCircuit, Menu, X, Trophy, TrendingUp, Activity } from 'lucide-react';
+import { DatabaseBackup, Check, Target, LogOut, Settings, User, Eye, EyeOff, Zap, BrainCircuit, Menu, X, Trophy, TrendingUp, Activity, SlidersHorizontal } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { audio } from '../lib/audio';
@@ -258,12 +258,12 @@ export function Sidebar({ currentView, onViewChange, isPortfolioMode, onTogglePo
   };
 
   const navItems = [
-    { id: 'dashboard',    icon: Zap,          label: 'Command Deck' },
-    { id: 'practice',     icon: BrainCircuit, label: 'The Arena' },
-    { id: 'engagement',   icon: Activity,     label: 'Engagement' },
-    { id: 'vault',        icon: TrendingUp,   label: 'Pulse & Vault' },
-    { id: 'rank',         icon: Trophy,       label: 'Ascension & AI' },
-    { id: 'control_room', icon: Settings,     label: 'System' },
+    { id: 'dashboard',         icon: Zap,                label: 'Command Deck' },
+    { id: 'practice',          icon: BrainCircuit,       label: 'The Arena' },
+    { id: 'engagement',        icon: Activity,           label: 'Engagement' },
+    { id: 'vault',             icon: TrendingUp,         label: 'Pulse & Vault' },
+    { id: 'rank',              icon: Trophy,             label: 'Ascension & AI' },
+    { id: 'strategic_control', icon: SlidersHorizontal,  label: 'Settings' },
   ];
 
 

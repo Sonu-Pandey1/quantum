@@ -84,14 +84,16 @@ export function ActivityGraph() {
       setAvailableYears(years);
     }
 
-    if (dailyRows) {
+    if (dailyRows || logs) {
       const map: Record<string, DayActivity> = {};
       let total = 0;
 
-      // Group logs by day for accuracy
+      // Group logs by day for accuracy and count
+      const logsPerDay: Record<string, number> = {};
       const dailyAccuracy: Record<string, { solved: number; total: number }> = {};
       logs?.forEach(log => {
         const d = log.created_at.split('T')[0];
+        logsPerDay[d] = (logsPerDay[d] || 0) + 1;
         if (!dailyAccuracy[d]) dailyAccuracy[d] = { solved: 0, total: 0 };
         dailyAccuracy[d].total++;
         if (!log.action_type?.startsWith('FAILED:')) {
@@ -99,27 +101,57 @@ export function ActivityGraph() {
         }
       });
 
-      (dailyRows as any[]).forEach((row) => {
-        const count = row.activity_count ?? 0;
-        total += count;
-        let level = 0;
-        if (count >= 10) level = 4;
-        else if (count >= 5) level = 3;
-        else if (count >= 2) level = 2;
-        else if (count >= 1) level = 1;
+      const dailyRowMap: Record<string, number> = {};
+      (dailyRows as any[] || []).forEach((row) => {
+        dailyRowMap[row.date] = row.activity_count ?? 0;
+      });
 
-        const accInfo = dailyAccuracy[row.date];
-        const accuracy = accInfo ? (accInfo.solved / accInfo.total) * 100 : undefined;
-        
-        map[row.date] = { date: row.date, count, level, accuracy };
+      // Collect all dates across daily_activity and activity_logs
+      const allDates = new Set<string>([
+        ...Object.keys(dailyRowMap),
+        ...Object.keys(logsPerDay),
+      ]);
+
+      // Check localStorage execution logs for the year
+      try {
+        const activeUid = user.id;
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && (key.startsWith(`quantum_exec_${activeUid}_${selectedYear}-`) || key.startsWith(`quantum_exec_${selectedYear}-`))) {
+            const parts = key.split('_');
+            const d = parts[parts.length - 1];
+            if (d && d.startsWith(`${selectedYear}-`)) {
+              const items = JSON.parse(localStorage.getItem(key) || '[]');
+              const count = Array.isArray(items) ? items.length : 0;
+              if (count > 0) {
+                allDates.add(d);
+                logsPerDay[d] = (logsPerDay[d] || 0) + count;
+              }
+            }
+          }
+        }
+      } catch {}
+
+      allDates.forEach(dateStr => {
+        const dbCount = dailyRowMap[dateStr] || 0;
+        const logCount = logsPerDay[dateStr] || 0;
+        const count = Math.max(dbCount, logCount);
+        if (count > 0) {
+          total += count;
+          let level = 0;
+          if (count >= 10) level = 4;
+          else if (count >= 5) level = 3;
+          else if (count >= 2) level = 2;
+          else if (count >= 1) level = 1;
+
+          const accInfo = dailyAccuracy[dateStr];
+          const accuracy = accInfo ? (accInfo.solved / accInfo.total) * 100 : undefined;
+          map[dateStr] = { date: dateStr, count, level, accuracy };
+        }
       });
 
       // Longest activity streak
-      const sorted = (dailyRows as any[])
-        .filter((d) => (d.activity_count ?? 0) > 0)
-        .map((d) => d.date)
-        .sort();
-
+      const sorted = Object.keys(map).sort();
       let longest = 0, cur = 0;
       let last: Date | null = null;
       sorted.forEach((ds: string) => {
@@ -133,11 +165,14 @@ export function ActivityGraph() {
         last = d;
       });
 
-      setStats({ total, longestStreak: longest });
+      const effectiveStreak = Math.max(profile?.streak_count ?? 0, cur, longest > 0 ? 1 : 0);
+      setStats({ total, longestStreak: Math.max(longest, effectiveStreak) });
       setActivityData(map);
+      setCurrentStreakCount(effectiveStreak);
+    } else {
+      setCurrentStreakCount(profile?.streak_count ?? 0);
     }
 
-    setCurrentStreakCount(profile?.streak_count ?? 0);
     setLoading(false);
   }
 
@@ -155,7 +190,7 @@ export function ActivityGraph() {
     setSelectedDay(date);
     setDayLogs([]);
 
-    // FIX: getSession() reads from localStorage — no HTTP call, no 403
+    // getSession() reads from localStorage — no HTTP call, no 403
     const { data: { session } } = await supabase.auth.getSession();
     const user = session?.user;
     if (!user) { setLoadingLogs(false); return; }
@@ -169,7 +204,38 @@ export function ActivityGraph() {
       .lte('created_at', `${date}T23:59:59.999Z`)
       .order('created_at', { ascending: false });
 
-    setDayLogs(data ?? []);
+    const combined: ActivityLog[] = (data ?? []).map(d => ({
+      id: String(d.id),
+      action_type: d.action_type || 'Activity',
+      pillar: d.pillar || 'General',
+      xp_earned: d.xp_earned || 0,
+      created_at: d.created_at
+    }));
+
+    // Also include local focus execution logs if available
+    try {
+      const activeUid = user.id;
+      const raw = localStorage.getItem(`quantum_exec_${activeUid}_${date}`) || localStorage.getItem(`quantum_exec_${date}`);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0 && combined.length === 0) {
+          parsed.forEach((_taskId: any, i: number) => {
+            combined.push({
+              id: `exec-${date}-${i}`,
+              action_type: `Focus Protocol Block #${i + 1}`,
+              pillar: 'Mind',
+              xp_earned: 25,
+              created_at: `${date}T12:00:00.000Z`
+            });
+          });
+        }
+      }
+    } catch {}
+
+    // Strictly newest / latest on top
+    combined.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+    setDayLogs(combined);
     setLoadingLogs(false);
   };
 
