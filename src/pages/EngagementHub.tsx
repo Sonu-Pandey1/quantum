@@ -230,9 +230,15 @@ export function EngagementHub({ onNavigateToRank }: { onNavigateToRank?: () => v
               value={stats.loading ? '—' : String(stats.currentLoginStreak)}
               unit="Days"
               icon={<Flame className="text-orange-500" size={18} />}
-              sub={stats.lastLoginDate && !isSameDay(parseISO(stats.lastLoginDate), new Date())
-                ? `Last: ${format(parseISO(stats.lastLoginDate), 'MMM d')}`
-                : 'Active Today 🔥'}
+              sub={(() => {
+                const activeShields = settings?.streakShields !== undefined
+                  ? Math.min(3, Math.max(0, Number(settings.streakShields)))
+                  : Math.min(3, Math.floor((stats.currentLoginStreak || 0) / 7));
+                if (activeShields > 0) return `🛡️ ${activeShields}/3 Shields Armed`;
+                return stats.lastLoginDate && !isSameDay(parseISO(stats.lastLoginDate), new Date())
+                  ? `Last: ${format(parseISO(stats.lastLoginDate), 'MMM d')}`
+                  : 'Active Today 🔥';
+              })()}
               color="orange"
             />
           </div>

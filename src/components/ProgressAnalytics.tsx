@@ -24,34 +24,7 @@ export function ProgressAnalytics() {
 
   return (
     <div className="space-y-6">
-      {/* Overview Row */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="glass-panel p-4 border border-white/5 bg-white/[0.02] rounded-2xl">
-          <div className="flex items-center space-x-2 text-textMuted text-[10px] font-bold uppercase tracking-widest mb-1">
-            <CheckCircle size={12} className="text-emerald-500" />
-            <span>{scope === 'today' ? "Today's Solved" : "Total Solved"}</span>
-          </div>
-          <p className="text-2xl font-black text-textMain">{currentMetrics.totalSolved}</p>
-        </div>
-
-        <div className="glass-panel p-4 border border-white/5 bg-white/[0.02] rounded-2xl">
-          <div className="flex items-center space-x-2 text-textMuted text-[10px] font-bold uppercase tracking-widest mb-1">
-            <Target size={12} className="text-primary" />
-            <span>{scope === 'today' ? "Today's Accuracy" : "Overall Accuracy"}</span>
-          </div>
-          <p className="text-2xl font-black text-textMain">{Math.round(currentMetrics.overallAccuracy)}%</p>
-        </div>
-
-        <div className="glass-panel p-4 border border-white/5 bg-white/[0.02] rounded-2xl">
-          <div className="flex items-center space-x-2 text-textMuted text-[10px] font-bold uppercase tracking-widest mb-1">
-            <BarChart3 size={12} className="text-purple-400" />
-            <span>{scope === 'today' ? "Today's XP" : "XP Harvested"}</span>
-          </div>
-          <p className="text-2xl font-black text-textMain">{currentMetrics.totalXp.toLocaleString()}</p>
-        </div>
-      </div>
-
-      {/* Category Breakdown & Matrix */}
+      {/* Category Breakdown & Matrix (Neural Accuracy & Velocity Matrix) */}
       <div className="glass-panel p-6 border border-white/5 bg-black/20 rounded-3xl space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
@@ -119,6 +92,33 @@ export function ProgressAnalytics() {
               </div>
             </div>
           ))}
+        </div>
+      </div>
+
+      {/* Overview Row (Today's Solved, Accuracy, and Total XP) */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="glass-panel p-4 border border-white/5 bg-white/[0.02] rounded-2xl">
+          <div className="flex items-center space-x-2 text-textMuted text-[10px] font-bold uppercase tracking-widest mb-1">
+            <CheckCircle size={12} className="text-emerald-500" />
+            <span>{scope === 'today' ? "Today's Solved" : "Total Solved"}</span>
+          </div>
+          <p className="text-2xl font-black text-textMain">{currentMetrics.totalSolved}</p>
+        </div>
+
+        <div className="glass-panel p-4 border border-white/5 bg-white/[0.02] rounded-2xl">
+          <div className="flex items-center space-x-2 text-textMuted text-[10px] font-bold uppercase tracking-widest mb-1">
+            <Target size={12} className="text-primary" />
+            <span>{scope === 'today' ? "Today's Accuracy" : "Overall Accuracy"}</span>
+          </div>
+          <p className="text-2xl font-black text-textMain">{Math.round(currentMetrics.overallAccuracy)}%</p>
+        </div>
+
+        <div className="glass-panel p-4 border border-white/5 bg-white/[0.02] rounded-2xl">
+          <div className="flex items-center space-x-2 text-textMuted text-[10px] font-bold uppercase tracking-widest mb-1">
+            <BarChart3 size={12} className="text-purple-400" />
+            <span>{scope === 'today' ? "Today's XP" : "XP Harvested"}</span>
+          </div>
+          <p className="text-2xl font-black text-textMain">{currentMetrics.totalXp.toLocaleString()}</p>
         </div>
       </div>
 

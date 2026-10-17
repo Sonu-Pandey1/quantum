@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabaseClient';
 import { format } from 'date-fns';
 import confetti from 'canvas-confetti';
 import toast from 'react-hot-toast';
+import { audio } from '../lib/audio';
 
 export type Pillar = 'Study' | 'Health' | 'Finance' | 'Mind';
 
@@ -528,7 +529,7 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
     const activeBuffs = buffsRef.current.filter(b => b.expiresAt > Date.now() && (b.type === pillar || b.type === 'Global'));
     activeBuffs.forEach(b => { finalMultiplier *= b.multiplier; });
 
-    const rawAmount  = Math.floor(baseAmount * finalMultiplier);
+    const rawAmount  = Math.round(baseAmount * finalMultiplier);
     const finalAmount = Math.max(baseAmount, rawAmount);
 
     const newPillarXp = currentPillarXp[pillar] + finalAmount;

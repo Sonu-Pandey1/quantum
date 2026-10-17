@@ -134,7 +134,7 @@ describe('Progression & Multipliers', () => {
     if (archetype === 'Wealth Architect' && pillar === 'Finance') multiplier *= 1.2;
     if (archetype === 'Vitality Vanguard' && pillar === 'Health') multiplier *= 1.2;
 
-    const raw = Math.floor(baseAmount * multiplier);
+    const raw = Math.round(baseAmount * multiplier);
     return Math.max(baseAmount, raw);
   }
 
