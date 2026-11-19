@@ -99,13 +99,17 @@ How shall we optimize your path today? You can converse with me directly, compil
         } catch (e) {}
       }
 
-      // Load scheduled timetable tasks
-      const localTasks = localStorage.getItem(`quantum_timetable_${uid}`);
-      if (localTasks && localTasks !== "undefined") {
-        try {
-          setUserTasks(JSON.parse(localTasks));
-        } catch (e) {
-          console.error("Failed to parse local tasks in AiCounsel", e);
+      // Load scheduled timetable tasks (prioritizing live profile state, then storage keys)
+      if (state.settings?.timetable && Array.isArray(state.settings.timetable) && state.settings.timetable.length > 0) {
+        setUserTasks(state.settings.timetable);
+      } else {
+        const localTasks = localStorage.getItem(`quantum_timetable_${uid}`) || localStorage.getItem(`quantum_timetable_${state.displayName || ''}`) || localStorage.getItem('quantum_timetable_default');
+        if (localTasks && localTasks !== "undefined") {
+          try {
+            setUserTasks(JSON.parse(localTasks));
+          } catch (e) {
+            console.error("Failed to parse local tasks in AiCounsel", e);
+          }
         }
       }
 

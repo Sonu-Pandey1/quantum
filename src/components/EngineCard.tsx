@@ -11,12 +11,17 @@ import toast from 'react-hot-toast';
 
 
 // Types
-interface Task {
-  id: number;
+export interface Task {
+  id: number | string;
   start: string;
   end: string;
   title: string;
   statusMsg: string;
+  pillar?: string;
+  category?: string;
+  task_target?: string;
+  dayOfWeek?: number;
+  isWeekend?: boolean;
 }
 
 interface SkipRecord {
@@ -25,7 +30,7 @@ interface SkipRecord {
   image?: string;
 }
 
-const SCHEDULE: Task[] = [
+export const SCHEDULE: Task[] = [
   { id: 1, start: '06:00', end: '07:00', title: 'Morning Routine & Movement', statusMsg: 'System Initialization...' },
   { id: 2, start: '09:00', end: '12:00', title: 'Deep Work Block 1', statusMsg: 'Maximum Focus...' },
   { id: 3, start: '13:00', end: '17:00', title: 'Deep Work Block 2 & Communications', statusMsg: 'Executing Objectives...' },
@@ -48,6 +53,58 @@ function calculateEndTime(startTime: string, durationMinutes: number): string {
   const date = parseTime(startTime);
   date.setMinutes(date.getMinutes() + durationMinutes);
   return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
+
+export function normalizeEngineTask(t: any, index: number = 0): Task {
+  const start = t.start || t.start_time || t.timeStart || '09:00';
+  let end = t.end || t.end_time || t.timeEnd;
+  if (!end) {
+    end = calculateEndTime(start, Number(t.duration_minutes || t.duration || 45));
+  }
+  const title = t.title || t.name || `Task ${index + 1}`;
+  const statusMsg = t.statusMsg || (t.task_target ? `${t.task_target} Priority Protocol` : 'Executing Protocol...');
+  return {
+    id: t.id !== undefined && t.id !== null ? t.id : `task-${index + 1}`,
+    start,
+    end,
+    title,
+    statusMsg,
+    pillar: t.pillar,
+    category: t.category,
+    task_target: t.task_target,
+    dayOfWeek: t.dayOfWeek !== undefined ? Number(t.dayOfWeek) : (t.day_of_week !== undefined ? Number(t.day_of_week) : undefined),
+    isWeekend: t.isWeekend !== undefined ? !!t.isWeekend : (t.is_weekend !== undefined ? !!t.is_weekend : undefined),
+  };
+}
+
+export function getStoredTimetableTasks(userId?: string | null, displayName?: string, settingsTimetable?: any[]): Task[] {
+  // 1. Direct from profile settings if available (highest priority source of truth)
+  if (Array.isArray(settingsTimetable) && settingsTimetable.length > 0) {
+    return settingsTimetable.map((t, idx) => normalizeEngineTask(t, idx));
+  }
+
+  // 2. LocalStorage keys in order of precedence
+  const keys = [
+    userId && userId !== 'default' ? `quantum_timetable_${userId}` : null,
+    displayName ? `quantum_timetable_${displayName}` : null,
+    'quantum_timetable_default',
+    'quantum_timetable',
+  ].filter(Boolean) as string[];
+
+  for (const k of keys) {
+    const raw = localStorage.getItem(k);
+    if (raw && raw !== 'undefined' && raw !== 'null') {
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map((t, idx) => normalizeEngineTask(t, idx));
+        }
+      } catch {}
+    }
+  }
+
+  // 3. Fallback to default SCHEDULE
+  return SCHEDULE;
 }
 
 export function getTimeGreeting(): { text: string; icon: string; phase: string } {
@@ -107,7 +164,38 @@ export function EngineCard() {
   const [followWeekendTimetable, setFollowWeekendTimetable] = useState(true);
   const [userId, setUserId] = useState<string>('default');
 
-  const [schedule, setSchedule] = useState<Task[]>(SCHEDULE);
+  const [schedule, setSchedule] = useState<Task[]>(() => {
+    return getStoredTimetableTasks(
+      null,
+      progressionState?.displayName,
+      progressionState?.settings?.timetable
+    );
+  });
+
+  // Keep schedule in real-time sync with progressionState.settings.timetable
+  useEffect(() => {
+    if (progressionState?.settings?.timetable && Array.isArray(progressionState.settings.timetable) && progressionState.settings.timetable.length > 0) {
+      setSchedule(progressionState.settings.timetable.map((t: any, idx: number) => normalizeEngineTask(t, idx)));
+    }
+  }, [progressionState?.settings?.timetable]);
+
+  // Keep schedule in real-time sync with global events (e.g. from Settings / ControlRoom / AI Action)
+  useEffect(() => {
+    const handleTimetableSync = () => {
+      const fresh = getStoredTimetableTasks(userId, progressionState?.displayName, progressionState?.settings?.timetable);
+      setSchedule(fresh);
+    };
+
+    window.addEventListener('quantum_config_updated', handleTimetableSync);
+    window.addEventListener('quantum_timetable_updated', handleTimetableSync);
+    window.addEventListener('storage', handleTimetableSync);
+
+    return () => {
+      window.removeEventListener('quantum_config_updated', handleTimetableSync);
+      window.removeEventListener('quantum_timetable_updated', handleTimetableSync);
+      window.removeEventListener('storage', handleTimetableSync);
+    };
+  }, [userId, progressionState?.displayName, progressionState?.settings?.timetable]);
 
   // Load state on mount
   useEffect(() => {
@@ -121,39 +209,31 @@ export function EngineCard() {
           uid = session.user.id;
           setUserId(uid);
           
-          // Try to get timetable from timetable_tasks table first
           try {
-            const todayDow = new Date().getDay();
-            const { data: dbTasks } = await supabase
-              .from('timetable_tasks')
-              .select('*')
-              .eq('user_id', uid)
-              .eq('day_of_week', todayDow)
-              .order('order_index');
-
-            if (dbTasks && dbTasks.length > 0) {
-              const mappedTasks: Task[] = dbTasks.map((t: any) => ({
-                id: t.id,
-                start: t.start_time || '00:00',
-                end: calculateEndTime(t.start_time || '00:00', t.duration_minutes || 30),
-                title: t.name,
-                statusMsg: t.task_target ? `${t.task_target} Priority Protocol` : 'Executing Protocol...',
-                task_target: t.task_target,
-                pillar: t.pillar
-              }));
-              setSchedule(mappedTasks);
+            // Check profiles settings first (highest authority for user configuration)
+            const { data: profileData } = await supabase.from('profiles').select('settings').eq('id', uid).single();
+            if (profileData?.settings?.timetable && Array.isArray(profileData.settings.timetable) && profileData.settings.timetable.length > 0) {
+              const fresh = profileData.settings.timetable.map((t: any, idx: number) => normalizeEngineTask(t, idx));
+              setSchedule(fresh);
+              localStorage.setItem(`quantum_timetable_${uid}`, JSON.stringify(profileData.settings.timetable));
+              localStorage.setItem('quantum_timetable_default', JSON.stringify(profileData.settings.timetable));
             } else {
-              // Fallback to profile settings or local
-              const { data } = await supabase.from('profiles').select('settings').eq('id', uid).single();
-              if (data?.settings?.timetable) {
-                setSchedule(data.settings.timetable);
-              } else {
-                const customTimetable = localStorage.getItem(`quantum_timetable_${uid}`);
-                if (customTimetable && customTimetable !== "undefined") setSchedule(JSON.parse(customTimetable));
+              const localTasks = getStoredTimetableTasks(uid, progressionState?.displayName);
+              if (localTasks.length > 0) {
+                setSchedule(localTasks);
               }
             }
           } catch (e) {
-            console.error("Failed to load timetable from DB", e);
+            console.warn("[EngineCard] Profile timetable fetch fallback:", e);
+            const localTasks = getStoredTimetableTasks(uid, progressionState?.displayName);
+            if (localTasks.length > 0) {
+              setSchedule(localTasks);
+            }
+          }
+        } else {
+          const localTasks = getStoredTimetableTasks(uid, progressionState?.displayName);
+          if (localTasks.length > 0) {
+            setSchedule(localTasks);
           }
         }
         
@@ -232,13 +312,9 @@ export function EngineCard() {
 
       // Fallback if no uid
       if (uid === 'default') {
-        const fallbackTimetable = localStorage.getItem('quantum_timetable_default') || localStorage.getItem('quantum_timetable');
-        if (fallbackTimetable) {
-          try {
-            setSchedule(JSON.parse(fallbackTimetable));
-          } catch (e) {
-            console.error("Failed to parse custom timetable", e);
-          }
+        const fallbackTasks = getStoredTimetableTasks(null, progressionState?.displayName, progressionState?.settings?.timetable);
+        if (fallbackTasks.length > 0) {
+          setSchedule(fallbackTasks);
         }
       }
 

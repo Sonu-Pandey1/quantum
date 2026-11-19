@@ -81,7 +81,11 @@ const DEFAULT_TIMELINE: TimetableBlock[] = [
   { id: 'tb-5', start: '22:00', end: '22:45', title: 'Decompression & Daily Retrospective', pillar: 'Mind', priority: 'Medium', completedDates: [] },
 ];
 
-function getSystemTimetableTasks(authId: string | null, displayName?: string): any[] | null {
+function getSystemTimetableTasks(authId: string | null, displayName?: string, settingsTimetable?: any[]): any[] | null {
+  // 1. Prioritize live Supabase profile settings if available
+  if (Array.isArray(settingsTimetable) && settingsTimetable.length > 0) {
+    return settingsTimetable;
+  }
   const keys = [
     authId ? `quantum_timetable_${authId}` : null,
     displayName ? `quantum_timetable_${displayName}` : null,
@@ -146,9 +150,9 @@ function getSystemTodos(authId: string | null, displayName?: string, settingsTod
   return [];
 }
 
-function loadTodayTimeline(authId: string | null, displayName: string): TimetableBlock[] {
+function loadTodayTimeline(authId: string | null, displayName: string, settingsTimetable?: any[]): TimetableBlock[] {
   const todayDay = new Date().getDay();
-  const systemTasks = getSystemTimetableTasks(authId, displayName);
+  const systemTasks = getSystemTimetableTasks(authId, displayName, settingsTimetable);
 
   let completionsMap: Record<string, string[]> = {};
   const completionKeys = [
@@ -838,7 +842,7 @@ export function CommandDeck({ onNavigate }: CommandDeckProps) {
 
   // ── Timetable Timeline State ─────────────────────────────────────────
   const [timeline, setTimeline] = useState<TimetableBlock[]>(() => {
-    return loadTodayTimeline(null, uid);
+    return loadTodayTimeline(null, uid, state.settings?.timetable);
   });
 
   const toggleTimelineBlock = async (block: TimetableBlock) => {
@@ -995,7 +999,7 @@ export function CommandDeck({ onNavigate }: CommandDeckProps) {
   // Sync timeline and todos when config is updated or user logs in
   useEffect(() => {
     const handleSync = () => {
-      setTimeline(loadTodayTimeline(authUserId, uid));
+      setTimeline(loadTodayTimeline(authUserId, uid, state.settings?.timetable));
       setAllTodos(getSystemTodos(authUserId, uid, state.settings?.todos));
     };
 
@@ -1008,21 +1012,21 @@ export function CommandDeck({ onNavigate }: CommandDeckProps) {
     };
 
     window.addEventListener('quantum_config_updated', handleSync);
+    window.addEventListener('quantum_timetable_updated', handleSync);
     window.addEventListener('quantum_todos_updated', handleTodoUpdate);
     window.addEventListener('storage', handleSync);
     return () => {
       window.removeEventListener('quantum_config_updated', handleSync);
+      window.removeEventListener('quantum_timetable_updated', handleSync);
       window.removeEventListener('quantum_todos_updated', handleTodoUpdate);
       window.removeEventListener('storage', handleSync);
     };
-  }, [authUserId, uid, state.settings?.todos]);
+  }, [authUserId, uid, state.settings?.todos, state.settings?.timetable]);
 
   useEffect(() => {
-    if (authUserId) {
-      setTimeline(loadTodayTimeline(authUserId, uid));
-      setAllTodos(getSystemTodos(authUserId, uid, state.settings?.todos));
-    }
-  }, [authUserId, uid, state.settings?.todos]);
+    setTimeline(loadTodayTimeline(authUserId, uid, state.settings?.timetable));
+    setAllTodos(getSystemTodos(authUserId, uid, state.settings?.todos));
+  }, [authUserId, uid, state.settings?.todos, state.settings?.timetable]);
 
 
 

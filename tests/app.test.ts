@@ -360,3 +360,86 @@ describe('Audio Manager Mute & Volume Contract', () => {
     assert.equal(audio.canPlaySound(), false);
   });
 });
+
+// ─── 7. Timetable Normalization & Sync Contract ────────────────────────
+describe('Timetable Normalization & Sync Contract', () => {
+  function normalizeEngineTask(t: any, index: number = 0) {
+    const start = t.start || t.start_time || t.timeStart || '09:00';
+    let end = t.end || t.end_time || t.timeEnd;
+    if (!end) {
+      const [sh, sm] = start.split(':').map(Number);
+      const dMin = Number(t.duration_minutes || t.duration || 45);
+      const totalMin = sh * 60 + sm + dMin;
+      const eh = Math.floor(totalMin / 60) % 24;
+      const em = totalMin % 60;
+      end = `${String(eh).padStart(2, '0')}:${String(em).padStart(2, '0')}`;
+    }
+    const title = t.title || t.name || `Task ${index + 1}`;
+    const statusMsg = t.statusMsg || (t.task_target ? `${t.task_target} Priority Protocol` : 'Executing Protocol...');
+    return {
+      id: t.id !== undefined && t.id !== null ? t.id : `task-${index + 1}`,
+      start,
+      end,
+      title,
+      statusMsg,
+      pillar: t.pillar,
+      category: t.category,
+      task_target: t.task_target,
+      dayOfWeek: t.dayOfWeek !== undefined ? Number(t.dayOfWeek) : (t.day_of_week !== undefined ? Number(t.day_of_week) : undefined),
+      isWeekend: t.isWeekend !== undefined ? !!t.isWeekend : (t.is_weekend !== undefined ? !!t.is_weekend : undefined),
+    };
+  }
+
+  function resolveEngineSchedule(settingsTimetable?: any[], localTimetable?: any[], defaultSchedule?: any[]) {
+    if (Array.isArray(settingsTimetable) && settingsTimetable.length > 0) {
+      return settingsTimetable.map((t, i) => normalizeEngineTask(t, i));
+    }
+    if (Array.isArray(localTimetable) && localTimetable.length > 0) {
+      return localTimetable.map((t, i) => normalizeEngineTask(t, i));
+    }
+    return (defaultSchedule || []).map((t, i) => normalizeEngineTask(t, i));
+  }
+
+  test('normalizes diverse timetable representations seamlessly', () => {
+    const taskFromSettings = {
+      id: 101,
+      name: 'Advanced System Architecture',
+      start_time: '10:00',
+      duration_minutes: 90,
+      day_of_week: 1,
+      pillar: 'Study',
+      task_target: 'High'
+    };
+
+    const normalized = normalizeEngineTask(taskFromSettings, 0);
+    assert.equal(normalized.id, 101);
+    assert.equal(normalized.title, 'Advanced System Architecture');
+    assert.equal(normalized.start, '10:00');
+    assert.equal(normalized.end, '11:30');
+    assert.equal(normalized.pillar, 'Study');
+    assert.equal(normalized.task_target, 'High');
+    assert.equal(normalized.dayOfWeek, 1);
+  });
+
+  test('prioritizes updated settings timetable over stale fallback and defaults', () => {
+    const oldDefault = [{ id: 1, title: 'Old Morning Protocol', start: '06:00', end: '07:00' }];
+    const localStale = [{ id: 1, title: 'Old Local Task', start: '08:00', end: '09:00' }];
+    const newSettings = [{ id: 99, title: 'Custom Deep Coding Session', start: '09:00', end: '12:00', pillar: 'Study' }];
+
+    const activeSchedule = resolveEngineSchedule(newSettings, localStale, oldDefault);
+    assert.equal(activeSchedule.length, 1);
+    assert.equal(activeSchedule[0].id, 99);
+    assert.equal(activeSchedule[0].title, 'Custom Deep Coding Session');
+    assert.equal(activeSchedule[0].start, '09:00');
+  });
+
+  test('falls back gracefully to local storage when settings timetable is empty', () => {
+    const oldDefault = [{ id: 1, title: 'Old Morning Protocol', start: '06:00', end: '07:00' }];
+    const localSaved = [{ id: 2, title: 'Saved Offline Block', start: '14:00', end: '16:00' }];
+
+    const activeSchedule = resolveEngineSchedule([], localSaved, oldDefault);
+    assert.equal(activeSchedule.length, 1);
+    assert.equal(activeSchedule[0].id, 2);
+    assert.equal(activeSchedule[0].title, 'Saved Offline Block');
+  });
+});

@@ -293,11 +293,13 @@ export function ControlRoom() {
       // Save Locally
       localStorage.setItem(`quantum_timetable_${uid}`, JSON.stringify(tasks));
       localStorage.setItem(`quantum_timetable_default`, JSON.stringify(tasks));
+      localStorage.setItem(`quantum_timetable`, JSON.stringify(tasks));
       localStorage.setItem(`quantum_habits_${uid}`, JSON.stringify(habits));
       localStorage.setItem(`quantum_habits_default`, JSON.stringify(habits));
       localStorage.setItem(`quantum_roadmap_${uid}`, JSON.stringify(roadmap));
       localStorage.setItem(`quantum_todos_${uid}`, JSON.stringify(todos));
       localStorage.setItem(`quantum_todos_default`, JSON.stringify(todos));
+      localStorage.setItem(`quantum_todos`, JSON.stringify(todos));
       localStorage.setItem(`quantum_weight_goal_${uid}`, weightGoal);
       localStorage.setItem(`quantum_sap_target_${uid}`, sapTarget);
       localStorage.setItem(`quantum_sunday_rest_${uid}`, sundayRest.toString());
@@ -396,6 +398,15 @@ export function ControlRoom() {
           }
         }
 
+        // Clean up obsolete tasks in timetable_tasks table so it never serves old tasks
+        if (existingTasks && existingTasks.length > 0) {
+          const savedRowIds = rowsToSave.map(r => r.id).filter(Boolean);
+          const obsoleteIds = existingTasks.map(et => et.id).filter(id => !savedRowIds.includes(id));
+          if (obsoleteIds.length > 0) {
+            await supabase.from('timetable_tasks').delete().in('id', obsoleteIds);
+          }
+        }
+
         setSavedMessage('Finished');
         await new Promise(resolve => setTimeout(resolve, 300));
       }
@@ -426,6 +437,7 @@ export function ControlRoom() {
       }
 
       window.dispatchEvent(new CustomEvent('quantum_config_updated'));
+      window.dispatchEvent(new CustomEvent('quantum_timetable_updated'));
       audio.playSuccess();
       setSavedMessage('System Configuration Synchronized');
       toast.success('System Configuration & Strategic Alignment Synchronized');
