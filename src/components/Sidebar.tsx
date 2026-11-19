@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { DatabaseBackup, Check, Target, LogOut, Settings, User, Eye, EyeOff, Zap, BrainCircuit, Menu, X, Trophy, TrendingUp, Activity, SlidersHorizontal } from 'lucide-react';
+import { DatabaseBackup, Check, Target, LogOut, Settings, User, Eye, EyeOff, Zap, BrainCircuit, Menu, X, Trophy, TrendingUp, Activity, SlidersHorizontal, Film } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { audio } from '../lib/audio';
@@ -129,6 +129,22 @@ function ProfileDropdown({
           >
             <User size={14} className="text-blue-400 shrink-0" />
             Profile Overview
+          </button>
+
+          {/* Motivational Reels Vault */}
+          <button
+            onClick={() => {
+              audio.playClick();
+              onNavigate('videos');
+              onClose();
+            }}
+            className="w-full text-left px-3 py-2 text-xs font-medium text-white/60 hover:text-white hover:bg-white/8 rounded-xl flex items-center justify-between gap-2.5 transition-all duration-150 group"
+          >
+            <div className="flex items-center gap-2.5">
+              <Film size={14} className="text-red-400 shrink-0 group-hover:scale-110 transition-transform" />
+              <span>Motivation Reels</span>
+            </div>
+            <span className="text-[9px] font-black font-mono text-rose-300 bg-rose-500/15 border border-rose-500/30 px-1 py-0.5 rounded">-15 XP</span>
           </button>
 
           {/* Portfolio Mode Toggle */}
@@ -425,6 +441,21 @@ export function Sidebar({ currentView, onViewChange, isPortfolioMode, onTogglePo
                     initial={{ opacity: 0, x: 10 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: 0.15 }}
+                    onClick={() => { audio.playClick(); onViewChange('videos'); setIsMobileMenuOpen(false); }}
+                    className="w-full flex items-center justify-between p-4 rounded-2xl bg-white/[0.03] border border-white/5 text-textMain hover:border-red-500/30 hover:bg-red-500/5 transition-all"
+                  >
+                    <div className="flex items-center space-x-4">
+                      <div className="w-9 h-9 rounded-xl bg-red-500/10 flex items-center justify-center">
+                        <Film size={18} className="text-red-400" />
+                      </div>
+                      <span className="font-bold text-sm">Motivation Reels</span>
+                    </div>
+                    <span className="text-[10px] font-black font-mono text-rose-300 bg-rose-500/15 border border-rose-500/30 px-2 py-0.5 rounded-full">-15 XP</span>
+                  </motion.button>
+                  <motion.button
+                    initial={{ opacity: 0, x: 10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: 0.2 }}
                     onClick={() => { audio.playClick(); onTogglePortfolio(); setIsMobileMenuOpen(false); }}
                     className="w-full flex items-center space-x-4 p-4 rounded-2xl bg-white/[0.03] border border-white/5 text-textMain hover:border-primary/30 hover:bg-primary/5 transition-all"
                   >

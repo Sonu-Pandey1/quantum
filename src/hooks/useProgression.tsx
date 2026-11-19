@@ -198,6 +198,7 @@ interface ProgressionContextType {
   loading: boolean;
   claimTimetableTaskXp: (taskId: string, pillar: Pillar, label: string, baseAmount: number) => Promise<{ awarded: boolean; xpEarned: number; breakdown: XpBreakdown }>;
   refuelStreakShield: (costXp?: number) => Promise<boolean>;
+  deductXp: (pillar: Pillar, reason: string, amount?: number) => Promise<number>;
 }
 
 const ProgressionContext = createContext<ProgressionContextType | null>(null);
@@ -837,6 +838,48 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
     return true;
   };
 
+  const deductXp = useCallback(async (pillar: Pillar, reason: string, amount: number = 15): Promise<number> => {
+    let userId = userIdRef.current;
+    if (!userId) {
+      const user = await getSessionUser();
+      if (!user) return 0;
+      userId = user.id;
+      userIdRef.current = userId;
+    }
+
+    const currentTotal = totalXpRef.current;
+    const currentPillar = pillarXpRef.current[pillar] || 0;
+    const deductedPillar = Math.max(0, currentPillar - amount);
+    const deductedTotal = Math.max(0, currentTotal - amount);
+
+    totalXpRef.current = deductedTotal;
+    setTotalXp(deductedTotal);
+
+    const updatedPillarXp: Record<Pillar, number> = { ...pillarXpRef.current, [pillar]: deductedPillar };
+    pillarXpRef.current = updatedPillarXp;
+    setPillarXp(updatedPillarXp);
+
+    if (supabase && userId) {
+      try {
+        await supabase.from('profiles').update({
+          total_xp: deductedTotal,
+          pillar_xp: updatedPillarXp,
+        }).eq('id', userId);
+
+        await supabase.from('action_logs').insert({
+          user_id: userId,
+          action_type: `Reel Scroll Cost: ${reason} (-${amount} XP)`,
+          pillar,
+          xp_earned: -amount,
+        });
+      } catch (e) {
+        console.warn('deductXp DB sync error:', e);
+      }
+    }
+
+    return amount;
+  }, []);
+
   const closeLevelUp = useCallback(() => {
     setShowLevelUp(false);
     setLevelUpData(null);
@@ -959,6 +1002,7 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
         closeLevelUp,
         loading,
         refuelStreakShield,
+        deductXp,
       }}
     >
       {children}

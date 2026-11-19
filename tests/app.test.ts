@@ -443,3 +443,122 @@ describe('Timetable Normalization & Sync Contract', () => {
     assert.equal(activeSchedule[0].title, 'Saved Offline Block');
   });
 });
+
+// ─── 8. Reels & Video Vault (Instagram, YouTube & -15 XP Cost) ──────────
+describe('Reels & Video Vault (Instagram, YouTube & -15 XP Deduction)', () => {
+  function extractInstagramId(input: string): string | null {
+    if (!input) return null;
+    const clean = input.trim();
+    const match = clean.match(/(?:instagram\.com\/(?:p|reel|reels|tv)\/)([\w-]+)/i);
+    return match ? match[1] : null;
+  }
+
+  function extractYoutubeId(input: string): string | null {
+    if (!input) return null;
+    const clean = input.trim();
+    if (/^[a-zA-Z0-9_-]{11}$/.test(clean)) return clean;
+    const match = clean.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/i);
+    return match ? match[1] : null;
+  }
+
+  function parsePastedLinks(rawText: string, defaultCategory = 'Discipline') {
+    const chunks = rawText.split(/[\n,;]+/).map(s => s.trim()).filter(Boolean);
+    const results: Array<{ platform: 'instagram' | 'youtube'; mediaId: string; title: string; category: string; url: string; watched: boolean; xpDeducted: boolean }> = [];
+    const seenKeys = new Set<string>();
+
+    for (const chunk of chunks) {
+      const igId = extractInstagramId(chunk);
+      if (igId && !seenKeys.has(`ig-${igId}`)) {
+        seenKeys.add(`ig-${igId}`);
+        results.push({
+          platform: 'instagram',
+          mediaId: igId,
+          title: `Instagram Reel (${igId})`,
+          category: defaultCategory,
+          url: chunk.startsWith('http') ? chunk : `https://www.instagram.com/reel/${igId}/`,
+          watched: false,
+          xpDeducted: false,
+        });
+        continue;
+      }
+
+      const yId = extractYoutubeId(chunk);
+      if (yId && !seenKeys.has(`yt-${yId}`)) {
+        seenKeys.add(`yt-${yId}`);
+        results.push({
+          platform: 'youtube',
+          mediaId: yId,
+          title: `Motivational Protocol (${yId.slice(0, 6)})`,
+          category: defaultCategory,
+          url: chunk.startsWith('http') ? chunk : `https://youtu.be/${yId}`,
+          watched: false,
+          xpDeducted: false,
+        });
+      }
+    }
+    return results;
+  }
+
+  test('extracts Instagram reel codes across reel, reels, and post URLs', () => {
+    assert.equal(extractInstagramId('https://www.instagram.com/reel/C8abc123XYZ/'), 'C8abc123XYZ');
+    assert.equal(extractInstagramId('https://instagram.com/reels/DA123456789/?igsh=MW'), 'DA123456789');
+    assert.equal(extractInstagramId('https://www.instagram.com/p/C9def456/'), 'C9def456');
+    assert.equal(extractInstagramId('https://youtube.com/watch?v=12345678901'), null);
+  });
+
+  test('extracts YouTube IDs across standard, short, and shorts URLs', () => {
+    assert.equal(extractYoutubeId('https://www.youtube.com/watch?v=mgmVOuLgFB0'), 'mgmVOuLgFB0');
+    assert.equal(extractYoutubeId('https://youtu.be/wnHW6o8WMas?si=AbCdEfGh'), 'wnHW6o8WMas');
+    assert.equal(extractYoutubeId('https://www.youtube.com/shorts/tbnzAVRZ9Xc'), 'tbnzAVRZ9Xc');
+    assert.equal(extractYoutubeId('b1nPFfioz_w'), 'b1nPFfioz_w');
+    assert.equal(extractYoutubeId('https://invalid.com/video'), null);
+  });
+
+  test('correctly parses mixed bulk links from WhatsApp containing Instagram and YouTube', () => {
+    const whatsappPaste = `
+      Hey check these clips:
+      https://www.instagram.com/reel/C8xyz123ABC/
+      https://www.youtube.com/watch?v=mgmVOuLgFB0
+      https://www.instagram.com/reel/C8xyz123ABC/
+      https://www.youtube.com/shorts/tbnzAVRZ9Xc
+    `;
+
+    const parsed = parsePastedLinks(whatsappPaste, 'Mindset');
+    assert.equal(parsed.length, 3); // Deduplicated Instagram link
+    assert.equal(parsed[0].platform, 'instagram');
+    assert.equal(parsed[0].mediaId, 'C8xyz123ABC');
+    assert.equal(parsed[1].platform, 'youtube');
+    assert.equal(parsed[1].mediaId, 'mgmVOuLgFB0');
+    assert.equal(parsed[2].platform, 'youtube');
+    assert.equal(parsed[2].mediaId, 'tbnzAVRZ9Xc');
+    assert.equal(parsed[0].xpDeducted, false);
+  });
+
+  test('enforces -15 Mind XP deduction contract on reel view / scroll', () => {
+    let userXp = 100;
+    const reel = {
+      id: 'ig-1',
+      title: 'Mamba Focus Reel',
+      watched: false,
+      xpDeducted: false,
+    };
+
+    function applyDopamineScrollCost(r: typeof reel) {
+      if (r.xpDeducted) return { deducted: 0, currentXp: userXp };
+      r.watched = true;
+      r.xpDeducted = true;
+      const deduction = 15;
+      userXp = Math.max(0, userXp - deduction);
+      return { deducted: deduction, currentXp: userXp };
+    }
+
+    const firstScroll = applyDopamineScrollCost(reel);
+    assert.equal(firstScroll.deducted, 15);
+    assert.equal(firstScroll.currentXp, 85); // 100 - 15 = 85
+    assert.equal(reel.xpDeducted, true);
+
+    const secondScroll = applyDopamineScrollCost(reel);
+    assert.equal(secondScroll.deducted, 0);
+    assert.equal(secondScroll.currentXp, 85);
+  });
+});

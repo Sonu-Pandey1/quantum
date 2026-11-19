@@ -4,7 +4,7 @@ import {
   ChevronLeft, ChevronRight,
   BookOpen, Dumbbell, Briefcase, Brain, Trophy,
   Droplets, Moon, Scale, Sparkles, X,
-  Calendar, HeartPulse, Clock, Lightbulb, Copy
+  Calendar, HeartPulse, Clock, Lightbulb, Copy, Film
 } from 'lucide-react';
 import { useProgression, type Pillar } from '../hooks/useProgression';
 import { useEngagement } from '../hooks/useEngagement';
@@ -1435,7 +1435,7 @@ export function CommandDeck({ onNavigate }: CommandDeckProps) {
               audio.playClick();
               if (onNavigate) onNavigate('rank');
             }}
-            className="h-10 flex-1 sm:flex-initial sm:min-w-[140px] px-3.5 rounded-xl bg-primary/10 border border-primary/30 text-primary text-xs font-black uppercase tracking-wider cursor-pointer hover:border-primary hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 shadow-sm whitespace-nowrap"
+            className="h-10 flex-1 sm:flex-initial sm:min-w-[140px] px-2.5 sm:px-3.5 rounded-xl bg-primary/10 border border-primary/30 text-primary text-xs font-black uppercase tracking-wider cursor-pointer hover:border-primary hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-1.5 sm:gap-2 shadow-sm whitespace-nowrap"
             title="View Ascension Rank & AI Counsel"
           >
             <Trophy size={14} className="text-primary shrink-0" />
@@ -1448,7 +1448,7 @@ export function CommandDeck({ onNavigate }: CommandDeckProps) {
               audio.playClick();
               if (onNavigate) onNavigate('engagement');
             }}
-            className="h-10 flex-1 sm:flex-initial sm:min-w-[130px] px-3.5 rounded-xl bg-orange-500/10 border border-orange-500/25 text-orange-400 text-xs font-black cursor-pointer hover:border-orange-500/50 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 shadow-sm whitespace-nowrap"
+            className="h-10 flex-1 sm:flex-initial sm:min-w-[130px] px-2.5 sm:px-3.5 rounded-xl bg-orange-500/10 border border-orange-500/25 text-orange-400 text-xs font-black cursor-pointer hover:border-orange-500/50 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-1.5 sm:gap-2 shadow-sm whitespace-nowrap"
             title="View Streak & Activity in Engagement Hub"
           >
             <Flame size={14} className="shrink-0" />
@@ -1461,7 +1461,7 @@ export function CommandDeck({ onNavigate }: CommandDeckProps) {
               audio.playClick();
               setShieldModalOpen(true);
             }}
-            className={`h-10 flex-1 sm:flex-initial sm:min-w-[150px] px-3.5 rounded-xl border text-xs font-black cursor-pointer hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 shadow-sm whitespace-nowrap ${
+            className={`h-10 flex-1 sm:flex-initial sm:min-w-[140px] px-2.5 sm:px-3.5 rounded-xl border text-xs font-black cursor-pointer hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-1.5 sm:gap-2 shadow-sm whitespace-nowrap ${
               streakShields > 0
                 ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-300 shadow-[0_0_12px_rgba(6,182,212,0.2)]'
                 : 'bg-white/5 border-white/10 text-textMuted hover:text-white hover:bg-white/10'
@@ -1473,15 +1473,29 @@ export function CommandDeck({ onNavigate }: CommandDeckProps) {
           </button>
         </div>
 
-        {/* Right: AI Assistant & Energy Mode Switcher */}
+        {/* Right: AI Assistant, Motivation Reels & Energy Mode Switcher */}
         <div className="flex flex-wrap sm:flex-nowrap items-center gap-2.5 w-full xl:w-auto">
+          <button
+            type="button"
+            onClick={() => {
+              audio.playClick();
+              if (onNavigate) onNavigate('videos');
+            }}
+            className="h-10 flex-1 sm:flex-initial sm:min-w-[120px] px-2.5 sm:px-3.5 rounded-xl bg-gradient-to-r from-red-500/20 via-pink-600/20 to-purple-600/20 hover:from-red-500/30 hover:to-purple-600/30 text-white border border-red-500/30 text-xs font-black uppercase tracking-wider cursor-pointer hover:border-red-400 hover:scale-[1.02] active:scale-95 transition-all shadow-[0_0_15px_rgba(239,68,68,0.2)] flex items-center justify-center gap-1.5 sm:gap-2 group whitespace-nowrap"
+            title="Reels & Video Vault (-15 Mind XP per reel view/scroll)"
+          >
+            <Film size={14} className="text-red-400 shrink-0 group-hover:scale-110 transition-transform" />
+            <span>Reels</span>
+            <span className="text-[9px] font-mono font-black text-rose-300 bg-rose-500/15 border border-rose-500/30 px-1 py-0.5 rounded">-15 XP</span>
+          </button>
+
           <button
             type="button"
             onClick={() => {
               audio.playClick();
               window.dispatchEvent(new CustomEvent('quantum_open_ai_command'));
             }}
-            className="h-10 flex-1 sm:flex-initial sm:min-w-[140px] px-4 rounded-xl bg-gradient-to-r from-primary/20 via-blue-600/20 to-purple-600/20 hover:from-primary/30 hover:to-purple-600/30 text-white border border-primary/35 text-xs font-black uppercase tracking-wider cursor-pointer hover:border-primary hover:scale-[1.02] active:scale-95 transition-all shadow-[0_0_15px_rgba(59,130,246,0.2)] flex items-center justify-center gap-2 group whitespace-nowrap"
+            className="h-10 flex-1 sm:flex-initial sm:min-w-[130px] px-2.5 sm:px-3.5 rounded-xl bg-gradient-to-r from-primary/20 via-blue-600/20 to-purple-600/20 hover:from-primary/30 hover:to-purple-600/30 text-white border border-primary/35 text-xs font-black uppercase tracking-wider cursor-pointer hover:border-primary hover:scale-[1.02] active:scale-95 transition-all shadow-[0_0_15px_rgba(59,130,246,0.2)] flex items-center justify-center gap-1.5 sm:gap-2 group whitespace-nowrap"
             title="Tell AI to automate your schedule, todos, habits, or themes (Ctrl + K)"
           >
             <Sparkles size={14} className="text-amber-300 shrink-0 animate-spin-slow group-hover:rotate-12 transition-transform" />
@@ -1501,7 +1515,7 @@ export function CommandDeck({ onNavigate }: CommandDeckProps) {
                   audio.playClick();
                   setEnergyMode(m.id);
                 }}
-                className={`h-full flex-1 sm:flex-initial px-3 rounded-lg text-[11px] font-black uppercase tracking-wider border transition-all flex items-center justify-center whitespace-nowrap ${
+                className={`h-full flex-1 sm:flex-initial px-2 sm:px-3 rounded-lg text-[10px] sm:text-[11px] font-black uppercase tracking-wider border transition-all flex items-center justify-center whitespace-nowrap ${
                   energyMode === m.id ? m.active : 'border-transparent text-textMuted hover:text-white'
                 }`}
               >

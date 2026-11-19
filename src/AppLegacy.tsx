@@ -21,6 +21,7 @@ const StrategicControl = React.lazy(() => import('./pages/StrategicControl').the
 const AiCounsel = React.lazy(() => import('./pages/AiCounsel').then(m => ({ default: m.AiCounsel })));
 const Onboarding = React.lazy(() => import('./pages/Onboarding').then(m => ({ default: m.Onboarding })));
 const DailyThoughtsPage = React.lazy(() => import('./pages/DailyThoughtsPage').then(m => ({ default: m.DailyThoughtsPage })));
+const MotivationalVideosPage = React.lazy(() => import('./pages/MotivationalVideosPage').then(m => ({ default: m.MotivationalVideosPage })));
 import { AuthScreen } from './components/AuthScreen';
 import { ProgressionProvider, useProgression } from './hooks/useProgression';
 import { LevelUpModal } from './components/LevelUpModal';
@@ -216,6 +217,17 @@ function AppContent({ currentView, setCurrentView, isPortfolioMode, setIsPortfol
             >
               <DailyThoughtsPage onBack={() => setCurrentView('dashboard')} />
             </motion.div>
+          ) : currentView === 'videos' || currentView === 'reels' ? (
+            <motion.div 
+              key="videos"
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.98 }}
+              transition={{ duration: 0.3 }}
+              className="flex-1 h-full overflow-hidden bg-transparent"
+            >
+              <MotivationalVideosPage onBack={() => setCurrentView('dashboard')} />
+            </motion.div>
           ) : (
             <motion.div 
               key="strategic_control"
@@ -278,9 +290,9 @@ function AppContainer() {
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.replace('#', '');
-      const validViews = ['dashboard', 'bento', 'practice', 'control_room', 'analytics', 'engagement', 'vault', 'lab', 'strategic_control', 'ai_counsel', 'rank'];
+      const validViews = ['dashboard', 'bento', 'practice', 'control_room', 'analytics', 'engagement', 'vault', 'lab', 'strategic_control', 'ai_counsel', 'rank', 'thoughts', 'videos', 'reels'];
       if (hash && (validViews.includes(hash) || hash === 'logic' || hash === 'dojo')) {
-        setCurrentView(hash === 'logic' || hash === 'dojo' ? 'practice' : hash);
+        setCurrentView(hash === 'logic' || hash === 'dojo' ? 'practice' : hash === 'reels' ? 'videos' : hash);
       }
     };
 
@@ -301,7 +313,11 @@ function AppContainer() {
           'engagement': 'engagement',
           'rank': 'rank',
           'ascension': 'rank',
-          'ai_counsel': 'ai_counsel'
+          'ai_counsel': 'ai_counsel',
+          'thoughts': 'thoughts',
+          'videos': 'videos',
+          'reels': 'videos',
+          'motivational': 'videos'
         };
         const target = viewMap[view.toLowerCase()] || view;
         setCurrentView(target);
