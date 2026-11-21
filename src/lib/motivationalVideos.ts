@@ -79,7 +79,101 @@ export const DEFAULT_MOTIVATIONAL_VIDEOS: MotivationalVideo[] = [
   },
 ];
 
+export const DAILY_REELS_LIMIT = 10;
 const VIDEOS_STORAGE_KEY = 'quantum_motivational_videos';
+
+/**
+ * Returns today's ISO date string YYYY-MM-DD
+ */
+export function getTodayDateString(): string {
+  return new Date().toISOString().split('T')[0];
+}
+
+/**
+ * Key for tracking viewed reel IDs on a given day
+ */
+export function getDailyReelsViewsKey(userId?: string, dateStr?: string): string {
+  const today = dateStr || getTodayDateString();
+  const uid = userId || 'default';
+  return `quantum_reels_daily_views_${uid}_${today}`;
+}
+
+/**
+ * Retrieves the list of reel IDs viewed today by the user
+ */
+export function getDailyViewedReelIds(userId?: string, dateStr?: string): string[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const key = getDailyReelsViewsKey(userId, dateStr);
+    const raw = localStorage.getItem(key);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {}
+  return [];
+}
+
+/**
+ * Records a reel view for the daily quota.
+ * Caps at DAILY_REELS_LIMIT (10 reels per day).
+ */
+export function recordDailyReelView(reelId: string, userId?: string): {
+  allowed: boolean;
+  viewedCount: number;
+  limitReached: boolean;
+  isFirstViewToday: boolean;
+} {
+  if (typeof window === 'undefined') {
+    return { allowed: true, viewedCount: 1, limitReached: false, isFirstViewToday: true };
+  }
+  const key = getDailyReelsViewsKey(userId);
+  const current = getDailyViewedReelIds(userId);
+
+  if (current.includes(reelId)) {
+    return {
+      allowed: true,
+      viewedCount: current.length,
+      limitReached: current.length >= DAILY_REELS_LIMIT,
+      isFirstViewToday: false,
+    };
+  }
+
+  if (current.length >= DAILY_REELS_LIMIT) {
+    return {
+      allowed: false,
+      viewedCount: current.length,
+      limitReached: true,
+      isFirstViewToday: false,
+    };
+  }
+
+  const updated = [...current, reelId];
+  try {
+    localStorage.setItem(key, JSON.stringify(updated));
+  } catch {}
+
+  return {
+    allowed: true,
+    viewedCount: updated.length,
+    limitReached: updated.length >= DAILY_REELS_LIMIT,
+    isFirstViewToday: true,
+  };
+}
+
+/**
+ * Shuffles an array with Fisher-Yates algorithm for randomized opening feeds
+ */
+export function shuffleVideos<T>(array: T[]): T[] {
+  const result = [...array];
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const temp = result[i];
+    result[i] = result[j];
+    result[j] = temp;
+  }
+  return result;
+}
 
 /**
  * Extracts Instagram shortcode from URLs like:
@@ -115,11 +209,18 @@ export function extractYoutubeId(input: string): string | null {
 /**
  * Parses multiple links pasted from WhatsApp, Notes, Instagram, or text files.
  * Detects both Instagram Reels/Posts and YouTube videos/shorts.
+ * Optionally applies a custom user-defined title or mood tag (e.g. "Sad", "Gym Beast", "Focus").
  */
-export function parsePastedLinks(rawText: string, defaultCategory: VideoCategory = 'Discipline'): Omit<MotivationalVideo, 'id'>[] {
+export function parsePastedLinks(
+  rawText: string, 
+  defaultCategory: VideoCategory = 'Discipline',
+  customTitle?: string
+): Omit<MotivationalVideo, 'id'>[] {
   const chunks = rawText.split(/[\n,;]+/).map(s => s.trim()).filter(Boolean);
   const results: Omit<MotivationalVideo, 'id'>[] = [];
   const seenKeys = new Set<string>();
+
+  const trimmedTitle = customTitle?.trim();
 
   for (const chunk of chunks) {
     // 1. Check Instagram
@@ -130,7 +231,9 @@ export function parsePastedLinks(rawText: string, defaultCategory: VideoCategory
         platform: 'instagram',
         mediaId: igId,
         youtubeId: igId,
-        title: `Instagram Reel (${igId})`,
+        title: trimmedTitle 
+          ? (chunks.length > 1 ? `${trimmedTitle} #${results.length + 1}` : trimmedTitle)
+          : `Instagram Reel (${igId})`,
         category: defaultCategory,
         url: chunk.startsWith('http') ? chunk : `https://www.instagram.com/reel/${igId}/`,
         addedAt: new Date().toISOString(),
@@ -148,7 +251,9 @@ export function parsePastedLinks(rawText: string, defaultCategory: VideoCategory
         platform: 'youtube',
         mediaId: yId,
         youtubeId: yId,
-        title: `Motivational Protocol (${yId.slice(0, 6)})`,
+        title: trimmedTitle
+          ? (chunks.length > 1 ? `${trimmedTitle} #${results.length + 1}` : trimmedTitle)
+          : `Motivational Protocol (${yId.slice(0, 6)})`,
         category: defaultCategory,
         url: chunk.startsWith('http') ? chunk : `https://youtu.be/${yId}`,
         addedAt: new Date().toISOString(),
@@ -156,6 +261,11 @@ export function parsePastedLinks(rawText: string, defaultCategory: VideoCategory
         xpDeducted: false,
       });
     }
+  }
+
+  // If there was only 1 result matched and title has suffix, normalize to single title
+  if (results.length === 1 && trimmedTitle) {
+    results[0].title = trimmedTitle;
   }
 
   return results;

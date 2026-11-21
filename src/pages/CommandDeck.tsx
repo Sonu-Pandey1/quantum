@@ -4,7 +4,7 @@ import {
   ChevronLeft, ChevronRight,
   BookOpen, Dumbbell, Briefcase, Brain, Trophy,
   Droplets, Moon, Scale, Sparkles, X,
-  Calendar, HeartPulse, Clock, Lightbulb, Copy, Film
+  Calendar, HeartPulse, Clock, Lightbulb, Copy, Film, AlertTriangle
 } from 'lucide-react';
 import { useProgression, type Pillar } from '../hooks/useProgression';
 import { useEngagement } from '../hooks/useEngagement';
@@ -13,7 +13,7 @@ import { audio } from '../lib/audio';
 import toast from 'react-hot-toast';
 import { EngineCard } from '../components/EngineCard';
 import { type BioMission, DEFAULT_PROTOCOLS } from '../lib/bioProtocols';
-import { loadSavedThoughts, getTodayThought } from '../lib/dailyThoughts';
+import { loadSavedThoughts, getTodayThought, DEFAULT_DAILY_THOUGHTS } from '../lib/dailyThoughts';
 
 // ─── TYPES ─────────────────────────────────────────────────────────────
 export type EnergyMode = 'peak' | 'normal' | 'survival';
@@ -71,6 +71,42 @@ export interface QuickTodoItem {
   pillar: Pillar;
   priority?: 'High' | 'Medium' | 'Low';
   completed: boolean;
+}
+
+class EngineErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean; error: any }> {
+  constructor(props: any) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error: any) { return { hasError: true, error }; }
+  componentDidCatch(error: any, errorInfo: any) { console.error('EngineCard Crash:', error, errorInfo); }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="h-full min-h-[320px] p-6 flex flex-col justify-center items-center text-center bg-surfaceHighlight/20 rounded-3xl">
+          <div className="w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center mb-3">
+            <AlertTriangle className="text-amber-400" size={24} />
+          </div>
+          <h4 className="text-sm font-black uppercase text-textMain tracking-wide">The Engine Re-initialization</h4>
+          <p className="text-xs text-textMuted max-w-xs my-2">Engine state recovered. Click below to re-initialize your active timetable safely.</p>
+          <button
+            onClick={() => {
+              try {
+                Object.keys(localStorage).forEach(k => {
+                  if (k.startsWith('quantum_active_session') || k.includes('skips')) localStorage.removeItem(k);
+                });
+              } catch {}
+              this.setState({ hasError: false, error: null });
+            }}
+            className="px-5 py-2.5 bg-primary text-white rounded-xl text-xs font-black uppercase tracking-wider hover:scale-105 transition-all cursor-pointer shadow-lg mt-1"
+          >
+            Re-initialize Engine
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }
 
 const DEFAULT_TIMELINE: TimetableBlock[] = [
@@ -395,7 +431,8 @@ export function CommandDeck({ onNavigate }: CommandDeckProps) {
   const { stats: engagementStats } = useEngagement();
   const todayStr = useMemo(() => toDateStr(new Date()), []);
   const dailyThoughtsList = useMemo(() => loadSavedThoughts(state.settings?.customThoughts), [state.settings?.customThoughts]);
-  const todayThought = useMemo(() => getTodayThought(dailyThoughtsList), [dailyThoughtsList]);
+  const rawTodayThought = useMemo(() => getTodayThought(dailyThoughtsList), [dailyThoughtsList]);
+  const todayThought = rawTodayThought || DEFAULT_DAILY_THOUGHTS[0];
   const uid = state.displayName || 'operator';
   const [authUserId, setAuthUserId] = useState<string | null>(null);
   const [dbActivityMap, setDbActivityMap] = useState<Record<string, { count: number; xp: number }>>({});
@@ -1589,7 +1626,9 @@ export function CommandDeck({ onNavigate }: CommandDeckProps) {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
         {/* The Engine (Real-Time Routine Timer & Execution Engine) — shown first on mobile */}
         <div className="order-first lg:order-last lg:col-span-7 glass-panel rounded-3xl border border-white/10 overflow-hidden min-h-[380px] flex flex-col">
-          <EngineCard />
+          <EngineErrorBoundary>
+            <EngineCard />
+          </EngineErrorBoundary>
         </div>
 
         {/* 3 Radial Progress Rings */}

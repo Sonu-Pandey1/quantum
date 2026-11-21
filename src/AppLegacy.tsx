@@ -28,12 +28,12 @@ import { LevelUpModal } from './components/LevelUpModal';
 import { Toaster } from 'react-hot-toast';
 import { AICommandBar } from './components/AICommandBar';
 
-class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean }> {
+class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean; error: any }> {
   constructor(props: any) {
     super(props);
-    this.state = { hasError: false };
+    this.state = { hasError: false, error: null };
   }
-  static getDerivedStateFromError() { return { hasError: true }; }
+  static getDerivedStateFromError(error: any) { return { hasError: true, error }; }
   componentDidCatch(error: any, errorInfo: any) { console.error('App Crash:', error, errorInfo); }
   render() {
     if (this.state.hasError) {
@@ -43,13 +43,42 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
             <span className="text-2xl">⚠️</span>
           </div>
           <h2 className="text-xl font-black text-textMain mb-2 uppercase tracking-tighter">Neural Link Interrupted</h2>
-          <p className="text-xs text-textMuted max-w-xs mb-8">A critical error occurred in the system core. Authorization state may be inconsistent.</p>
-          <button 
-            onClick={() => window.location.reload()}
-            className="px-6 py-3 bg-primary text-white rounded-xl font-bold uppercase tracking-widest text-xs hover:scale-105 transition-all"
-          >
-            Re-establish Link
-          </button>
+          <p className="text-xs text-textMuted max-w-sm mb-4">A critical error occurred in the system core. Authorization or local timetable state may be inconsistent.</p>
+          {this.state.error?.message && (
+            <div className="bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-2 text-[11px] font-mono text-red-400 max-w-md mb-6 break-words">
+              {this.state.error.message}
+            </div>
+          )}
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <button 
+              onClick={() => {
+                try {
+                  Object.keys(localStorage).forEach(k => {
+                    if (k.startsWith('quantum_active_session') || k.includes('skips')) localStorage.removeItem(k);
+                  });
+                } catch {}
+                window.location.hash = 'dashboard';
+                window.location.reload();
+              }}
+              className="px-6 py-3 bg-primary text-white rounded-xl font-bold uppercase tracking-widest text-xs hover:scale-105 transition-all cursor-pointer shadow-lg"
+            >
+              Re-establish Link
+            </button>
+            <button
+              onClick={() => {
+                try {
+                  Object.keys(localStorage).forEach(k => {
+                    if (k.includes('skips') || k.includes('active_session')) localStorage.removeItem(k);
+                  });
+                } catch {}
+                window.location.hash = 'dashboard';
+                window.location.reload();
+              }}
+              className="px-5 py-3 bg-white/5 hover:bg-white/10 text-textMuted hover:text-white rounded-xl font-bold uppercase tracking-wider text-xs border border-white/10 transition-all cursor-pointer"
+            >
+              Reset Protocol State
+            </button>
+          </div>
         </div>
       );
     }

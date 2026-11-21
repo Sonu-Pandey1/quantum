@@ -5,7 +5,7 @@ import { useProgression } from '../hooks/useProgression';
 import { audio } from '../lib/audio';
 import { notifier } from '../lib/notifications';
 import { APP_CORE_LABEL } from '../lib/version';
-import { loadSavedThoughts, getTodayThought } from '../lib/dailyThoughts';
+import { loadSavedThoughts, getTodayThought, DEFAULT_DAILY_THOUGHTS } from '../lib/dailyThoughts';
 import toast from 'react-hot-toast';
 
 export function Header({ 
@@ -21,7 +21,8 @@ export function Header({
 }) {
   const { state } = useProgression();
   const allThoughts = loadSavedThoughts(state.settings?.customThoughts);
-  const todayThought = getTodayThought(allThoughts);
+  const rawTodayThought = getTodayThought(allThoughts);
+  const todayThought = rawTodayThought || DEFAULT_DAILY_THOUGHTS[0];
   const [notifGranted, setNotifGranted] = useState(false);
   const [isMuted, setIsMuted] = useState(() => audio.isAudioMuted());
 

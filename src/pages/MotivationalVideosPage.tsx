@@ -15,7 +15,10 @@ import {
   Copy,
   Check,
   AlertTriangle,
-  TrendingDown
+  TrendingDown,
+  Shuffle,
+  ShieldAlert,
+  Edit3
 } from 'lucide-react';
 
 function InstagramIcon({ size = 16, className = '' }: { size?: number; className?: string }) {
@@ -44,7 +47,11 @@ import type {
 import { 
   loadSavedVideos, 
   saveStoredVideos, 
-  parsePastedLinks 
+  parsePastedLinks,
+  DAILY_REELS_LIMIT,
+  getDailyViewedReelIds,
+  recordDailyReelView,
+  shuffleVideos
 } from '../lib/motivationalVideos';
 import { useProgression } from '../hooks/useProgression';
 import { audio } from '../lib/audio';
@@ -56,13 +63,25 @@ interface MotivationalVideosPageProps {
 
 const CATEGORIES: ('All' | VideoCategory)[] = ['All', 'Discipline', 'Mindset', 'Focus', 'Stoic', 'Execution'];
 
+const QUICK_MOOD_OPTIONS = [
+  'Sad 🌧️',
+  'Gym Beast 🔥',
+  'Focus 🎯',
+  'Stoic 🛡️',
+  'Late Night 🌙',
+  'Relentless ⚡',
+  'Heartbreak 💔',
+  'Cold Discipline 🧊',
+];
+
 export function MotivationalVideosPage({ onBack }: MotivationalVideosPageProps) {
   const { state, deductXp, updateProfile } = useProgression();
   const userId = state.displayName || 'operator';
 
-  // Video repository state
+  // Video repository state - shuffled on mount so every open starts with fresh/different reels like YT & Insta
   const [videos, setVideos] = useState<MotivationalVideo[]>(() => {
-    return loadSavedVideos(state.settings?.motivationalVideos, userId);
+    const initial = loadSavedVideos(state.settings?.motivationalVideos, userId);
+    return shuffleVideos(initial);
   });
 
   const [activeCategory, setActiveCategory] = useState<'All' | VideoCategory>('All');
@@ -70,11 +89,21 @@ export function MotivationalVideosPage({ onBack }: MotivationalVideosPageProps) 
   const [searchQuery, setSearchQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
 
+  // Daily quota tracking (Maximum 10 reels per day)
+  const [dailyViewedIds, setDailyViewedIds] = useState<string[]>(() => {
+    return getDailyViewedReelIds(userId);
+  });
+
   // Import Modal State
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [pastedContent, setPastedContent] = useState('');
   const [importCategory, setImportCategory] = useState<VideoCategory>('Discipline');
+  const [customTitle, setCustomTitle] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // Edit Title Modal State
+  const [editingVideo, setEditingVideo] = useState<MotivationalVideo | null>(null);
+  const [editTitleInput, setEditTitleInput] = useState('');
 
   // Reels container ref
   const containerRef = useRef<HTMLDivElement>(null);
@@ -142,14 +171,33 @@ export function MotivationalVideosPage({ onBack }: MotivationalVideosPageProps) 
     }
   };
 
-  // Trigger -15 XP deduction on each reel view or scroll
+  // Trigger -15 XP deduction and track daily reel count (max 10 reels/day) on view or scroll
   useEffect(() => {
     if (viewMode !== 'reels') return;
     const currentVideo = filteredVideos[activeIndex];
-    if (currentVideo && !currentVideo.xpDeducted) {
+    if (!currentVideo) return;
+
+    const currentViews = getDailyViewedReelIds(userId);
+    const isAlreadyViewedToday = currentViews.includes(currentVideo.id);
+
+    // If 10 reels have already been viewed and this is a new unviewed reel, enforce daily cap
+    if (!isAlreadyViewedToday && currentViews.length >= DAILY_REELS_LIMIT) {
+      setDailyViewedIds(currentViews);
+      return;
+    }
+
+    // Record view in daily quota
+    recordDailyReelView(currentVideo.id, userId);
+    setDailyViewedIds(getDailyViewedReelIds(userId));
+
+    // Deduct dopamine cost if not yet deducted
+    if (!currentVideo.xpDeducted) {
       handleApplyDopamineCost(currentVideo);
     }
-  }, [activeIndex, viewMode, filteredVideos]);
+  }, [activeIndex, viewMode, filteredVideos, userId]);
+
+  // Is daily limit reached?
+  const isDailyLimitReached = dailyViewedIds.length >= DAILY_REELS_LIMIT;
 
   // Delete a video
   const handleDeleteVideo = async (videoId: string, e?: React.MouseEvent) => {
@@ -167,7 +215,7 @@ export function MotivationalVideosPage({ onBack }: MotivationalVideosPageProps) 
     if (viewMode !== 'reels') return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (isImportModalOpen) return;
+      if (isImportModalOpen || editingVideo) return;
       if (e.key === 'ArrowDown' || e.key === 'PageDown') {
         e.preventDefault();
         scrollToIndex(activeIndex + 1);
@@ -179,7 +227,7 @@ export function MotivationalVideosPage({ onBack }: MotivationalVideosPageProps) 
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [viewMode, activeIndex, isImportModalOpen, filteredVideos.length]);
+  }, [viewMode, activeIndex, isImportModalOpen, editingVideo, filteredVideos.length]);
 
   // Scroll to a specific reel index
   const scrollToIndex = (index: number) => {
@@ -214,6 +262,15 @@ export function MotivationalVideosPage({ onBack }: MotivationalVideosPageProps) 
     }
   };
 
+  // Shuffle feed order (fresh reels order like YouTube Shorts and Instagram)
+  const handleShuffleFeed = () => {
+    audio.playClick();
+    const shuffled = shuffleVideos(videos);
+    setVideos(shuffled);
+    setActiveIndex(0);
+    toast.success('Feed refreshed with new randomized reels order! 🔀', { icon: '🔀' });
+  };
+
   // Import handler for links pasted from WhatsApp, Notes, or Instagram
   const handleImportLinks = async () => {
     if (!pastedContent.trim()) {
@@ -221,7 +278,7 @@ export function MotivationalVideosPage({ onBack }: MotivationalVideosPageProps) 
       return;
     }
 
-    const parsed = parsePastedLinks(pastedContent, importCategory);
+    const parsed = parsePastedLinks(pastedContent, importCategory, customTitle.trim() || undefined);
     if (parsed.length === 0) {
       toast.error('No valid YouTube or Instagram links found. Please check format.');
       return;
@@ -245,17 +302,31 @@ export function MotivationalVideosPage({ onBack }: MotivationalVideosPageProps) 
       toast('All pasted reels are already in your vault! 📁', { icon: 'ℹ️' });
       setIsImportModalOpen(false);
       setPastedContent('');
+      setCustomTitle('');
       return;
     }
 
     const updated = [...newItems, ...videos];
     await persistVideos(updated);
     audio.playSuccess();
-    toast.success(`Imported ${newItems.length} reel(s) into Vault! 🎉`, { duration: 4000 });
+    toast.success(`Imported ${newItems.length} reel(s) with custom title into Vault! 🎉`, { duration: 4000 });
     
     setIsImportModalOpen(false);
     setPastedContent('');
+    setCustomTitle('');
     setActiveIndex(0);
+  };
+
+  // Save edited title
+  const handleSaveEditedTitle = async () => {
+    if (!editingVideo) return;
+    audio.playClick();
+    const newTitle = editTitleInput.trim() || editingVideo.title;
+    const updated = videos.map(v => v.id === editingVideo.id ? { ...v, title: newTitle } : v);
+    await persistVideos(updated);
+    toast.success('Title updated! 🏷️');
+    setEditingVideo(null);
+    setEditTitleInput('');
   };
 
   // Live count of detected links in modal
@@ -285,14 +356,37 @@ export function MotivationalVideosPage({ onBack }: MotivationalVideosPageProps) 
                 <TrendingDown size={10} className="text-rose-400" />
                 -15 XP
               </span>
+
+              {/* Daily 10 Reels Limit Indicator */}
+              <div 
+                className={`text-[9px] sm:text-[10px] font-bold px-2 py-0.5 rounded-full border flex items-center gap-1 shrink-0 ${
+                  isDailyLimitReached 
+                    ? 'bg-amber-500/20 border-amber-500/40 text-amber-300' 
+                    : 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
+                }`}
+                title={`Daily Quota: Max 10 reels per day. ${dailyViewedIds.length}/10 viewed today.`}
+              >
+                <span className={`w-1.5 h-1.5 rounded-full ${isDailyLimitReached ? 'bg-amber-400' : 'bg-emerald-400'} animate-pulse`} />
+                <span>{dailyViewedIds.length}/{DAILY_REELS_LIMIT} Reels Today</span>
+              </div>
             </div>
             <p className="text-[10px] sm:text-[11px] text-textMuted hidden sm:block truncate">
-              Instagram Reels & YouTube videos • -15 XP cost per view/scroll
+              Max 10 reels/day • Randomized fresh feed • -15 XP per reel
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          {/* Shuffle Feed Button (Fresh Reel order like YT / Insta) */}
+          <button
+            onClick={handleShuffleFeed}
+            className="p-2 sm:px-2.5 sm:py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-textMuted hover:text-white transition-all cursor-pointer flex items-center gap-1.5 text-xs font-bold"
+            title="Shuffle feed to load fresh starting reel"
+          >
+            <Shuffle size={14} className="text-primary" />
+            <span className="hidden lg:inline">Shuffle Feed</span>
+          </button>
+
           {/* View Mode Toggle: Reels vs Grid */}
           <div className="bg-black/40 border border-white/10 rounded-xl p-0.5 sm:p-1 flex items-center">
             <button
@@ -357,7 +451,7 @@ export function MotivationalVideosPage({ onBack }: MotivationalVideosPageProps) 
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search reels..."
+              placeholder="Search reels or titles (e.g. Sad, Focus)..."
               className="w-full bg-white/5 border border-white/10 rounded-xl pl-8 pr-3 py-1 text-xs text-white placeholder-textMuted focus:outline-none focus:border-primary/50 transition-all"
             />
           </div>
@@ -384,149 +478,216 @@ export function MotivationalVideosPage({ onBack }: MotivationalVideosPageProps) 
           </div>
         ) : viewMode === 'reels' ? (
           /* ─── REELS VERTICAL SNAP SCROLL ─── */
-          <div 
-            ref={containerRef}
-            onScroll={handleScroll}
-            className="h-full w-full overflow-y-auto snap-y snap-mandatory no-scrollbar relative flex flex-col items-center py-1 sm:py-2 px-1 sm:px-2"
-          >
-            {filteredVideos.map((video, idx) => {
-              const isCurrent = idx === activeIndex;
-              const isInstagram = video.platform === 'instagram';
+          isDailyLimitReached ? (
+            /* 10 Reels Daily Limit Safeguard Screen */
+            <div className="h-full w-full flex flex-col items-center justify-center p-6 text-center space-y-4 max-w-md mx-auto">
+              <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-3xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 shadow-[0_0_30px_rgba(245,158,11,0.25)]">
+                <ShieldAlert size={38} />
+              </div>
+              <div>
+                <span className="text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                  Daily Attention Safeguard Active
+                </span>
+                <h2 className="text-xl sm:text-2xl font-black text-white mt-3">
+                  Daily Quota Reached (10/10 Reels)
+                </h2>
+                <p className="text-xs sm:text-sm text-textMuted mt-2 leading-relaxed">
+                  You have viewed your maximum limit of 10 reels for today. Conserve dopamine and redirect your focus into deep work and execution! Quota resets at midnight.
+                </p>
+              </div>
 
-              return (
-                <div
-                  key={video.id}
-                  ref={el => { videoRefs.current[idx] = el; }}
-                  className="h-full w-full max-h-full snap-center snap-always flex items-center justify-center p-1 sm:p-2 relative my-auto shrink-0"
+              <div className="w-full p-3.5 rounded-2xl bg-white/5 border border-white/10 text-xs font-mono text-white/80 flex items-center justify-between">
+                <span>Viewed Today:</span>
+                <span className="font-bold text-amber-400 font-sans">{dailyViewedIds.length} / {DAILY_REELS_LIMIT} Reels</span>
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-2.5 w-full pt-2">
+                <button
+                  onClick={() => { audio.playClick(); setViewMode('grid'); }}
+                  className="flex-1 py-2.5 px-4 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs font-bold transition-all border border-white/10 cursor-pointer"
                 >
-                  {/* Reel Card */}
-                  <div className="relative w-full max-w-[390px] sm:max-w-[420px] md:max-w-[440px] h-full max-h-[96%] sm:max-h-[92%] rounded-2xl sm:rounded-3xl overflow-hidden border border-white/15 bg-black/95 shadow-[0_20px_50px_rgba(0,0,0,0.8)] flex flex-col justify-between group">
-                    {/* Media Embed Player */}
-                    <div className="relative w-full flex-1 bg-black overflow-hidden flex items-center justify-center">
-                      {isInstagram ? (
-                        <iframe
-                          src={`https://www.instagram.com/reel/${video.mediaId}/embed`}
-                          title={video.title}
-                          className="w-full h-full border-0 absolute inset-0 bg-black"
-                          frameBorder="0"
-                          scrolling="no"
-                          allowTransparency={true}
-                          allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share"
-                        />
-                      ) : (
-                        <iframe
-                          src={`https://www.youtube-nocookie.com/embed/${video.mediaId}?autoplay=${isCurrent ? 1 : 0}&enablejsapi=1&rel=0&playsinline=1&modestbranding=1`}
-                          title={video.title}
-                          className="w-full h-full border-0 absolute inset-0 bg-black"
-                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                          allowFullScreen
-                        />
-                      )}
-                    </div>
+                  Browse Vault Library
+                </button>
+                <button
+                  onClick={() => { audio.playClick(); onBack(); }}
+                  className="flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-primary to-blue-600 hover:from-primaryHover hover:to-blue-500 text-white text-xs font-black uppercase tracking-wider transition-all shadow-md cursor-pointer"
+                >
+                  Back to Deck
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div 
+              ref={containerRef}
+              onScroll={handleScroll}
+              className="h-full w-full overflow-y-auto snap-y snap-mandatory no-scrollbar relative flex flex-col items-center py-1 sm:py-2 px-1 sm:px-2"
+            >
+              {filteredVideos.map((video, idx) => {
+                const isCurrent = idx === activeIndex;
+                const isInstagram = video.platform === 'instagram';
 
-                    {/* Bottom Metadata & Penalty Indicator */}
-                    <div className="relative z-10 p-3 sm:p-4 pr-12 sm:pr-14 bg-gradient-to-t from-black via-black/90 to-transparent border-t border-white/10 space-y-2">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-1.5 sm:gap-2">
-                          <span className={`text-[9px] sm:text-[10px] font-black uppercase tracking-wider px-2 sm:px-2.5 py-0.5 rounded-full border flex items-center gap-1 ${
-                            isInstagram 
-                              ? 'bg-gradient-to-r from-purple-500/20 to-pink-500/20 text-pink-300 border-pink-500/30'
-                              : 'bg-red-500/20 text-red-300 border-red-500/30'
-                          }`}>
-                            {isInstagram ? <InstagramIcon size={11} /> : <Film size={11} />}
-                            {isInstagram ? 'Instagram' : 'YouTube'}
-                          </span>
-                          <span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-white/10 text-white/80">
-                            {video.category}
-                          </span>
-                        </div>
-                        <span className="text-[9px] sm:text-[10px] text-textMuted font-mono">
-                          {idx + 1}/{filteredVideos.length}
-                        </span>
+                return (
+                  <div
+                    key={video.id}
+                    ref={el => { videoRefs.current[idx] = el; }}
+                    className="h-full w-full max-h-full snap-center snap-always flex items-center justify-center p-1 sm:p-2 relative my-auto shrink-0"
+                  >
+                    {/* Reel Card */}
+                    <div className="relative w-full max-w-[390px] sm:max-w-[420px] md:max-w-[440px] h-full max-h-[96%] sm:max-h-[92%] rounded-2xl sm:rounded-3xl overflow-hidden border border-white/15 bg-black/95 shadow-[0_20px_50px_rgba(0,0,0,0.8)] flex flex-col justify-between group">
+                      {/* Media Embed Player */}
+                      <div className="relative w-full flex-1 bg-black overflow-hidden flex items-center justify-center">
+                        {isInstagram ? (
+                          <iframe
+                            src={`https://www.instagram.com/reel/${video.mediaId}/embed`}
+                            title={video.title}
+                            className="w-full h-full border-0 absolute inset-0 bg-black"
+                            frameBorder="0"
+                            scrolling="no"
+                            allowTransparency={true}
+                            allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share"
+                          />
+                        ) : (
+                          <iframe
+                            src={`https://www.youtube-nocookie.com/embed/${video.mediaId}?autoplay=${isCurrent ? 1 : 0}&enablejsapi=1&rel=0&playsinline=1&modestbranding=1`}
+                            title={video.title}
+                            className="w-full h-full border-0 absolute inset-0 bg-black"
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                            allowFullScreen
+                          />
+                        )}
                       </div>
 
-                      <h2 className="text-xs sm:text-sm md:text-base font-bold text-white line-clamp-2 leading-snug drop-shadow-md">
-                        {video.title}
-                      </h2>
-
-                      {/* -15 Mind XP Dopamine Cost Status */}
-                      <div className="w-full py-2 sm:py-2.5 px-3 sm:px-3.5 rounded-xl sm:rounded-2xl bg-rose-500/10 border border-rose-500/25 flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
-                          <AlertTriangle size={14} className="text-rose-400 shrink-0" />
-                          <span className="text-[11px] sm:text-xs font-bold text-rose-300 truncate">
-                            {video.xpDeducted ? 'Dopamine Cost Applied' : 'View / Scroll Cost'}
+                      {/* Bottom Metadata & Penalty Indicator */}
+                      <div className="relative z-10 p-3 sm:p-4 pr-12 sm:pr-14 bg-gradient-to-t from-black via-black/90 to-transparent border-t border-white/10 space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5 sm:gap-2">
+                            <span className={`text-[9px] sm:text-[10px] font-black uppercase tracking-wider px-2 sm:px-2.5 py-0.5 rounded-full border flex items-center gap-1 ${
+                              isInstagram 
+                                ? 'bg-gradient-to-r from-purple-500/20 to-pink-500/20 text-pink-300 border-pink-500/30'
+                                : 'bg-red-500/20 text-red-300 border-red-500/30'
+                            }`}>
+                              {isInstagram ? <InstagramIcon size={11} /> : <Film size={11} />}
+                              {isInstagram ? 'Instagram' : 'YouTube'}
+                            </span>
+                            <span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-white/10 text-white/80">
+                              {video.category}
+                            </span>
+                          </div>
+                          <span className="text-[9px] sm:text-[10px] text-textMuted font-mono">
+                            {idx + 1}/{filteredVideos.length}
                           </span>
                         </div>
-                        <span className="text-[10px] sm:text-xs font-black font-mono text-rose-300 bg-rose-500/20 px-1.5 sm:px-2 py-0.5 rounded-md border border-rose-500/30 shrink-0">
-                          -15 XP
-                        </span>
+
+                        {/* Title with edit button */}
+                        <div className="flex items-start justify-between gap-2">
+                          <h2 className="text-xs sm:text-sm md:text-base font-bold text-white line-clamp-2 leading-snug drop-shadow-md flex-1">
+                            {video.title}
+                          </h2>
+                          <button
+                            onClick={() => {
+                              audio.playClick();
+                              setEditingVideo(video);
+                              setEditTitleInput(video.title);
+                            }}
+                            className="p-1 rounded-lg bg-white/5 hover:bg-white/15 text-textMuted hover:text-white transition-all shrink-0"
+                            title="Edit Title / Mood Tag"
+                          >
+                            <Edit3 size={13} />
+                          </button>
+                        </div>
+
+                        {/* -15 Mind XP Dopamine Cost Status */}
+                        <div className="w-full py-2 sm:py-2.5 px-3 sm:px-3.5 rounded-xl sm:rounded-2xl bg-rose-500/10 border border-rose-500/25 flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+                            <AlertTriangle size={14} className="text-rose-400 shrink-0" />
+                            <span className="text-[11px] sm:text-xs font-bold text-rose-300 truncate">
+                              {video.xpDeducted ? 'Dopamine Cost Applied' : 'View / Scroll Cost'}
+                            </span>
+                          </div>
+                          <span className="text-[10px] sm:text-xs font-black font-mono text-rose-300 bg-rose-500/20 px-1.5 sm:px-2 py-0.5 rounded-md border border-rose-500/30 shrink-0">
+                            -15 XP
+                          </span>
+                        </div>
                       </div>
-                    </div>
 
-                    {/* Floating Right Action Rail (Shorts / Reels Style) */}
-                    <div className="absolute right-2 sm:right-3 bottom-16 sm:bottom-20 z-20 flex flex-col items-center gap-2 sm:gap-2.5">
-                      {/* Prev Reel */}
-                      {idx > 0 && (
-                        <button
-                          onClick={() => scrollToIndex(idx - 1)}
+                      {/* Floating Right Action Rail (Shorts / Reels Style) */}
+                      <div className="absolute right-2 sm:right-3 bottom-16 sm:bottom-20 z-20 flex flex-col items-center gap-2 sm:gap-2.5">
+                        {/* Prev Reel */}
+                        {idx > 0 && (
+                          <button
+                            onClick={() => scrollToIndex(idx - 1)}
+                            className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-black/60 hover:bg-white/20 backdrop-blur-md border border-white/20 flex items-center justify-center text-white shadow-lg transition-all active:scale-90"
+                            title="Previous Reel (Arrow Up)"
+                          >
+                            <ChevronUp size={18} />
+                          </button>
+                        )}
+
+                        {/* Next Reel */}
+                        {idx < filteredVideos.length - 1 && (
+                          <button
+                            onClick={() => scrollToIndex(idx + 1)}
+                            className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-black/60 hover:bg-white/20 backdrop-blur-md border border-white/20 flex items-center justify-center text-white shadow-lg transition-all active:scale-90"
+                            title="Next Reel (Arrow Down)"
+                          >
+                            <ChevronDown size={18} />
+                          </button>
+                        )}
+
+                        {/* External Link */}
+                        <a
+                          href={video.url}
+                          target="_blank"
+                          rel="noreferrer"
                           className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-black/60 hover:bg-white/20 backdrop-blur-md border border-white/20 flex items-center justify-center text-white shadow-lg transition-all active:scale-90"
-                          title="Previous Reel (Arrow Up)"
+                          title={isInstagram ? 'Open on Instagram' : 'Open on YouTube'}
                         >
-                          <ChevronUp size={18} />
-                        </button>
-                      )}
+                          <ExternalLink size={15} />
+                        </a>
 
-                      {/* Next Reel */}
-                      {idx < filteredVideos.length - 1 && (
+                        {/* Copy Link */}
                         <button
-                          onClick={() => scrollToIndex(idx + 1)}
+                          onClick={() => {
+                            audio.playSuccess();
+                            navigator.clipboard.writeText(video.url);
+                            setCopiedId(video.id);
+                            toast.success('Link copied! 📋');
+                            setTimeout(() => setCopiedId(null), 2000);
+                          }}
                           className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-black/60 hover:bg-white/20 backdrop-blur-md border border-white/20 flex items-center justify-center text-white shadow-lg transition-all active:scale-90"
-                          title="Next Reel (Arrow Down)"
+                          title="Copy Reel Link"
                         >
-                          <ChevronDown size={18} />
+                          {copiedId === video.id ? <Check size={15} className="text-emerald-400" /> : <Copy size={15} />}
                         </button>
-                      )}
 
-                      {/* External Link */}
-                      <a
-                        href={video.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-black/60 hover:bg-white/20 backdrop-blur-md border border-white/20 flex items-center justify-center text-white shadow-lg transition-all active:scale-90"
-                        title={isInstagram ? 'Open on Instagram' : 'Open on YouTube'}
-                      >
-                        <ExternalLink size={15} />
-                      </a>
+                        {/* Edit Title */}
+                        <button
+                          onClick={() => {
+                            audio.playClick();
+                            setEditingVideo(video);
+                            setEditTitleInput(video.title);
+                          }}
+                          className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-black/60 hover:bg-white/20 backdrop-blur-md border border-white/20 flex items-center justify-center text-white shadow-lg transition-all active:scale-90"
+                          title="Rename / Set Mood Title"
+                        >
+                          <Edit3 size={15} />
+                        </button>
 
-                      {/* Copy Link */}
-                      <button
-                        onClick={() => {
-                          audio.playSuccess();
-                          navigator.clipboard.writeText(video.url);
-                          setCopiedId(video.id);
-                          toast.success('Link copied! 📋');
-                          setTimeout(() => setCopiedId(null), 2000);
-                        }}
-                        className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-black/60 hover:bg-white/20 backdrop-blur-md border border-white/20 flex items-center justify-center text-white shadow-lg transition-all active:scale-90"
-                        title="Copy Reel Link"
-                      >
-                        {copiedId === video.id ? <Check size={15} className="text-emerald-400" /> : <Copy size={15} />}
-                      </button>
-
-                      {/* Delete Reel */}
-                      <button
-                        onClick={(e) => handleDeleteVideo(video.id, e)}
-                        className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-black/60 hover:bg-red-500/30 backdrop-blur-md border border-white/20 flex items-center justify-center text-red-400 shadow-lg transition-all active:scale-90"
-                        title="Remove from vault"
-                      >
-                        <Trash2 size={15} />
-                      </button>
+                        {/* Delete Reel */}
+                        <button
+                          onClick={(e) => handleDeleteVideo(video.id, e)}
+                          className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-black/60 hover:bg-red-500/30 backdrop-blur-md border border-white/20 flex items-center justify-center text-red-400 shadow-lg transition-all active:scale-90"
+                          title="Remove from vault"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )
         ) : (
           /* ─── GRID / LIBRARY VIEW ─── */
           <div className="h-full overflow-y-auto p-4 md:p-6 no-scrollbar">
@@ -568,9 +729,23 @@ export function MotivationalVideosPage({ onBack }: MotivationalVideosPageProps) 
                     </div>
 
                     <div>
-                      <h3 className="text-sm font-bold text-white line-clamp-2 leading-snug group-hover:text-primary transition-colors">
-                        {video.title}
-                      </h3>
+                      <div className="flex items-start justify-between gap-1">
+                        <h3 className="text-sm font-bold text-white line-clamp-2 leading-snug group-hover:text-primary transition-colors flex-1">
+                          {video.title}
+                        </h3>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            audio.playClick();
+                            setEditingVideo(video);
+                            setEditTitleInput(video.title);
+                          }}
+                          className="p-1 rounded-md text-textMuted hover:text-white hover:bg-white/10 transition-all opacity-0 group-hover:opacity-100"
+                          title="Edit Title"
+                        >
+                          <Edit3 size={12} />
+                        </button>
+                      </div>
                     </div>
 
                     <div className="flex items-center justify-between pt-1 border-t border-white/5">
@@ -614,16 +789,16 @@ export function MotivationalVideosPage({ onBack }: MotivationalVideosPageProps) 
               initial={{ opacity: 0, scale: 0.95, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="glass-panel w-full max-w-lg rounded-3xl border border-white/15 bg-[#0f111a] p-6 shadow-2xl relative space-y-4"
+              className="glass-panel w-full max-w-lg rounded-3xl border border-white/15 bg-[#0f111a] p-6 shadow-2xl relative space-y-4 max-h-[90vh] overflow-y-auto no-scrollbar"
             >
               <div className="flex items-start justify-between">
                 <div>
                   <h3 className="text-lg font-black text-white flex items-center gap-2">
                     <Plus className="text-primary" size={20} />
-                    Import Reels & Video Links
+                    Import Reels & Videos
                   </h3>
                   <p className="text-xs text-textMuted mt-1">
-                    Paste Instagram Reels or YouTube links copied directly from your WhatsApp chats, Instagram app, Notes, or bookmarks.
+                    Paste Instagram Reels or YouTube links saved from WhatsApp, Instagram, or Notes.
                   </p>
                 </div>
                 <button
@@ -632,6 +807,47 @@ export function MotivationalVideosPage({ onBack }: MotivationalVideosPageProps) 
                 >
                   ✕
                 </button>
+              </div>
+
+              {/* Custom Title / Mood Option (e.g. "Sad", "Gym Beast", "Focus") */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-textMuted uppercase tracking-wider">
+                    Custom Title / Mood Option (Optional)
+                  </label>
+                  {customTitle && (
+                    <button 
+                      type="button" 
+                      onClick={() => setCustomTitle('')}
+                      className="text-[10px] text-textMuted hover:text-white cursor-pointer"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+                <input
+                  type="text"
+                  value={customTitle}
+                  onChange={(e) => setCustomTitle(e.target.value)}
+                  placeholder="e.g. Sad, Beast Mode, Focus, Late Night"
+                  className="w-full bg-black/50 border border-white/15 rounded-xl px-3 py-2 text-xs text-white placeholder-textMuted/60 focus:outline-none focus:border-primary transition-all"
+                />
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {QUICK_MOOD_OPTIONS.map(mood => (
+                    <button
+                      key={mood}
+                      type="button"
+                      onClick={() => setCustomTitle(mood)}
+                      className={`text-[10px] px-2.5 py-1 rounded-lg border transition-all cursor-pointer font-medium ${
+                        customTitle === mood
+                          ? 'bg-primary text-white border-primary/50 shadow-sm'
+                          : 'bg-white/5 border-white/10 text-textMuted hover:text-white hover:bg-white/10'
+                      }`}
+                    >
+                      {mood}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {/* Category Picker */}
@@ -645,7 +861,7 @@ export function MotivationalVideosPage({ onBack }: MotivationalVideosPageProps) 
                       key={cat}
                       type="button"
                       onClick={() => setImportCategory(cat)}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                         importCategory === cat
                           ? 'bg-primary text-white border border-primary/50 shadow-md'
                           : 'bg-white/5 text-textMuted hover:text-white border border-white/10'
@@ -671,7 +887,7 @@ export function MotivationalVideosPage({ onBack }: MotivationalVideosPageProps) 
                   value={pastedContent}
                   onChange={(e) => setPastedContent(e.target.value)}
                   placeholder={`https://www.instagram.com/reel/C...\nhttps://www.youtube.com/watch?v=...\nhttps://youtu.be/...\nhttps://www.youtube.com/shorts/...`}
-                  rows={5}
+                  rows={4}
                   className="w-full bg-black/50 border border-white/15 rounded-2xl p-3 text-xs text-white placeholder-textMuted/60 font-mono focus:outline-none focus:border-primary transition-all resize-none"
                   autoFocus
                 />
@@ -686,7 +902,7 @@ export function MotivationalVideosPage({ onBack }: MotivationalVideosPageProps) 
                 <button
                   type="button"
                   onClick={() => setIsImportModalOpen(false)}
-                  className="px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-textMuted hover:text-white text-xs font-bold transition-all"
+                  className="px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-textMuted hover:text-white text-xs font-bold transition-all cursor-pointer"
                 >
                   Cancel
                 </button>
@@ -702,6 +918,83 @@ export function MotivationalVideosPage({ onBack }: MotivationalVideosPageProps) 
                 >
                   <Plus size={16} />
                   <span>Save to Vault ({detectedCount})</span>
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ─── EDIT TITLE / MOOD MODAL ─── */}
+      <AnimatePresence>
+        {editingVideo && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="glass-panel w-full max-w-md rounded-3xl border border-white/15 bg-[#0f111a] p-6 shadow-2xl relative space-y-4"
+            >
+              <div className="flex items-start justify-between">
+                <div>
+                  <h3 className="text-base font-black text-white flex items-center gap-2">
+                    <Edit3 className="text-primary" size={18} />
+                    Custom Title / Mood Option
+                  </h3>
+                  <p className="text-xs text-textMuted mt-1">
+                    Give this reel your own custom title (e.g. Sad, Beast Mode, Focus).
+                  </p>
+                </div>
+                <button
+                  onClick={() => setEditingVideo(null)}
+                  className="p-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-textMuted hover:text-white transition-all cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="space-y-1.5">
+                <input
+                  type="text"
+                  value={editTitleInput}
+                  onChange={(e) => setEditTitleInput(e.target.value)}
+                  placeholder="Enter title (e.g. Sad, Night Fuel, Stoic)"
+                  className="w-full bg-black/50 border border-white/15 rounded-xl px-3 py-2.5 text-xs text-white placeholder-textMuted/60 focus:outline-none focus:border-primary transition-all font-medium"
+                  autoFocus
+                />
+
+                <div className="flex flex-wrap gap-1.5 pt-2">
+                  {QUICK_MOOD_OPTIONS.map(mood => (
+                    <button
+                      key={mood}
+                      type="button"
+                      onClick={() => setEditTitleInput(mood)}
+                      className={`text-[10px] px-2.5 py-1 rounded-lg border transition-all cursor-pointer font-medium ${
+                        editTitleInput === mood
+                          ? 'bg-primary text-white border-primary/50'
+                          : 'bg-white/5 border-white/10 text-textMuted hover:text-white hover:bg-white/10'
+                      }`}
+                    >
+                      {mood}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingVideo(null)}
+                  className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-textMuted hover:text-white text-xs font-bold transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveEditedTitle}
+                  className="px-5 py-2 rounded-xl bg-primary hover:bg-primaryHover text-white text-xs font-bold uppercase tracking-wider transition-all cursor-pointer shadow-md"
+                >
+                  Save Title
                 </button>
               </div>
             </motion.div>

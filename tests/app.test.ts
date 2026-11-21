@@ -461,10 +461,11 @@ describe('Reels & Video Vault (Instagram, YouTube & -15 XP Deduction)', () => {
     return match ? match[1] : null;
   }
 
-  function parsePastedLinks(rawText: string, defaultCategory = 'Discipline') {
+  function parsePastedLinks(rawText: string, defaultCategory = 'Discipline', customTitle?: string) {
     const chunks = rawText.split(/[\n,;]+/).map(s => s.trim()).filter(Boolean);
     const results: Array<{ platform: 'instagram' | 'youtube'; mediaId: string; title: string; category: string; url: string; watched: boolean; xpDeducted: boolean }> = [];
     const seenKeys = new Set<string>();
+    const trimmedTitle = customTitle?.trim();
 
     for (const chunk of chunks) {
       const igId = extractInstagramId(chunk);
@@ -473,7 +474,7 @@ describe('Reels & Video Vault (Instagram, YouTube & -15 XP Deduction)', () => {
         results.push({
           platform: 'instagram',
           mediaId: igId,
-          title: `Instagram Reel (${igId})`,
+          title: trimmedTitle ? (chunks.length > 1 ? `${trimmedTitle} #${results.length + 1}` : trimmedTitle) : `Instagram Reel (${igId})`,
           category: defaultCategory,
           url: chunk.startsWith('http') ? chunk : `https://www.instagram.com/reel/${igId}/`,
           watched: false,
@@ -488,13 +489,16 @@ describe('Reels & Video Vault (Instagram, YouTube & -15 XP Deduction)', () => {
         results.push({
           platform: 'youtube',
           mediaId: yId,
-          title: `Motivational Protocol (${yId.slice(0, 6)})`,
+          title: trimmedTitle ? (chunks.length > 1 ? `${trimmedTitle} #${results.length + 1}` : trimmedTitle) : `Motivational Protocol (${yId.slice(0, 6)})`,
           category: defaultCategory,
           url: chunk.startsWith('http') ? chunk : `https://youtu.be/${yId}`,
           watched: false,
           xpDeducted: false,
         });
       }
+    }
+    if (results.length === 1 && trimmedTitle) {
+      results[0].title = trimmedTitle;
     }
     return results;
   }
@@ -560,5 +564,219 @@ describe('Reels & Video Vault (Instagram, YouTube & -15 XP Deduction)', () => {
     const secondScroll = applyDopamineScrollCost(reel);
     assert.equal(secondScroll.deducted, 0);
     assert.equal(secondScroll.currentXp, 85);
+  });
+
+  test('applies custom user title / mood option (e.g. Sad, Beast Mode) when importing reels', () => {
+    const singleLink = 'https://www.instagram.com/reel/C8xyz123ABC/';
+    const parsedSingle = parsePastedLinks(singleLink, 'Mindset', 'Sad 🌧️');
+    assert.equal(parsedSingle.length, 1);
+    assert.equal(parsedSingle[0].title, 'Sad 🌧️');
+
+    const multiLinks = `
+      https://www.instagram.com/reel/C8xyz123ABC/
+      https://www.youtube.com/watch?v=mgmVOuLgFB0
+    `;
+    const parsedMulti = parsePastedLinks(multiLinks, 'Focus', 'Gym Beast 🔥');
+    assert.equal(parsedMulti.length, 2);
+    assert.equal(parsedMulti[0].title, 'Gym Beast 🔥 #1');
+    assert.equal(parsedMulti[1].title, 'Gym Beast 🔥 #2');
+  });
+
+  test('enforces maximum 10 reels per day quota safeguard', () => {
+    const DAILY_LIMIT = 10;
+    const viewedToday: string[] = [];
+
+    function viewReel(reelId: string) {
+      if (viewedToday.includes(reelId)) {
+        return { allowed: true, count: viewedToday.length, limitReached: viewedToday.length >= DAILY_LIMIT };
+      }
+      if (viewedToday.length >= DAILY_LIMIT) {
+        return { allowed: false, count: viewedToday.length, limitReached: true };
+      }
+      viewedToday.push(reelId);
+      return { allowed: true, count: viewedToday.length, limitReached: viewedToday.length >= DAILY_LIMIT };
+    }
+
+    // View 10 unique reels
+    for (let i = 1; i <= 10; i++) {
+      const res = viewReel(`reel-${i}`);
+      assert.equal(res.allowed, true);
+      assert.equal(res.count, i);
+      assert.equal(res.limitReached, i === 10);
+    }
+
+    // Viewing the 11th reel should be blocked by daily safeguard
+    const eleventh = viewReel('reel-11');
+    assert.equal(eleventh.allowed, false);
+    assert.equal(eleventh.count, 10);
+    assert.equal(eleventh.limitReached, true);
+
+    // Re-viewing an already viewed reel from today remains allowed without increasing count
+    const reviewFirst = viewReel('reel-1');
+    assert.equal(reviewFirst.allowed, true);
+    assert.equal(reviewFirst.count, 10);
+  });
+
+  test('shuffles reel list to produce fresh randomized opening sequences', () => {
+    function shuffleArray<T>(arr: T[]): T[] {
+      const copy = [...arr];
+      for (let i = copy.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        const temp = copy[i];
+        copy[i] = copy[j];
+        copy[j] = temp;
+      }
+      return copy;
+    }
+
+    const original = ['reel-1', 'reel-2', 'reel-3', 'reel-4', 'reel-5', 'reel-6', 'reel-7', 'reel-8', 'reel-9', 'reel-10'];
+    const shuffled = shuffleArray(original);
+
+    // All original elements are preserved
+    assert.equal(shuffled.length, original.length);
+    for (const item of original) {
+      assert.equal(shuffled.includes(item), true);
+    }
+  });
+});
+
+// ─── 9. Timetable Task Skip & Protocol Resume Contract ──────────────
+describe('Timetable Task Skip & Protocol Resume Contract', () => {
+  test('skipping a timetable task marks it executed/bypassed without freezing the engine', () => {
+    const executedTaskIds: string[] = ['task-1'];
+    const activeTask = { id: 'task-2', title: 'Deep Work Block', start: '10:00', end: '11:30' };
+    
+    // Simulate skip current task
+    const updatedExecuted = Array.from(new Set([...executedTaskIds, String(activeTask.id)]));
+    assert.deepEqual(updatedExecuted, ['task-1', 'task-2']);
+    
+    // Check next task resolution: task-2 is now considered executed/bypassed
+    const schedule = [
+      { id: 'task-1', title: 'Morning Routine' },
+      { id: 'task-2', title: 'Deep Work Block' },
+      { id: 'task-3', title: 'Afternoon Execution' }
+    ];
+    
+    const uncompletedTasks = schedule.filter(t => !updatedExecuted.includes(String(t.id)));
+    assert.equal(uncompletedTasks.length, 1);
+    assert.equal(uncompletedTasks[0].id, 'task-3');
+  });
+
+  test('resuming protocol clears today skip entry and re-enables active engine', () => {
+    const todayStr = '2026-11-20';
+    let skips = [
+      { date: '2026-11-10', reason: 'Past rest' },
+      { date: '2026-11-20', reason: 'Accidental override' }
+    ];
+    let isSkippedToday = skips.some(s => s.date === todayStr);
+    assert.equal(isSkippedToday, true);
+
+    // Resume action
+    skips = skips.filter(s => s.date !== todayStr);
+    isSkippedToday = skips.some(s => s.date === todayStr);
+
+    assert.equal(isSkippedToday, false);
+    assert.equal(skips.length, 1);
+    assert.equal(skips[0].date, '2026-11-10');
+  });
+});
+
+// ─── 10. Daily Thoughts Repetition & Shuffled Cycles Contract ────────
+describe('Daily Thoughts Repetition & Shuffled Cycles Contract', () => {
+  function mulberry32(seed: number) {
+    return function() {
+      let t = (seed += 0x6D2B79F5);
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  function getCycleShuffledThoughts(thoughts: any[], cycle: number): any[] {
+    if (!thoughts || thoughts.length <= 1) return thoughts || [];
+    if (cycle === 0) return [...thoughts];
+
+    const shuffled = [...thoughts];
+    const rand = mulberry32(cycle * 10007 + 7919);
+
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(rand() * (i + 1));
+      const temp = shuffled[i];
+      shuffled[i] = shuffled[j];
+      shuffled[j] = temp;
+    }
+
+    return shuffled;
+  }
+
+  function getTodayThought(thoughts: any[], dayIndex: number): any {
+    if (!thoughts || thoughts.length === 0) return null;
+    const cycle = Math.floor(dayIndex / thoughts.length);
+    const indexInCycle = dayIndex % thoughts.length;
+    const cycleThoughts = getCycleShuffledThoughts(thoughts, cycle);
+    return cycleThoughts[indexInCycle] || thoughts[0];
+  }
+
+  test('Cycle 0 serves all thoughts in original order from Day 1 to Day N', () => {
+    const thoughts = [
+      { id: 'dt-1', quote: 'Thought 1' },
+      { id: 'dt-2', quote: 'Thought 2' },
+      { id: 'dt-3', quote: 'Thought 3' },
+    ];
+
+    assert.equal(getTodayThought(thoughts, 0).id, 'dt-1');
+    assert.equal(getTodayThought(thoughts, 1).id, 'dt-2');
+    assert.equal(getTodayThought(thoughts, 2).id, 'dt-3');
+  });
+
+  test('When all thoughts are completed, restarts from Day 1 with thoughts shuffled', () => {
+    const thoughts = [
+      { id: 'dt-1', quote: 'Thought 1' },
+      { id: 'dt-2', quote: 'Thought 2' },
+      { id: 'dt-3', quote: 'Thought 3' },
+      { id: 'dt-4', quote: 'Thought 4' },
+      { id: 'dt-5', quote: 'Thought 5' },
+    ];
+
+    // Cycle 1: day 5 (which is day 1 of repetition cycle 1)
+    const cycle1Day1 = getTodayThought(thoughts, 5);
+    const cycle1Thoughts = [
+      getTodayThought(thoughts, 5),
+      getTodayThought(thoughts, 6),
+      getTodayThought(thoughts, 7),
+      getTodayThought(thoughts, 8),
+      getTodayThought(thoughts, 9),
+    ];
+
+    // Every thought is included in cycle 1 (no duplicates, no omissions)
+    const cycle1Ids = cycle1Thoughts.map(t => t.id);
+    assert.equal(new Set(cycle1Ids).size, 5);
+    for (const t of thoughts) {
+      assert.equal(cycle1Ids.includes(t.id), true);
+    }
+
+    // Shuffled sequence in cycle 1 differs from original sequence
+    const originalIds = thoughts.map(t => t.id);
+    assert.notDeepEqual(cycle1Ids, originalIds);
+  });
+
+  test('When cycle 1 completes, cycle 2 repeats again from Day 1 with a new shuffle', () => {
+    const thoughts = [
+      { id: 'dt-1', quote: 'Thought 1' },
+      { id: 'dt-2', quote: 'Thought 2' },
+      { id: 'dt-3', quote: 'Thought 3' },
+      { id: 'dt-4', quote: 'Thought 4' },
+      { id: 'dt-5', quote: 'Thought 5' },
+    ];
+
+    // Cycle 1 (days 5..9)
+    const cycle1Ids = [5, 6, 7, 8, 9].map(d => getTodayThought(thoughts, d).id);
+    // Cycle 2 (days 10..14)
+    const cycle2Ids = [10, 11, 12, 13, 14].map(d => getTodayThought(thoughts, d).id);
+
+    // Both cycles preserve all elements
+    assert.equal(new Set(cycle2Ids).size, 5);
+    // Cycle 2 has its own unique permutation
+    assert.notDeepEqual(cycle2Ids, cycle1Ids);
   });
 });

@@ -116,7 +116,30 @@ export function ControlRoom() {
   const removeGoal = (index: number) => {
     setGoals(goals.filter((_, i) => i !== index));
   };
-  const [tasks, setTasks]         = useState<TimetableTask[]>(defaultTasks);
+  const [tasks, setTasks]         = useState<TimetableTask[]>(() => {
+    // 1. Progression state
+    if (state.settings?.timetable && Array.isArray(state.settings.timetable) && state.settings.timetable.length > 0) {
+      return state.settings.timetable;
+    }
+    // 2. Local storage keys
+    if (typeof window !== 'undefined') {
+      const fallbackKeys = [
+        `quantum_timetable_${state.displayName || ''}`,
+        'quantum_timetable_default',
+        'quantum_timetable',
+      ];
+      for (const fk of fallbackKeys) {
+        const raw = localStorage.getItem(fk);
+        if (raw && raw !== 'undefined' && raw !== 'null') {
+          try {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+          } catch {}
+        }
+      }
+    }
+    return defaultTasks;
+  });
   const [habits, setHabits]       = useState<HabitTask[]>(defaultHabits);
   const [roadmap, setRoadmap]     = useState<RoadmapPhase[]>(defaultRoadmap);
   const [weightGoal, setWeightGoal] = useState('70');
@@ -124,7 +147,7 @@ export function ControlRoom() {
   const [sundayRest, setSundayRest] = useState(true);
   const [savedMessage, setSavedMessage] = useState('');
   const [userId, setUserId]       = useState<string | null>(null);
-  const [activeDay, setActiveDay] = useState<number>(new Date().getDay()); // 0=Sun…6=Sat
+  const [activeDay, setActiveDay] = useState<number>(-1); // -1=All Days, 0=Sun…6=Sat
   const [showAddForm, setShowAddForm] = useState(false);
   const [newName, setNewName] = useState('');
   const [newPillar, setNewPillar] = useState<'Study' | 'Health' | 'Finance' | 'Mind'>('Study');
@@ -166,12 +189,56 @@ export function ControlRoom() {
             const s = data.settings;
             
             // 1. Timetable loading
-            if (s.timetable) {
-              setTasks(s.timetable);
-              localStorage.setItem(`quantum_timetable_${uid}`, JSON.stringify(s.timetable));
-            } else {
-              const t = localStorage.getItem(`quantum_timetable_${uid}`);
-              if (t && t !== "undefined") { try { setTasks(JSON.parse(t)); } catch(e){} }
+            let loadedTimetable = s.timetable;
+            if (!loadedTimetable || !Array.isArray(loadedTimetable) || loadedTimetable.length === 0) {
+              try {
+                const { data: dbTasks } = await supabase
+                  .from('timetable_tasks')
+                  .select('*')
+                  .eq('user_id', uid)
+                  .order('order_index');
+                if (dbTasks && dbTasks.length > 0) {
+                  loadedTimetable = dbTasks.map((t: any, idx: number) => ({
+                    id: t.id !== undefined ? t.id : idx + 1,
+                    start: t.start_time || t.start || '09:00',
+                    end: t.end_time || t.end || '10:00',
+                    title: t.name || t.title || `Task ${idx + 1}`,
+                    statusMsg: t.task_target ? `${t.task_target} Priority Protocol` : 'Executing Protocol...',
+                    pillar: t.pillar,
+                    category: t.category,
+                    task_target: t.task_target,
+                    dayOfWeek: t.day_of_week !== undefined ? t.day_of_week : t.dayOfWeek,
+                    isWeekend: t.is_weekend !== undefined ? t.is_weekend : t.isWeekend,
+                  }));
+                }
+              } catch (e) {}
+            }
+
+            if (!loadedTimetable || loadedTimetable.length === 0) {
+              const fallbackKeys = [
+                `quantum_timetable_${uid}`,
+                userName ? `quantum_timetable_${userName}` : null,
+                state.displayName ? `quantum_timetable_${state.displayName}` : null,
+                'quantum_timetable_default',
+                'quantum_timetable',
+              ].filter(Boolean) as string[];
+              for (const fk of fallbackKeys) {
+                const raw = localStorage.getItem(fk);
+                if (raw && raw !== 'undefined' && raw !== 'null') {
+                  try {
+                    const parsed = JSON.parse(raw);
+                    if (Array.isArray(parsed) && parsed.length > 0) {
+                      loadedTimetable = parsed;
+                      break;
+                    }
+                  } catch {}
+                }
+              }
+            }
+
+            if (loadedTimetable && Array.isArray(loadedTimetable) && loadedTimetable.length > 0) {
+              setTasks(loadedTimetable);
+              localStorage.setItem(`quantum_timetable_${uid}`, JSON.stringify(loadedTimetable));
             }
 
             // 2. Habits loading
@@ -244,8 +311,25 @@ export function ControlRoom() {
       }
 
       // 2. Local Fallback (for guests or failed DB fetch)
-      const t = localStorage.getItem(`quantum_timetable_${uid}`);
-      if (t && t !== "undefined") { try { setTasks(JSON.parse(t)); } catch(e){} }
+      const localTimetableKeys = [
+        `quantum_timetable_${uid}`,
+        userName ? `quantum_timetable_${userName}` : null,
+        state.displayName ? `quantum_timetable_${state.displayName}` : null,
+        'quantum_timetable_default',
+        'quantum_timetable',
+      ].filter(Boolean) as string[];
+      for (const ltk of localTimetableKeys) {
+        const rawT = localStorage.getItem(ltk);
+        if (rawT && rawT !== 'undefined' && rawT !== 'null') {
+          try {
+            const parsed = JSON.parse(rawT);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              setTasks(parsed);
+              break;
+            }
+          } catch(e) {}
+        }
+      }
 
       const h = localStorage.getItem(`quantum_habits_${uid}`);
       if (h && h !== "undefined") { try { setHabits(JSON.parse(h)); } catch(e){} }
@@ -832,6 +916,18 @@ export function ControlRoom() {
 
         {/* Day tabs */}
         <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+          <button
+            type="button"
+            onClick={() => setActiveDay(-1)}
+            className={`shrink-0 flex items-center space-x-2 px-4 py-2.5 rounded-xl border text-xs font-black uppercase tracking-wider transition-all ${
+              activeDay === -1
+                ? 'bg-primary/20 border-primary text-primary shadow-[0_0_15px_rgba(59,130,246,0.15)]'
+                : 'bg-surfaceHighlight/50 border-border text-textMuted hover:border-white/20'
+            }`}
+          >
+            <span>All Days</span>
+            {tasks.length > 0 && <span className="text-[10px] px-1.5 py-0.2 rounded-md bg-white/10 opacity-80">{tasks.length}</span>}
+          </button>
           {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((d, i) => {
             const isWknd = i === 0 || i === 6;
             const count = tasks.filter(t => t.dayOfWeek === i || t.dayOfWeek === undefined).length;
@@ -863,7 +959,7 @@ export function ControlRoom() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 pt-1">
           <AnimatePresence>
             {tasks
-              .filter(t => t.dayOfWeek === activeDay || t.dayOfWeek === undefined)
+              .filter(t => activeDay === -1 || t.dayOfWeek === activeDay || t.dayOfWeek === undefined)
               .map((task) => {
                 const isEditing = editingTaskId === task.id;
                 
@@ -1075,9 +1171,22 @@ export function ControlRoom() {
               })}
           </AnimatePresence>
         </div>
-        {tasks.filter(t => t.dayOfWeek === activeDay || t.dayOfWeek === undefined).length === 0 && (
-          <div className="text-center p-8 text-textMuted text-sm border border-dashed border-border rounded-xl">
-            No protocols for this day. Click "Add Protocol Task" to create one.
+        {tasks.filter(t => activeDay === -1 || t.dayOfWeek === activeDay || t.dayOfWeek === undefined).length === 0 && (
+          <div className="text-center p-8 text-textMuted text-sm border border-dashed border-border rounded-xl space-y-3">
+            <p>
+              {activeDay === -1
+                ? 'No protocols defined. Click "Add Protocol Task" to create one.'
+                : `No protocols scheduled specifically for ${['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][activeDay]}.`}
+            </p>
+            {tasks.length > 0 && activeDay !== -1 && (
+              <button
+                type="button"
+                onClick={() => setActiveDay(-1)}
+                className="px-4 py-2 rounded-xl bg-primary/20 hover:bg-primary/30 border border-primary/40 text-primary text-xs font-bold transition-all cursor-pointer"
+              >
+                View All Days ({tasks.length} tasks)
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -1168,6 +1277,7 @@ export function ControlRoom() {
                 {newTodoRecurrence === 'one-off' ? 'Check off once and archive.' :
                  newTodoRecurrence === 'daily' ? 'Repeats every single day.' :
                  newTodoRecurrence === 'monthly' ? 'Resets and repeats monthly.' :
+                 activeDay === -1 ? 'Repeats on scheduled day.' :
                  `Repeats every ${['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][activeDay]}.`}
               </p>
             </div>
@@ -1176,7 +1286,7 @@ export function ControlRoom() {
               onChange={(e) => { audio.playClick(); setNewTodoRecurrence(e.target.value as any); }}
               className="bg-background border border-border rounded-xl px-3 py-2 text-xs text-textMain font-bold outline-none focus:border-primary"
             >
-              <option value="weekly">📅 Weekly ({['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][activeDay]})</option>
+              <option value="weekly">📅 Weekly ({activeDay === -1 ? 'Selected Day' : ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][activeDay]})</option>
               <option value="daily">⚡ Daily (Every Day)</option>
               <option value="one-off">🎯 One-Off (Once)</option>
               <option value="monthly">🌙 Monthly</option>
@@ -1197,12 +1307,13 @@ export function ControlRoom() {
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-black text-textMuted uppercase tracking-widest block opacity-70">
-              Active Todos ({['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][activeDay]})
+              Active Todos ({activeDay === -1 ? 'All Days' : ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][activeDay]})
             </span>
             <span className="text-[10px] text-textMuted font-mono">
               {todos.filter(t => {
                 const rec = t.recurrence || (t.isOneOff ? 'one-off' : 'weekly');
                 if (rec === 'daily' || rec === 'monthly' || rec === 'one-off') return true;
+                if (activeDay === -1) return true;
                 return t.dayOfWeek === activeDay;
               }).length} tasks scheduled
             </span>
@@ -1214,6 +1325,7 @@ export function ControlRoom() {
                 .filter(t => {
                   const rec = t.recurrence || (t.isOneOff ? 'one-off' : 'weekly');
                   if (rec === 'daily' || rec === 'monthly' || rec === 'one-off') return true;
+                  if (activeDay === -1) return true;
                   return t.dayOfWeek === activeDay;
                 })
                 .map(todo => {
@@ -1314,7 +1426,7 @@ export function ControlRoom() {
                           <div>
                             <label className="text-[9px] font-bold text-textMuted uppercase block mb-1">Day Assigned</label>
                             <select
-                              value={todo.dayOfWeek !== undefined ? todo.dayOfWeek : activeDay}
+                              value={todo.dayOfWeek !== undefined ? todo.dayOfWeek : (activeDay === -1 ? new Date().getDay() : activeDay)}
                               onChange={e => handleUpdateTodo(todo.id, 'dayOfWeek', Number(e.target.value))}
                               className="w-full bg-background border border-border rounded-xl px-3 py-1.5 text-xs text-textMain font-bold outline-none focus:border-primary"
                             >
@@ -1403,6 +1515,7 @@ export function ControlRoom() {
           {todos.filter(t => {
             const rec = t.recurrence || (t.isOneOff ? 'one-off' : 'weekly');
             if (rec === 'daily' || rec === 'monthly' || rec === 'one-off') return true;
+            if (activeDay === -1) return true;
             return t.dayOfWeek === activeDay;
           }).length === 0 && (
             <div className="text-center py-8 text-textMuted text-xs border border-dashed border-border rounded-xl">

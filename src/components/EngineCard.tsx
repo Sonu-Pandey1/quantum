@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Target, CheckCircle2, AlertTriangle, Image as ImageIcon, X, CheckCircle, SkipForward, Bell } from 'lucide-react';
+import { Target, CheckCircle2, AlertTriangle, Image as ImageIcon, X, CheckCircle, SkipForward, Bell, Play } from 'lucide-react';
 import { audio } from '../lib/audio';
 import { notifier } from '../lib/notifications';
 import { supabase } from '../lib/supabaseClient';
@@ -42,20 +42,42 @@ function getTodayString() {
   return new Date().toISOString().split('T')[0];
 }
 
-function parseTime(timeStr: string): Date {
-  const [hours, minutes] = timeStr.split(':').map(Number);
+function parseTime(timeStr?: any): Date {
   const date = new Date();
-  date.setHours(hours, minutes, 0, 0);
+  if (!timeStr || typeof timeStr !== 'string' || !timeStr.includes(':')) {
+    date.setHours(9, 0, 0, 0);
+    return date;
+  }
+  try {
+    const parts = timeStr.split(':');
+    const hours = parseInt(parts[0], 10);
+    const minutes = parseInt(parts[1], 10);
+    date.setHours(isNaN(hours) ? 9 : hours, isNaN(minutes) ? 0 : minutes, 0, 0);
+  } catch {
+    date.setHours(9, 0, 0, 0);
+  }
   return date;
 }
 
-function calculateEndTime(startTime: string, durationMinutes: number): string {
+function calculateEndTime(startTime?: any, durationMinutes: number = 45): string {
   const date = parseTime(startTime);
-  date.setMinutes(date.getMinutes() + durationMinutes);
+  const dur = typeof durationMinutes === 'number' && !isNaN(durationMinutes) ? durationMinutes : 45;
+  date.setMinutes(date.getMinutes() + dur);
   return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 }
 
 export function normalizeEngineTask(t: any, index: number = 0): Task {
+  if (!t || typeof t !== 'object') {
+    return {
+      id: `task-${index + 1}`,
+      start: '09:00',
+      end: '09:45',
+      title: `Task ${index + 1}`,
+      statusMsg: 'Executing Protocol...',
+      category: 'work',
+      pillar: 'Mind'
+    };
+  }
   const start = t.start || t.start_time || t.timeStart || '09:00';
   let end = t.end || t.end_time || t.timeEnd;
   if (!end) {
@@ -64,6 +86,7 @@ export function normalizeEngineTask(t: any, index: number = 0): Task {
   const title = t.title || t.name || `Task ${index + 1}`;
   const statusMsg = t.statusMsg || (t.task_target ? `${t.task_target} Priority Protocol` : 'Executing Protocol...');
   return {
+    ...t,
     id: t.id !== undefined && t.id !== null ? t.id : `task-${index + 1}`,
     start,
     end,
@@ -211,17 +234,30 @@ export function EngineCard() {
           
           try {
             // Check profiles settings first (highest authority for user configuration)
+            let loaded: Task[] | null = null;
             const { data: profileData } = await supabase.from('profiles').select('settings').eq('id', uid).single();
             if (profileData?.settings?.timetable && Array.isArray(profileData.settings.timetable) && profileData.settings.timetable.length > 0) {
-              const fresh = profileData.settings.timetable.map((t: any, idx: number) => normalizeEngineTask(t, idx));
-              setSchedule(fresh);
-              localStorage.setItem(`quantum_timetable_${uid}`, JSON.stringify(profileData.settings.timetable));
-              localStorage.setItem('quantum_timetable_default', JSON.stringify(profileData.settings.timetable));
+              loaded = profileData.settings.timetable.map((t: any, idx: number) => normalizeEngineTask(t, idx));
             } else {
-              const localTasks = getStoredTimetableTasks(uid, progressionState?.displayName);
-              if (localTasks.length > 0) {
-                setSchedule(localTasks);
+              // Check timetable_tasks table in Supabase (from Timetable Builder)
+              const { data: dbTasks } = await supabase
+                .from('timetable_tasks')
+                .select('*')
+                .eq('user_id', uid)
+                .order('order_index');
+              if (dbTasks && dbTasks.length > 0) {
+                loaded = dbTasks.map((t: any, idx: number) => normalizeEngineTask(t, idx));
               }
+            }
+
+            if (!loaded || loaded.length === 0) {
+              loaded = getStoredTimetableTasks(uid, progressionState?.displayName);
+            }
+
+            if (loaded && loaded.length > 0) {
+              setSchedule(loaded);
+              localStorage.setItem(`quantum_timetable_${uid}`, JSON.stringify(loaded));
+              localStorage.setItem('quantum_timetable_default', JSON.stringify(loaded));
             }
           } catch (e) {
             console.warn("[EngineCard] Profile timetable fetch fallback:", e);
@@ -291,22 +327,33 @@ export function EngineCard() {
         if (supabase) {
           const { data: profileData } = await supabase.from('profiles').select('settings').eq('id', uid).single();
           const currentDbSettings = profileData?.settings || {};
-          if (currentDbSettings.skips) {
+          if (Array.isArray(currentDbSettings.skips)) {
             skipsList = currentDbSettings.skips;
             localStorage.setItem(`quantum_skips_${uid}`, JSON.stringify(skipsList));
           } else {
             const skipsStr = localStorage.getItem(`quantum_skips_${uid}`);
-            if (skipsStr) skipsList = JSON.parse(skipsStr);
+            if (skipsStr) {
+              const parsed = JSON.parse(skipsStr);
+              if (Array.isArray(parsed)) skipsList = parsed;
+            }
           }
         } else {
           const skipsStr = localStorage.getItem(`quantum_skips_${uid}`);
-          if (skipsStr) skipsList = JSON.parse(skipsStr);
+          if (skipsStr) {
+            const parsed = JSON.parse(skipsStr);
+            if (Array.isArray(parsed)) skipsList = parsed;
+          }
         }
       } catch (e) {
         const skipsStr = localStorage.getItem(`quantum_skips_${uid}`);
-        if (skipsStr) skipsList = JSON.parse(skipsStr);
+        if (skipsStr) {
+          try {
+            const parsed = JSON.parse(skipsStr);
+            if (Array.isArray(parsed)) skipsList = parsed;
+          } catch {}
+        }
       }
-      if (skipsList.some(s => s.date === todayStr)) {
+      if (Array.isArray(skipsList) && skipsList.some(s => s && s.date === todayStr)) {
         setIsSkippedToday(true);
       }
 
@@ -444,7 +491,7 @@ export function EngineCard() {
     const currentLogs = progressionState?.settings?.execution_logs || [];
     await updateProfile({
       settings: {
-        ...progressionState.settings,
+        ...(progressionState?.settings || {}),
         execution_logs: [...currentLogs, logEntry]
       }
     });
@@ -524,9 +571,16 @@ export function EngineCard() {
       }
 
       // Find active task
+      const hasSpecificDayTasks = schedule.some(t => {
+        const d = (t as any).dayOfWeek !== undefined ? (t as any).dayOfWeek : (t as any).day_of_week;
+        return d !== undefined && d !== null;
+      });
+
       const current = schedule.find(t => {
         const tDow = (t as any).dayOfWeek !== undefined ? (t as any).dayOfWeek : (t as any).day_of_week;
-        if (tDow !== undefined && tDow !== todayDow) return false;
+        if (hasSpecificDayTasks && tDow !== undefined && tDow !== null && tDow !== todayDow) {
+          return false;
+        }
 
         const tStart = (t as any).start || (t as any).timeStart;
         const tEnd = (t as any).end || (t as any).timeEnd;
@@ -669,7 +723,7 @@ export function EngineCard() {
     if (activeUid !== 'default' && supabase) {
       await updateProfile({
         settings: {
-          ...progressionState.settings,
+          ...(progressionState?.settings || {}),
           followWeekendTimetable: val
         }
       });
@@ -712,6 +766,58 @@ export function EngineCard() {
       }
     }
   }, [activeTask, userId]);
+
+  const isCompleted = activeTask ? executedTaskIds.some(id => String(id) === String(activeTask.id)) : false;
+
+  // Reminders for starting the task
+  useEffect(() => {
+    if (!activeTask || isCompleted || isSessionActive) return;
+
+    const checkReminders = () => {
+      const todayStr = getTodayString();
+      const start = parseTime(activeTask.start);
+      const timeDiffMs = Date.now() - start.getTime();
+      const diffMinutes = Math.floor(timeDiffMs / 60000);
+
+      // Start reminder (only within the first 3 minutes of the task start)
+      const startRemindedKey = `reminded_start_${activeTask.id}_${todayStr}`;
+      if (timeDiffMs >= 0 && timeDiffMs <= 180000 && !localStorage.getItem(startRemindedKey)) {
+        localStorage.setItem(startRemindedKey, 'true');
+        
+        toast('⏰ Scheduled Task Commenced: ' + activeTask.title + '. Start focus now!', {
+          icon: '⚡',
+          duration: 5000,
+        });
+        
+        notifier.send(
+          "Task Started",
+          `Scheduled Task: ${activeTask.title} is ready. Start focus now!`
+        );
+      }
+
+      // 10 minutes later reminder (only within the 10 to 13 minutes window)
+      const tenMinRemindedKey = `reminded_10min_${activeTask.id}_${todayStr}`;
+      if (diffMinutes >= 10 && diffMinutes <= 13 && !localStorage.getItem(tenMinRemindedKey)) {
+        localStorage.setItem(tenMinRemindedKey, 'true');
+        
+        toast('⚠️ Reminder: ' + activeTask.title + ' has been scheduled for 10 minutes. Click "Start Focus" to begin!', {
+          icon: '⏰',
+          duration: 8000,
+        });
+
+        notifier.send(
+          "Task Delayed",
+          `10 minutes have passed since ${activeTask.title} was scheduled to start. Begin focusing now!`
+        );
+      }
+    };
+
+    // Run immediately and then every 5 seconds
+    checkReminders();
+    const interval = setInterval(checkReminders, 5000);
+
+    return () => clearInterval(interval);
+  }, [activeTask, isCompleted, isSessionActive]);
 
   const handleStartSession = () => {
     audio.playClick();
@@ -832,7 +938,7 @@ export function EngineCard() {
     const currentLogs = progressionState?.settings?.execution_logs || [];
     await updateProfile({
       settings: {
-        ...progressionState.settings,
+        ...(progressionState?.settings || {}),
         execution_logs: [...currentLogs, logEntry]
       }
     });
@@ -894,6 +1000,35 @@ export function EngineCard() {
     setTimeout(() => setShowCheckmark(false), 2000);
   };
 
+  // Resume Engine & Protocol (un-skip override)
+  const handleResumeProtocol = async () => {
+    audio.playSuccess();
+    const todayStr = getTodayString();
+    setIsSkippedToday(false);
+
+    // Remove today from local storage skips
+    const skipsStr = localStorage.getItem(`quantum_skips_${userId}`);
+    let skips: SkipRecord[] = [];
+    if (skipsStr) {
+      try { skips = JSON.parse(skipsStr); } catch (e) {}
+    }
+    const filteredSkips = skips.filter(s => s.date !== todayStr);
+    localStorage.setItem(`quantum_skips_${userId}`, JSON.stringify(filteredSkips));
+
+    if (userId !== 'default' && supabase) {
+      try {
+        await updateProfile({
+          settings: {
+            ...(progressionState?.settings || {}),
+            skips: filteredSkips
+          }
+        });
+      } catch (e) {}
+    }
+
+    toast.success('Protocol resumed! Timetable is live. ⚡');
+  };
+
   const attemptSkip = async () => {
     audio.playClick();
     if (skipReason.trim().length < 5) {
@@ -942,7 +1077,7 @@ export function EngineCard() {
     if (userId !== 'default' && supabase) {
       await updateProfile({
         settings: {
-          ...progressionState.settings,
+          ...(progressionState?.settings || {}),
           skips: updatedSkips
         }
       });
@@ -951,71 +1086,6 @@ export function EngineCard() {
     setIsSkippedToday(true);
     setSkipModalOpen(false);
   };
-
-  // Skipped View
-  if (isSkippedToday) {
-    return (
-      <div className="h-full p-6 flex flex-col justify-center items-center text-center relative overflow-hidden bg-amber-950/20">
-        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-amber-500 to-orange-400 opacity-50" />
-        <AlertTriangle size={64} className="text-amber-500 mb-4 opacity-80" />
-        <h2 className="text-2xl font-bold text-textMain mb-2">Protocol Skipped</h2>
-        <p className="text-amber-400 font-medium mb-1">System Override Logged</p>
-        <p className="text-sm text-textMuted">Rest day utilized. Return stronger tomorrow.</p>
-      </div>
-    );
-  }
-
-  const isCompleted = activeTask ? executedTaskIds.some(id => String(id) === String(activeTask.id)) : false;
-
-  // Reminders for starting the task
-  useEffect(() => {
-    if (!activeTask || isCompleted || isSessionActive) return;
-
-    const checkReminders = () => {
-      const todayStr = getTodayString();
-      const start = parseTime(activeTask.start);
-      const timeDiffMs = Date.now() - start.getTime();
-      const diffMinutes = Math.floor(timeDiffMs / 60000);
-
-      // Start reminder (only within the first 3 minutes of the task start)
-      const startRemindedKey = `reminded_start_${activeTask.id}_${todayStr}`;
-      if (timeDiffMs >= 0 && timeDiffMs <= 180000 && !localStorage.getItem(startRemindedKey)) {
-        localStorage.setItem(startRemindedKey, 'true');
-        
-        toast('⏰ Scheduled Task Commenced: ' + activeTask.title + '. Start focus now!', {
-          icon: '⚡',
-          duration: 5000,
-        });
-        
-        notifier.send(
-          "Task Started",
-          `Scheduled Task: ${activeTask.title} is ready. Start focus now!`
-        );
-      }
-
-      // 10 minutes later reminder (only within the 10 to 13 minutes window)
-      const tenMinRemindedKey = `reminded_10min_${activeTask.id}_${todayStr}`;
-      if (diffMinutes >= 10 && diffMinutes <= 13 && !localStorage.getItem(tenMinRemindedKey)) {
-        localStorage.setItem(tenMinRemindedKey, 'true');
-        
-        toast('⚠️ Reminder: ' + activeTask.title + ' has been scheduled for 10 minutes. Click "Start Focus" to begin!', {
-          icon: '⏰',
-          duration: 8000,
-        });
-
-        notifier.send(
-          "Task Delayed",
-          `10 minutes have passed since ${activeTask.title} was scheduled to start. Begin focusing now!`
-        );
-      }
-    };
-
-    // Run immediately and then every 5 seconds
-    checkReminders();
-    const interval = setInterval(checkReminders, 5000);
-
-    return () => clearInterval(interval);
-  }, [activeTask, isCompleted, isSessionActive]);
 
   if (loading) {
     return (
@@ -1041,6 +1111,26 @@ export function EngineCard() {
             <Skeleton className="w-32 h-12" />
           </div>
         </div>
+      </div>
+    );
+  }
+
+  // Skipped View
+  if (isSkippedToday) {
+    return (
+      <div className="h-full p-6 flex flex-col justify-center items-center text-center relative overflow-hidden bg-amber-950/20 rounded-3xl border border-amber-500/30">
+        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-amber-500 to-orange-400 opacity-50" />
+        <AlertTriangle size={56} className="text-amber-500 mb-4 opacity-80 animate-pulse" />
+        <h2 className="text-2xl font-black text-textMain mb-2 uppercase tracking-tight">Protocol Skipped</h2>
+        <p className="text-amber-400 font-semibold mb-1 text-sm">System Override Active</p>
+        <p className="text-xs text-textMuted max-w-sm mb-6">Rest day logged. You can resume your timetable and engine at any time.</p>
+        <button
+          onClick={handleResumeProtocol}
+          className="px-6 py-3 rounded-2xl bg-gradient-to-r from-primary to-blue-600 hover:from-primaryHover hover:to-blue-500 text-white font-black text-xs uppercase tracking-widest transition-all shadow-[0_0_20px_rgba(59,130,246,0.4)] active:scale-95 cursor-pointer flex items-center gap-2"
+        >
+          <Play size={16} />
+          <span>Resume Timetable & Engine</span>
+        </button>
       </div>
     );
   }
@@ -1346,12 +1436,12 @@ export function EngineCard() {
                 <X size={20} />
               </button>
 
-              <h3 className="text-xl font-bold text-red-500 mb-2 flex items-center">
-                <AlertTriangle className="mr-2" /> Override Protocol
+              <h3 className="text-xl font-bold text-red-500 mb-2 flex items-center uppercase tracking-tight">
+                <AlertTriangle className="mr-2" /> System Override
               </h3>
-              <p className="text-sm text-textMuted mb-6">
-                Skipping breaks momentum. Justification is required.
-                <br /><span className="text-xs opacity-70">(Max 2 per week. No consecutive days.)</span>
+              <p className="text-xs text-textMuted mb-4">
+                Skipping today's protocol requires explicit justification. System logs this event.
+                <br /><span className="text-[10px] opacity-70">(Max 2 per week. No consecutive days.)</span>
               </p>
 
               {skipError && (
@@ -1362,12 +1452,12 @@ export function EngineCard() {
 
               <div className="space-y-4">
                 <div>
-                  <label className="block text-xs font-medium text-textMuted mb-1">Reason for Skipping</label>
+                  <label className="block text-xs font-medium text-textMuted mb-1">Reason for override (Min 5 chars)</label>
                   <textarea
                     value={skipReason}
                     onChange={(e) => setSkipReason(e.target.value)}
-                    className="w-full bg-background border border-border rounded-lg p-3 text-sm text-textMain focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all resize-none h-24"
-                    placeholder="Provide detailed justification..."
+                    className="w-full bg-background border border-border rounded-lg p-3 text-sm text-textMain focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all resize-none h-20"
+                    placeholder="Provide justification..."
                   />
                 </div>
 
