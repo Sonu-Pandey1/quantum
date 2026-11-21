@@ -241,6 +241,76 @@ export function extractFacebookId(input: string): string | null {
 }
 
 /**
+ * Returns a clean, canonical embed URL for Facebook video.php plugin
+ * Removes tracking queries (e.g. mibextid, ref) and maps short links / reels to canonical facebook.com paths
+ */
+export function getFacebookEmbedUrl(rawUrl?: string, mediaId?: string): string {
+  let canonical = '';
+  const url = (rawUrl || '').trim();
+
+  if (url) {
+    if (url.includes('/reel/') || url.includes('/reels/') || url.includes('/share/r/')) {
+      if (mediaId && /^\d+$/.test(mediaId)) {
+        canonical = `https://www.facebook.com/reel/${mediaId}/`;
+      } else {
+        try {
+          const u = new URL(url);
+          canonical = `${u.origin}${u.pathname}`;
+          if (!canonical.endsWith('/')) canonical += '/';
+        } catch {
+          canonical = mediaId ? `https://www.facebook.com/reel/${mediaId}/` : url;
+        }
+      }
+    } else if (url.includes('watch') || url.includes('/videos/') || url.includes('/share/v/') || url.includes('video.php')) {
+      if (mediaId && /^\d+$/.test(mediaId)) {
+        canonical = `https://www.facebook.com/watch/?v=${mediaId}`;
+      } else {
+        try {
+          const u = new URL(url);
+          const v = u.searchParams.get('v');
+          if (v) {
+            canonical = `https://www.facebook.com/watch/?v=${v}`;
+          } else {
+            canonical = `${u.origin}${u.pathname}`;
+          }
+        } catch {
+          canonical = mediaId ? `https://www.facebook.com/watch/?v=${mediaId}` : url;
+        }
+      }
+    } else if (url.includes('fb.watch')) {
+      if (mediaId && /^\d+$/.test(mediaId)) {
+        canonical = `https://www.facebook.com/reel/${mediaId}/`;
+      } else {
+        try {
+          const u = new URL(url);
+          canonical = `${u.origin}${u.pathname}`;
+        } catch {
+          canonical = url;
+        }
+      }
+    } else {
+      try {
+        const u = new URL(url);
+        canonical = `${u.origin}${u.pathname}`;
+      } catch {
+        canonical = url;
+      }
+    }
+  }
+
+  // Fallback if no canonical derived from url
+  if (!canonical) {
+    if (mediaId && /^\d+$/.test(mediaId)) {
+      canonical = `https://www.facebook.com/reel/${mediaId}/`;
+    } else if (mediaId) {
+      canonical = `https://www.facebook.com/reel/${mediaId}/`;
+    }
+  }
+
+  return `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(canonical)}&show_text=0&width=auto`;
+}
+
+/**
  * Parses multiple links pasted from WhatsApp, Notes, Instagram, Facebook, or text files.
  * Detects Instagram Reels/Posts, Facebook Reels/Videos, and YouTube videos/shorts.
  * Optionally applies a custom user-defined title or mood tag (e.g. "Sad", "Gym Beast", "Focus").

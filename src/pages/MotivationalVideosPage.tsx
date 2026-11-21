@@ -66,6 +66,7 @@ import {
   loadSavedVideos, 
   saveStoredVideos, 
   parsePastedLinks,
+  getFacebookEmbedUrl,
   DAILY_REELS_LIMIT,
   getDailyViewedReelIds,
   recordDailyReelView,
@@ -552,12 +553,12 @@ export function MotivationalVideosPage({ onBack }: MotivationalVideosPageProps) 
                     className="h-full w-full max-h-full snap-center snap-always flex items-center justify-center p-1 sm:p-2 relative my-auto shrink-0"
                   >
                     {/* Reel Card */}
-                    <div className="relative w-full max-w-[390px] sm:max-w-[420px] md:max-w-[440px] h-full max-h-[96%] sm:max-h-[92%] rounded-2xl sm:rounded-3xl overflow-hidden border border-white/15 bg-black/95 shadow-[0_20px_50px_rgba(0,0,0,0.8)] flex flex-col justify-between group">
-                      {/* Media Embed Player */}
-                      <div className="relative w-full flex-1 bg-black overflow-hidden flex items-center justify-center">
+                    <div className="relative w-full max-w-[390px] sm:max-w-[420px] md:max-w-[440px] h-full max-h-[96%] sm:max-h-[92%] rounded-2xl sm:rounded-3xl overflow-hidden border border-white/15 bg-black/95 shadow-[0_20px_50px_rgba(0,0,0,0.8)] relative group flex items-center justify-center">
+                      {/* Media Embed Player (Edge-to-edge vertical 9:16 player) */}
+                      <div className="absolute inset-0 w-full h-full bg-black overflow-hidden flex items-center justify-center">
                         {isInstagram ? (
                           <iframe
-                            src={`https://www.instagram.com/reel/${video.mediaId}/embed`}
+                            src={video.url.includes('/p/') ? `https://www.instagram.com/p/${video.mediaId}/embed/` : `https://www.instagram.com/reel/${video.mediaId}/embed/`}
                             title={video.title}
                             className="w-full h-full border-0 absolute inset-0 bg-black"
                             frameBorder="0"
@@ -567,7 +568,7 @@ export function MotivationalVideosPage({ onBack }: MotivationalVideosPageProps) 
                           />
                         ) : isFacebook ? (
                           <iframe
-                            src={`https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(video.url || `https://www.facebook.com/reel/${video.mediaId}/`)}&show_text=0&autoplay=0`}
+                            src={getFacebookEmbedUrl(video.url, video.mediaId)}
                             title={video.title}
                             className="w-full h-full border-0 absolute inset-0 bg-black"
                             frameBorder="0"
@@ -586,31 +587,45 @@ export function MotivationalVideosPage({ onBack }: MotivationalVideosPageProps) 
                         )}
                       </div>
 
-                      {/* Bottom Metadata & Penalty Indicator */}
-                      <div className="relative z-10 p-3 sm:p-4 pr-12 sm:pr-14 bg-gradient-to-t from-black via-black/90 to-transparent border-t border-white/10 space-y-2">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-1.5 sm:gap-2">
-                            <span className={`text-[9px] sm:text-[10px] font-black uppercase tracking-wider px-2 sm:px-2.5 py-0.5 rounded-full border flex items-center gap-1 ${
-                              isInstagram 
-                                ? 'bg-gradient-to-r from-purple-500/20 to-pink-500/20 text-pink-300 border-pink-500/30'
-                                : isFacebook
-                                  ? 'bg-blue-600/20 text-blue-300 border-blue-500/30'
-                                  : 'bg-red-500/20 text-red-300 border-red-500/30'
-                            }`}>
-                              {isInstagram ? <InstagramIcon size={11} /> : isFacebook ? <FacebookIcon size={11} /> : <Film size={11} />}
-                              {isInstagram ? 'Instagram' : isFacebook ? 'Facebook' : 'YouTube'}
-                            </span>
-                            <span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-white/10 text-white/80">
-                              {video.category}
-                            </span>
-                          </div>
-                          <span className="text-[9px] sm:text-[10px] text-textMuted font-mono">
-                            {idx + 1}/{filteredVideos.length}
+                      {/* Top Bar Overlay (Platform Badge + 1-Tap App/Browser Launcher) */}
+                      <div className="absolute top-3 left-3 right-3 z-30 flex items-center justify-between pointer-events-none">
+                        <div className="flex items-center gap-1.5 pointer-events-auto">
+                          <span className={`text-[9px] sm:text-[10px] font-black uppercase tracking-wider px-2 sm:px-2.5 py-0.5 rounded-full border shadow-md backdrop-blur-md flex items-center gap-1 ${
+                            isInstagram 
+                              ? 'bg-gradient-to-r from-purple-600/80 to-pink-600/80 text-white border-pink-400/40'
+                              : isFacebook
+                                ? 'bg-blue-600/80 text-white border-blue-400/40'
+                                : 'bg-red-600/80 text-white border-red-400/40'
+                          }`}>
+                            {isInstagram ? <InstagramIcon size={11} /> : isFacebook ? <FacebookIcon size={11} /> : <Film size={11} />}
+                            {isInstagram ? 'Instagram' : isFacebook ? 'Facebook' : 'YouTube'}
+                          </span>
+                          <span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-black/70 backdrop-blur-md text-white/90 border border-white/15 shadow-md">
+                            {video.category}
                           </span>
                         </div>
 
+                        <div className="flex items-center gap-1.5 pointer-events-auto">
+                          <a
+                            href={video.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-[9px] sm:text-[10px] font-semibold px-2 sm:px-2.5 py-0.5 rounded-full bg-black/70 hover:bg-black/90 backdrop-blur-md text-white/90 hover:text-white border border-white/20 flex items-center gap-1 transition-all shadow-md active:scale-95"
+                            title={`Open original reel on ${isInstagram ? 'Instagram' : isFacebook ? 'Facebook' : 'YouTube'}`}
+                          >
+                            <span>Open in {isInstagram ? 'Insta' : isFacebook ? 'FB' : 'YT'}</span>
+                            <ExternalLink size={10} />
+                          </a>
+                          <span className="text-[9px] sm:text-[10px] text-white/80 font-mono bg-black/70 backdrop-blur-md px-2 py-0.5 rounded-full border border-white/15">
+                            {idx + 1}/{filteredVideos.length}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Bottom Metadata & Penalty Indicator - Overlay */}
+                      <div className="absolute bottom-0 left-0 right-0 z-20 p-3 sm:p-4 pr-14 sm:pr-16 bg-gradient-to-t from-black via-black/85 to-transparent space-y-2 pointer-events-none">
                         {/* Title with edit button */}
-                        <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-start justify-between gap-2 pointer-events-auto">
                           <h2 className="text-xs sm:text-sm md:text-base font-bold text-white line-clamp-2 leading-snug drop-shadow-md flex-1">
                             {video.title}
                           </h2>
@@ -620,7 +635,7 @@ export function MotivationalVideosPage({ onBack }: MotivationalVideosPageProps) 
                               setEditingVideo(video);
                               setEditTitleInput(video.title);
                             }}
-                            className="p-1 rounded-lg bg-white/5 hover:bg-white/15 text-textMuted hover:text-white transition-all shrink-0"
+                            className="p-1.5 rounded-lg bg-black/60 hover:bg-white/20 backdrop-blur-md border border-white/15 text-white/80 hover:text-white transition-all shrink-0 shadow-md"
                             title="Edit Title / Mood Tag"
                           >
                             <Edit3 size={13} />
@@ -628,21 +643,21 @@ export function MotivationalVideosPage({ onBack }: MotivationalVideosPageProps) 
                         </div>
 
                         {/* -15 Mind XP Dopamine Cost Status */}
-                        <div className="w-full py-2 sm:py-2.5 px-3 sm:px-3.5 rounded-xl sm:rounded-2xl bg-rose-500/10 border border-rose-500/25 flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
-                            <AlertTriangle size={14} className="text-rose-400 shrink-0" />
-                            <span className="text-[11px] sm:text-xs font-bold text-rose-300 truncate">
+                        <div className="w-full py-1.5 sm:py-2 px-2.5 sm:px-3 rounded-xl bg-black/60 backdrop-blur-md border border-rose-500/30 flex items-center justify-between gap-2 shadow-lg pointer-events-auto">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <AlertTriangle size={13} className="text-rose-400 shrink-0" />
+                            <span className="text-[10px] sm:text-xs font-bold text-rose-300 truncate">
                               {video.xpDeducted ? 'Dopamine Cost Applied' : 'View / Scroll Cost'}
                             </span>
                           </div>
-                          <span className="text-[10px] sm:text-xs font-black font-mono text-rose-300 bg-rose-500/20 px-1.5 sm:px-2 py-0.5 rounded-md border border-rose-500/30 shrink-0">
+                          <span className="text-[10px] sm:text-xs font-black font-mono text-rose-300 bg-rose-500/25 px-1.5 py-0.5 rounded-md border border-rose-500/40 shrink-0">
                             -15 XP
                           </span>
                         </div>
                       </div>
 
                       {/* Floating Right Action Rail (Shorts / Reels Style) */}
-                      <div className="absolute right-2 sm:right-3 bottom-16 sm:bottom-20 z-20 flex flex-col items-center gap-2 sm:gap-2.5">
+                      <div className="absolute right-2 sm:right-3 bottom-16 sm:bottom-20 z-30 flex flex-col items-center gap-2 sm:gap-2.5">
                         {/* Prev Reel */}
                         {idx > 0 && (
                           <button
@@ -671,7 +686,7 @@ export function MotivationalVideosPage({ onBack }: MotivationalVideosPageProps) 
                           target="_blank"
                           rel="noreferrer"
                           className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-black/60 hover:bg-white/20 backdrop-blur-md border border-white/20 flex items-center justify-center text-white shadow-lg transition-all active:scale-90"
-                          title={isInstagram ? 'Open on Instagram' : 'Open on YouTube'}
+                          title={isInstagram ? 'Open on Instagram' : isFacebook ? 'Open on Facebook' : 'Open on YouTube'}
                         >
                           <ExternalLink size={15} />
                         </a>
@@ -797,7 +812,7 @@ export function MotivationalVideosPage({ onBack }: MotivationalVideosPageProps) 
                           rel="noreferrer"
                           onClick={(e) => e.stopPropagation()}
                           className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-textMuted hover:text-white transition-all"
-                          title={isInstagram ? 'Open on Instagram' : 'Open on YouTube'}
+                          title={isInstagram ? 'Open on Instagram' : isFacebook ? 'Open on Facebook' : 'Open on YouTube'}
                         >
                           <ExternalLink size={13} />
                         </a>
@@ -818,7 +833,7 @@ export function MotivationalVideosPage({ onBack }: MotivationalVideosPageProps) 
         )}
       </div>
 
-      {/* ─── IMPORT MODAL (PASTE LINKS FROM WHATSAPP, INSTAGRAM & NOTES) ─── */}
+      {/* ─── IMPORT MODAL (PASTE LINKS FROM WHATSAPP, INSTAGRAM, FACEBOOK & NOTES) ─── */}
       <AnimatePresence>
         {isImportModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
@@ -835,7 +850,7 @@ export function MotivationalVideosPage({ onBack }: MotivationalVideosPageProps) 
                     Import Reels & Videos
                   </h3>
                   <p className="text-xs text-textMuted mt-1">
-                    Paste Instagram Reels or YouTube links saved from WhatsApp, Instagram, or Notes.
+                    Paste Instagram Reels, Facebook Videos/Reels, or YouTube links saved from WhatsApp, Instagram, Facebook, or Notes.
                   </p>
                 </div>
                 <button
