@@ -40,6 +40,24 @@ function InstagramIcon({ size = 16, className = '' }: { size?: number; className
     </svg>
   );
 }
+
+function FacebookIcon({ size = 16, className = '' }: { size?: number; className?: string }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z" />
+    </svg>
+  );
+}
 import type { 
   MotivationalVideo, 
   VideoCategory 
@@ -271,16 +289,16 @@ export function MotivationalVideosPage({ onBack }: MotivationalVideosPageProps) 
     toast.success('Feed refreshed with new randomized reels order! 🔀', { icon: '🔀' });
   };
 
-  // Import handler for links pasted from WhatsApp, Notes, or Instagram
+  // Import handler for links pasted from WhatsApp, Notes, Instagram, or Facebook
   const handleImportLinks = async () => {
     if (!pastedContent.trim()) {
-      toast.error('Please paste at least one YouTube or Instagram link.');
+      toast.error('Please paste at least one YouTube, Instagram, or Facebook link.');
       return;
     }
 
     const parsed = parsePastedLinks(pastedContent, importCategory, customTitle.trim() || undefined);
     if (parsed.length === 0) {
-      toast.error('No valid YouTube or Instagram links found. Please check format.');
+      toast.error('No valid YouTube, Instagram, or Facebook links found. Please check format.');
       return;
     }
 
@@ -525,6 +543,7 @@ export function MotivationalVideosPage({ onBack }: MotivationalVideosPageProps) 
               {filteredVideos.map((video, idx) => {
                 const isCurrent = idx === activeIndex;
                 const isInstagram = video.platform === 'instagram';
+                const isFacebook = video.platform === 'facebook';
 
                 return (
                   <div
@@ -546,6 +565,16 @@ export function MotivationalVideosPage({ onBack }: MotivationalVideosPageProps) 
                             allowTransparency={true}
                             allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share"
                           />
+                        ) : isFacebook ? (
+                          <iframe
+                            src={`https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(video.url || `https://www.facebook.com/reel/${video.mediaId}/`)}&show_text=0&autoplay=0`}
+                            title={video.title}
+                            className="w-full h-full border-0 absolute inset-0 bg-black"
+                            frameBorder="0"
+                            scrolling="no"
+                            allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share"
+                            allowFullScreen
+                          />
                         ) : (
                           <iframe
                             src={`https://www.youtube-nocookie.com/embed/${video.mediaId}?autoplay=${isCurrent ? 1 : 0}&enablejsapi=1&rel=0&playsinline=1&modestbranding=1`}
@@ -564,10 +593,12 @@ export function MotivationalVideosPage({ onBack }: MotivationalVideosPageProps) 
                             <span className={`text-[9px] sm:text-[10px] font-black uppercase tracking-wider px-2 sm:px-2.5 py-0.5 rounded-full border flex items-center gap-1 ${
                               isInstagram 
                                 ? 'bg-gradient-to-r from-purple-500/20 to-pink-500/20 text-pink-300 border-pink-500/30'
-                                : 'bg-red-500/20 text-red-300 border-red-500/30'
+                                : isFacebook
+                                  ? 'bg-blue-600/20 text-blue-300 border-blue-500/30'
+                                  : 'bg-red-500/20 text-red-300 border-red-500/30'
                             }`}>
-                              {isInstagram ? <InstagramIcon size={11} /> : <Film size={11} />}
-                              {isInstagram ? 'Instagram' : 'YouTube'}
+                              {isInstagram ? <InstagramIcon size={11} /> : isFacebook ? <FacebookIcon size={11} /> : <Film size={11} />}
+                              {isInstagram ? 'Instagram' : isFacebook ? 'Facebook' : 'YouTube'}
                             </span>
                             <span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-white/10 text-white/80">
                               {video.category}
@@ -694,6 +725,7 @@ export function MotivationalVideosPage({ onBack }: MotivationalVideosPageProps) 
             <div className="max-w-6xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {filteredVideos.map((video, idx) => {
                 const isInstagram = video.platform === 'instagram';
+                const isFacebook = video.platform === 'facebook';
 
                 return (
                   <div
@@ -710,6 +742,11 @@ export function MotivationalVideosPage({ onBack }: MotivationalVideosPageProps) 
                         <div className="w-full h-full bg-gradient-to-tr from-yellow-500/20 via-pink-500/30 to-purple-600/40 flex flex-col items-center justify-center space-y-2 p-4 text-center">
                           <InstagramIcon size={32} className="text-pink-400 drop-shadow-md group-hover:scale-110 transition-transform" />
                           <span className="text-[11px] font-bold text-white/90">Instagram Reel</span>
+                        </div>
+                      ) : isFacebook ? (
+                        <div className="w-full h-full bg-gradient-to-tr from-blue-900/40 via-blue-700/30 to-sky-500/20 flex flex-col items-center justify-center space-y-2 p-4 text-center">
+                          <FacebookIcon size={32} className="text-blue-400 drop-shadow-md group-hover:scale-110 transition-transform" />
+                          <span className="text-[11px] font-bold text-white/90">Facebook Reel</span>
                         </div>
                       ) : (
                         <img
@@ -877,7 +914,7 @@ export function MotivationalVideosPage({ onBack }: MotivationalVideosPageProps) 
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-bold text-textMuted uppercase tracking-wider">
-                    Paste Links (Instagram Reels / YouTube)
+                    Paste Links (Instagram / Facebook / YouTube)
                   </label>
                   <span className="text-[11px] font-mono font-bold text-primary">
                     {detectedCount} valid link(s) detected
@@ -886,14 +923,14 @@ export function MotivationalVideosPage({ onBack }: MotivationalVideosPageProps) 
                 <textarea
                   value={pastedContent}
                   onChange={(e) => setPastedContent(e.target.value)}
-                  placeholder={`https://www.instagram.com/reel/C...\nhttps://www.youtube.com/watch?v=...\nhttps://youtu.be/...\nhttps://www.youtube.com/shorts/...`}
+                  placeholder={`https://www.instagram.com/reel/C...\nhttps://www.facebook.com/reel/...\nhttps://www.youtube.com/watch?v=...\nhttps://youtu.be/...\nhttps://www.youtube.com/shorts/...`}
                   rows={4}
                   className="w-full bg-black/50 border border-white/15 rounded-2xl p-3 text-xs text-white placeholder-textMuted/60 font-mono focus:outline-none focus:border-primary transition-all resize-none"
                   autoFocus
                 />
                 <p className="text-[10px] text-textMuted flex items-center gap-1">
                   <HelpCircle size={12} />
-                  Paste links from Instagram or YouTube separated by newlines, spaces, or commas.
+                  Paste links from Instagram, Facebook, or YouTube separated by newlines, spaces, or commas.
                 </p>
               </div>
 

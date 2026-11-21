@@ -1,5 +1,5 @@
 export type VideoCategory = 'Discipline' | 'Mindset' | 'Focus' | 'Stoic' | 'Execution';
-export type VideoPlatform = 'youtube' | 'instagram';
+export type VideoPlatform = 'youtube' | 'instagram' | 'facebook';
 
 export interface MotivationalVideo {
   id: string;
@@ -207,8 +207,42 @@ export function extractYoutubeId(input: string): string | null {
 }
 
 /**
- * Parses multiple links pasted from WhatsApp, Notes, Instagram, or text files.
- * Detects both Instagram Reels/Posts and YouTube videos/shorts.
+ * Extracts Facebook video / reel ID or clean identifier from formats like:
+ * - https://www.facebook.com/reel/123456789012345
+ * - https://facebook.com/reels/123456789012345/
+ * - https://www.facebook.com/share/r/123456789/
+ * - https://www.facebook.com/share/v/123456789/
+ * - https://fb.watch/mXz810ZqY/
+ * - https://www.facebook.com/watch/?v=123456789
+ * - https://www.facebook.com/username/videos/123456789/
+ * - https://www.facebook.com/video.php?v=123456789
+ */
+export function extractFacebookId(input: string): string | null {
+  if (!input) return null;
+  const clean = input.trim();
+  const patterns = [
+    /(?:facebook\.com\/(?:reel|reels)\/)([\w.-]+)/i,
+    /(?:facebook\.com\/share\/[rv]\/)([\w.-]+)/i,
+    /(?:fb\.watch\/)([\w.-]+)/i,
+    /(?:facebook\.com\/watch\/?\?(?:.*&)?v=)([\w.-]+)/i,
+    /(?:facebook\.com\/video\.php\?(?:.*&)?v=)([\w.-]+)/i,
+    /(?:facebook\.com\/[\w.-]+\/videos\/)([\w.-]+)/i,
+  ];
+  for (const p of patterns) {
+    const m = clean.match(p);
+    if (m && m[1]) return m[1];
+  }
+  if (/facebook\.com|fb\.watch|fb\.com/i.test(clean)) {
+    const idMatch = clean.match(/(\d{8,})/);
+    if (idMatch) return idMatch[1];
+    return 'fb-video';
+  }
+  return null;
+}
+
+/**
+ * Parses multiple links pasted from WhatsApp, Notes, Instagram, Facebook, or text files.
+ * Detects Instagram Reels/Posts, Facebook Reels/Videos, and YouTube videos/shorts.
  * Optionally applies a custom user-defined title or mood tag (e.g. "Sad", "Gym Beast", "Focus").
  */
 export function parsePastedLinks(
@@ -223,6 +257,9 @@ export function parsePastedLinks(
   const trimmedTitle = customTitle?.trim();
 
   for (const chunk of chunks) {
+    const urlMatch = chunk.match(/https?:\/\/[^\s,;]+/i);
+    const rawUrl = urlMatch ? urlMatch[0] : chunk;
+
     // 1. Check Instagram
     const igId = extractInstagramId(chunk);
     if (igId && !seenKeys.has(`ig-${igId}`)) {
@@ -235,7 +272,7 @@ export function parsePastedLinks(
           ? (chunks.length > 1 ? `${trimmedTitle} #${results.length + 1}` : trimmedTitle)
           : `Instagram Reel (${igId})`,
         category: defaultCategory,
-        url: chunk.startsWith('http') ? chunk : `https://www.instagram.com/reel/${igId}/`,
+        url: rawUrl.startsWith('http') ? rawUrl : `https://www.instagram.com/reel/${igId}/`,
         addedAt: new Date().toISOString(),
         watched: false,
         xpDeducted: false,
@@ -243,7 +280,27 @@ export function parsePastedLinks(
       continue;
     }
 
-    // 2. Check YouTube
+    // 2. Check Facebook
+    const fbId = extractFacebookId(chunk);
+    if (fbId && !seenKeys.has(`fb-${fbId}`)) {
+      seenKeys.add(`fb-${fbId}`);
+      results.push({
+        platform: 'facebook',
+        mediaId: fbId,
+        youtubeId: fbId,
+        title: trimmedTitle
+          ? (chunks.length > 1 ? `${trimmedTitle} #${results.length + 1}` : trimmedTitle)
+          : `Facebook Reel (${fbId.slice(0, 8)})`,
+        category: defaultCategory,
+        url: rawUrl.startsWith('http') ? rawUrl : `https://www.facebook.com/reel/${fbId}/`,
+        addedAt: new Date().toISOString(),
+        watched: false,
+        xpDeducted: false,
+      });
+      continue;
+    }
+
+    // 3. Check YouTube
     const yId = extractYoutubeId(chunk);
     if (yId && !seenKeys.has(`yt-${yId}`)) {
       seenKeys.add(`yt-${yId}`);
@@ -255,7 +312,7 @@ export function parsePastedLinks(
           ? (chunks.length > 1 ? `${trimmedTitle} #${results.length + 1}` : trimmedTitle)
           : `Motivational Protocol (${yId.slice(0, 6)})`,
         category: defaultCategory,
-        url: chunk.startsWith('http') ? chunk : `https://youtu.be/${yId}`,
+        url: rawUrl.startsWith('http') ? rawUrl : `https://youtu.be/${yId}`,
         addedAt: new Date().toISOString(),
         watched: false,
         xpDeducted: false,
@@ -275,7 +332,11 @@ export function loadSavedVideos(settingsVideos?: MotivationalVideo[], uid?: stri
   const normalize = (list: any[]): MotivationalVideo[] => {
     return list.map((item, idx) => ({
       ...item,
-      platform: item.platform || (item.url?.includes('instagram.com') ? 'instagram' : 'youtube'),
+      platform: item.platform || (
+        item.url?.includes('instagram.com') ? 'instagram' :
+        (item.url?.includes('facebook.com') || item.url?.includes('fb.watch') || item.url?.includes('fb.com')) ? 'facebook' :
+        'youtube'
+      ),
       mediaId: item.mediaId || item.youtubeId || `media-${idx}`,
       xpDeducted: item.xpDeducted !== undefined ? item.xpDeducted : !!item.xpClaimed,
     }));

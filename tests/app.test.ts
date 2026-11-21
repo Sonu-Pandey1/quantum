@@ -461,13 +461,39 @@ describe('Reels & Video Vault (Instagram, YouTube & -15 XP Deduction)', () => {
     return match ? match[1] : null;
   }
 
+  function extractFacebookId(input: string): string | null {
+    if (!input) return null;
+    const clean = input.trim();
+    const patterns = [
+      /(?:facebook\.com\/(?:reel|reels)\/)([\w.-]+)/i,
+      /(?:facebook\.com\/share\/[rv]\/)([\w.-]+)/i,
+      /(?:fb\.watch\/)([\w.-]+)/i,
+      /(?:facebook\.com\/watch\/?\?(?:.*&)?v=)([\w.-]+)/i,
+      /(?:facebook\.com\/video\.php\?(?:.*&)?v=)([\w.-]+)/i,
+      /(?:facebook\.com\/[\w.-]+\/videos\/)([\w.-]+)/i,
+    ];
+    for (const p of patterns) {
+      const m = clean.match(p);
+      if (m && m[1]) return m[1];
+    }
+    if (/facebook\.com|fb\.watch|fb\.com/i.test(clean)) {
+      const idMatch = clean.match(/(\d{8,})/);
+      if (idMatch) return idMatch[1];
+      return 'fb-video';
+    }
+    return null;
+  }
+
   function parsePastedLinks(rawText: string, defaultCategory = 'Discipline', customTitle?: string) {
     const chunks = rawText.split(/[\n,;]+/).map(s => s.trim()).filter(Boolean);
-    const results: Array<{ platform: 'instagram' | 'youtube'; mediaId: string; title: string; category: string; url: string; watched: boolean; xpDeducted: boolean }> = [];
+    const results: Array<{ platform: 'instagram' | 'youtube' | 'facebook'; mediaId: string; title: string; category: string; url: string; watched: boolean; xpDeducted: boolean }> = [];
     const seenKeys = new Set<string>();
     const trimmedTitle = customTitle?.trim();
 
     for (const chunk of chunks) {
+      const urlMatch = chunk.match(/https?:\/\/[^\s,;]+/i);
+      const rawUrl = urlMatch ? urlMatch[0] : chunk;
+
       const igId = extractInstagramId(chunk);
       if (igId && !seenKeys.has(`ig-${igId}`)) {
         seenKeys.add(`ig-${igId}`);
@@ -476,7 +502,22 @@ describe('Reels & Video Vault (Instagram, YouTube & -15 XP Deduction)', () => {
           mediaId: igId,
           title: trimmedTitle ? (chunks.length > 1 ? `${trimmedTitle} #${results.length + 1}` : trimmedTitle) : `Instagram Reel (${igId})`,
           category: defaultCategory,
-          url: chunk.startsWith('http') ? chunk : `https://www.instagram.com/reel/${igId}/`,
+          url: rawUrl.startsWith('http') ? rawUrl : `https://www.instagram.com/reel/${igId}/`,
+          watched: false,
+          xpDeducted: false,
+        });
+        continue;
+      }
+
+      const fbId = extractFacebookId(chunk);
+      if (fbId && !seenKeys.has(`fb-${fbId}`)) {
+        seenKeys.add(`fb-${fbId}`);
+        results.push({
+          platform: 'facebook',
+          mediaId: fbId,
+          title: trimmedTitle ? (chunks.length > 1 ? `${trimmedTitle} #${results.length + 1}` : trimmedTitle) : `Facebook Reel (${fbId.slice(0, 8)})`,
+          category: defaultCategory,
+          url: rawUrl.startsWith('http') ? rawUrl : `https://www.facebook.com/reel/${fbId}/`,
           watched: false,
           xpDeducted: false,
         });
@@ -491,7 +532,7 @@ describe('Reels & Video Vault (Instagram, YouTube & -15 XP Deduction)', () => {
           mediaId: yId,
           title: trimmedTitle ? (chunks.length > 1 ? `${trimmedTitle} #${results.length + 1}` : trimmedTitle) : `Motivational Protocol (${yId.slice(0, 6)})`,
           category: defaultCategory,
-          url: chunk.startsWith('http') ? chunk : `https://youtu.be/${yId}`,
+          url: rawUrl.startsWith('http') ? rawUrl : `https://youtu.be/${yId}`,
           watched: false,
           xpDeducted: false,
         });
@@ -518,24 +559,41 @@ describe('Reels & Video Vault (Instagram, YouTube & -15 XP Deduction)', () => {
     assert.equal(extractYoutubeId('https://invalid.com/video'), null);
   });
 
-  test('correctly parses mixed bulk links from WhatsApp containing Instagram and YouTube', () => {
+  test('extracts Facebook reel and video IDs across reel, share, and watch URLs', () => {
+    assert.equal(extractFacebookId('https://www.facebook.com/reel/102239482938491'), '102239482938491');
+    assert.equal(extractFacebookId('https://facebook.com/reels/102239482938491/'), '102239482938491');
+    assert.equal(extractFacebookId('https://www.facebook.com/share/r/17Y8Zq82jL/'), '17Y8Zq82jL');
+    assert.equal(extractFacebookId('https://fb.watch/mXz810ZqY/'), 'mXz810ZqY');
+    assert.equal(extractFacebookId('https://www.facebook.com/watch/?v=102239482938491'), '102239482938491');
+    assert.equal(extractFacebookId('https://www.facebook.com/user.name/videos/102239482938491/'), '102239482938491');
+    assert.equal(extractFacebookId('https://youtube.com/watch?v=12345678901'), null);
+  });
+
+  test('correctly parses mixed bulk links from WhatsApp containing Instagram, Facebook, and YouTube', () => {
     const whatsappPaste = `
       Hey check these clips:
       https://www.instagram.com/reel/C8xyz123ABC/
+      https://www.facebook.com/reel/102239482938491
       https://www.youtube.com/watch?v=mgmVOuLgFB0
+      https://fb.watch/mXz810ZqY/
       https://www.instagram.com/reel/C8xyz123ABC/
       https://www.youtube.com/shorts/tbnzAVRZ9Xc
     `;
 
     const parsed = parsePastedLinks(whatsappPaste, 'Mindset');
-    assert.equal(parsed.length, 3); // Deduplicated Instagram link
+    assert.equal(parsed.length, 5); // Deduplicated Instagram link, includes 2 Facebook links
     assert.equal(parsed[0].platform, 'instagram');
     assert.equal(parsed[0].mediaId, 'C8xyz123ABC');
-    assert.equal(parsed[1].platform, 'youtube');
-    assert.equal(parsed[1].mediaId, 'mgmVOuLgFB0');
+    assert.equal(parsed[1].platform, 'facebook');
+    assert.equal(parsed[1].mediaId, '102239482938491');
     assert.equal(parsed[2].platform, 'youtube');
-    assert.equal(parsed[2].mediaId, 'tbnzAVRZ9Xc');
+    assert.equal(parsed[2].mediaId, 'mgmVOuLgFB0');
+    assert.equal(parsed[3].platform, 'facebook');
+    assert.equal(parsed[3].mediaId, 'mXz810ZqY');
+    assert.equal(parsed[4].platform, 'youtube');
+    assert.equal(parsed[4].mediaId, 'tbnzAVRZ9Xc');
     assert.equal(parsed[0].xpDeducted, false);
+    assert.equal(parsed[1].xpDeducted, false);
   });
 
   test('enforces -15 Mind XP deduction contract on reel view / scroll', () => {
