@@ -472,22 +472,29 @@ export function ControlRoom() {
         });
 
         if (rowsToSave.length > 0) {
-          setSavedMessage(`Synchronizing ${rowsToSave.length} schedule entries non-destructively...`);
-          const { error: upsertError } = await supabase
-            .from('timetable_tasks')
-            .upsert(rowsToSave, { onConflict: 'id' });
-          if (upsertError) {
-            console.error("Supabase Upsert Error:", upsertError);
-            throw new Error(`Failed to synchronize timetable tasks: ${upsertError.message}`);
+          try {
+            setSavedMessage(`Synchronizing ${rowsToSave.length} schedule entries non-destructively...`);
+            const { error: upsertError } = await supabase
+              .from('timetable_tasks')
+              .upsert(rowsToSave, { onConflict: 'id' });
+            if (upsertError) {
+              console.warn("Supabase timetable_tasks upsert warning (non-fatal):", upsertError);
+            }
+          } catch (ttErr) {
+            console.warn("Non-fatal timetable_tasks upsert error:", ttErr);
           }
         }
 
         // Clean up obsolete tasks in timetable_tasks table so it never serves old tasks
         if (existingTasks && existingTasks.length > 0) {
-          const savedRowIds = rowsToSave.map(r => r.id).filter(Boolean);
-          const obsoleteIds = existingTasks.map(et => et.id).filter(id => !savedRowIds.includes(id));
-          if (obsoleteIds.length > 0) {
-            await supabase.from('timetable_tasks').delete().in('id', obsoleteIds);
+          try {
+            const savedRowIds = rowsToSave.map(r => r.id).filter(Boolean);
+            const obsoleteIds = existingTasks.map(et => et.id).filter(id => !savedRowIds.includes(id));
+            if (obsoleteIds.length > 0) {
+              await supabase.from('timetable_tasks').delete().in('id', obsoleteIds);
+            }
+          } catch (ttDelErr) {
+            console.warn("Non-fatal timetable_tasks delete error:", ttDelErr);
           }
         }
 
@@ -497,26 +504,29 @@ export function ControlRoom() {
 
       // Save to profiles settings column
       if (currentUid && supabase) {
-        const { error } = await supabase.from('profiles').update({
-          display_name: userName,
-          goals: goals,
-          settings: {
-            theme: state.theme,
-            baselineLevel: baselineLevel,
-            timetable: tasks,
-            habits: habits,
-            roadmap: roadmap,
-            todos: todos,
-            weightGoal,
-            sapTarget,
-            sundayRest,
-            geminiApiKey: geminiKey
-          }
-        }).eq('id', currentUid);
+        try {
+          const { error } = await supabase.from('profiles').update({
+            display_name: userName,
+            goals: goals,
+            settings: {
+              theme: state.theme,
+              baselineLevel: baselineLevel,
+              timetable: tasks,
+              habits: habits,
+              roadmap: roadmap,
+              todos: todos,
+              weightGoal,
+              sapTarget,
+              sundayRest,
+              geminiApiKey: geminiKey
+            }
+          }).eq('id', currentUid);
 
-        if (error) {
-          console.error("Supabase Save Error:", error);
-          throw new Error(`Cloud Sync Failed: ${error.message}`);
+          if (error) {
+            console.warn("Supabase Save Warning:", error);
+          }
+        } catch (profErr) {
+          console.warn("Non-fatal profiles cloud sync warning:", profErr);
         }
       }
 

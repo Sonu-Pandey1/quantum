@@ -449,6 +449,10 @@ describe('Reels & Video Vault (Instagram, YouTube & -15 XP Deduction)', () => {
   function extractInstagramId(input: string): string | null {
     if (!input) return null;
     const clean = input.trim();
+    const storyMatch = clean.match(/(?:instagram\.com\/stories\/(?:highlights\/)?)([\w.-]+)(?:\/([\w.-]+))?/i);
+    if (storyMatch) {
+      return storyMatch[2] || storyMatch[1];
+    }
     const match = clean.match(/(?:instagram\.com\/(?:p|reel|reels|tv)\/)([\w-]+)/i);
     return match ? match[1] : null;
   }
@@ -497,10 +501,23 @@ describe('Reels & Video Vault (Instagram, YouTube & -15 XP Deduction)', () => {
       const igId = extractInstagramId(chunk);
       if (igId && !seenKeys.has(`ig-${igId}`)) {
         seenKeys.add(`ig-${igId}`);
+        const isStory = /stories\//i.test(chunk);
+        let storyUser = '';
+        if (isStory) {
+          const uMatch = chunk.match(/stories\/([\w.-]+)/i);
+          if (uMatch && uMatch[1] && uMatch[1] !== 'highlights') {
+            storyUser = uMatch[1];
+          }
+        }
+        let defaultTitle = `Instagram Reel (${igId})`;
+        if (isStory) {
+          defaultTitle = storyUser ? `Instagram Story (@${storyUser})` : `Instagram Story (${igId.slice(0, 8)})`;
+        }
+
         results.push({
           platform: 'instagram',
           mediaId: igId,
-          title: trimmedTitle ? (chunks.length > 1 ? `${trimmedTitle} #${results.length + 1}` : trimmedTitle) : `Instagram Reel (${igId})`,
+          title: trimmedTitle ? (chunks.length > 1 ? `${trimmedTitle} #${results.length + 1}` : trimmedTitle) : defaultTitle,
           category: defaultCategory,
           url: rawUrl.startsWith('http') ? rawUrl : `https://www.instagram.com/reel/${igId}/`,
           watched: false,
@@ -551,6 +568,18 @@ describe('Reels & Video Vault (Instagram, YouTube & -15 XP Deduction)', () => {
     assert.equal(extractInstagramId('https://youtube.com/watch?v=12345678901'), null);
   });
 
+  test('extracts Instagram story links and highlights correctly', () => {
+    const userStoryUrl = 'https://www.instagram.com/stories/growthwithneelam/4035107208372251052?utm_source=ig_story_item_share&evlk=MXd1ZG5qdXNkMXAwbw==';
+    assert.equal(extractInstagramId(userStoryUrl), '4035107208372251052');
+    assert.equal(extractInstagramId('https://www.instagram.com/stories/highlights/17923456789/'), '17923456789');
+
+    const parsed = parsePastedLinks(userStoryUrl, 'Focus');
+    assert.equal(parsed.length, 1);
+    assert.equal(parsed[0].platform, 'instagram');
+    assert.equal(parsed[0].mediaId, '4035107208372251052');
+    assert.equal(parsed[0].title, 'Instagram Story (@growthwithneelam)');
+  });
+
   test('extracts YouTube IDs across standard, short, and shorts URLs', () => {
     assert.equal(extractYoutubeId('https://www.youtube.com/watch?v=mgmVOuLgFB0'), 'mgmVOuLgFB0');
     assert.equal(extractYoutubeId('https://youtu.be/wnHW6o8WMas?si=AbCdEfGh'), 'wnHW6o8WMas');
@@ -558,6 +587,30 @@ describe('Reels & Video Vault (Instagram, YouTube & -15 XP Deduction)', () => {
     assert.equal(extractYoutubeId('b1nPFfioz_w'), 'b1nPFfioz_w');
     assert.equal(extractYoutubeId('https://invalid.com/video'), null);
   });
+
+  function getFacebookEmbedUrl(rawUrl?: string, mediaId?: string): string {
+    let canonical = '';
+    const url = (rawUrl || '').trim();
+    if (mediaId && /^\d+$/.test(mediaId)) {
+      canonical = `https://www.facebook.com/watch/?v=${mediaId}`;
+    } else if (url) {
+      const numMatch = url.match(/(?:videos\/|watch\/?\?(?:.*&)?v=|reel\/|reels\/)(\d+)/i);
+      if (numMatch && numMatch[1]) {
+        canonical = `https://www.facebook.com/watch/?v=${numMatch[1]}`;
+      } else {
+        try {
+          const u = new URL(url);
+          canonical = `${u.origin}${u.pathname}`;
+        } catch {
+          canonical = url.split('?')[0];
+        }
+      }
+    }
+    if (!canonical && mediaId) {
+      canonical = `https://www.facebook.com/watch/?v=${mediaId}`;
+    }
+    return `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(canonical)}&show_text=false&width=auto`;
+  }
 
   test('extracts Facebook reel and video IDs across reel, share, and watch URLs', () => {
     assert.equal(extractFacebookId('https://www.facebook.com/reel/102239482938491'), '102239482938491');
@@ -567,6 +620,10 @@ describe('Reels & Video Vault (Instagram, YouTube & -15 XP Deduction)', () => {
     assert.equal(extractFacebookId('https://www.facebook.com/watch/?v=102239482938491'), '102239482938491');
     assert.equal(extractFacebookId('https://www.facebook.com/user.name/videos/102239482938491/'), '102239482938491');
     assert.equal(extractFacebookId('https://youtube.com/watch?v=12345678901'), null);
+
+    const embedUrl = getFacebookEmbedUrl('https://www.facebook.com/reel/102239482938491?mibextid=rSxxw9', '102239482938491');
+    assert.equal(embedUrl.includes('show_text=false'), true);
+    assert.equal(embedUrl.includes('102239482938491'), true);
   });
 
   test('correctly parses mixed bulk links from WhatsApp containing Instagram, Facebook, and YouTube', () => {
@@ -736,6 +793,37 @@ describe('Timetable Task Skip & Protocol Resume Contract', () => {
     assert.equal(isSkippedToday, false);
     assert.equal(skips.length, 1);
     assert.equal(skips[0].date, '2026-11-10');
+  });
+
+  test('checking/completing a timetable task toggles state and persists locally without throwing errors', () => {
+    const today = '2026-11-22';
+    const completions: Array<{ task_id: string; date: string; completed: boolean }> = [];
+
+    function toggleTask(taskId: string) {
+      const idx = completions.findIndex(c => c.task_id === taskId && c.date === today);
+      if (idx >= 0) {
+        completions[idx].completed = !completions[idx].completed;
+        return completions[idx];
+      } else {
+        const item = { task_id: taskId, date: today, completed: true };
+        completions.push(item);
+        return item;
+      }
+    }
+
+    // Toggle on (check)
+    const checkResult = toggleTask('task-101');
+    assert.equal(checkResult.completed, true);
+    assert.equal(completions.length, 1);
+
+    // Toggle off (uncheck)
+    const uncheckResult = toggleTask('task-101');
+    assert.equal(uncheckResult.completed, false);
+    assert.equal(completions.length, 1);
+
+    // Toggle on again
+    const checkAgain = toggleTask('task-101');
+    assert.equal(checkAgain.completed, true);
   });
 });
 

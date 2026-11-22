@@ -506,3 +506,87 @@ Please construct a comprehensive tutor report containing:
   return callGemini(prompt, systemInstruction, false);
 }
 
+/**
+ * Uses Gemini AI (or smart fallback) to parse, clean, and define video links
+ * Strips tracking parameters, infers platform, and crafts punchy motivational titles and categories.
+ */
+export async function defineVideoLinksWithAI(rawText: string): Promise<Array<{
+  url: string;
+  platform: 'facebook' | 'instagram' | 'youtube';
+  title: string;
+  category: 'Discipline' | 'Mindset' | 'Focus' | 'Stoic' | 'Execution';
+}>> {
+  const chunks = rawText.split(/[\n,;]+/).map(s => s.trim()).filter(Boolean);
+  const links: string[] = [];
+  for (const c of chunks) {
+    const m = c.match(/https?:\/\/[^\s,;]+/i);
+    if (m) links.push(m[0]);
+  }
+
+  if (links.length === 0) return [];
+
+  // Clean tracking queries from links
+  const cleanedLinks = links.map(link => {
+    try {
+      const u = new URL(link);
+      const trackingParams = ['mibextid', 'fbclid', 'utm_source', 'utm_medium', 'utm_campaign', 'ref', 's', 'fs', 'igsh', 'si'];
+      trackingParams.forEach(p => u.searchParams.delete(p));
+      return u.toString();
+    } catch {
+      return link;
+    }
+  });
+
+  if (isApiKeyConfigured()) {
+    try {
+      const prompt = `Analyze these motivational video/reel links:
+${cleanedLinks.join('\n')}
+
+For each link, identify its platform ('facebook' | 'instagram' | 'youtube') and craft an inspiring motivational title (max 5 words, e.g. "Relentless Discipline", "Mamba Focus Mindset", "Unstoppable Stoic Execution") and best category ('Discipline' | 'Mindset' | 'Focus' | 'Stoic' | 'Execution').
+
+Return JSON array:
+[
+  {
+    "url": "clean link",
+    "platform": "facebook" | "instagram" | "youtube",
+    "title": "Title",
+    "category": "Discipline"
+  }
+]`;
+      const jsonStr = await callGemini(prompt, 'You are an AI video curator for a discipline operating system.', true);
+      const parsed = JSON.parse(jsonStr);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.map((item: any) => ({
+          url: item.url || '',
+          platform: (item.platform === 'facebook' || item.platform === 'instagram' ? item.platform : 'youtube') as any,
+          title: item.title || 'Motivational Protocol',
+          category: (['Discipline', 'Mindset', 'Focus', 'Stoic', 'Execution'].includes(item.category) ? item.category : 'Discipline') as any
+        }));
+      }
+    } catch (e) {
+      console.warn("AI link definition warning, using fallback:", e);
+    }
+  }
+
+  // Fallback: deterministic platform & title generation
+  return cleanedLinks.map((link, idx) => {
+    let platform: 'facebook' | 'instagram' | 'youtube' = 'youtube';
+    if (/facebook\.com|fb\.watch|fb\.com/i.test(link)) platform = 'facebook';
+    else if (/instagram\.com/i.test(link)) platform = 'instagram';
+
+    let title = `Motivational Protocol #${idx + 1}`;
+    if (platform === 'facebook') {
+      title = link.includes('reel') ? `Facebook Reel #${idx + 1}` : `Facebook Video #${idx + 1}`;
+    } else if (platform === 'instagram') {
+      title = link.includes('stories') ? `Instagram Story #${idx + 1}` : `Instagram Reel #${idx + 1}`;
+    }
+
+    return {
+      url: link,
+      platform,
+      title,
+      category: 'Discipline'
+    };
+  });
+}
+

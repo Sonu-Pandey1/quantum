@@ -79,7 +79,7 @@ export const DEFAULT_MOTIVATIONAL_VIDEOS: MotivationalVideo[] = [
   },
 ];
 
-export const DAILY_REELS_LIMIT = 10;
+export const DAILY_REELS_LIMIT = 100;
 const VIDEOS_STORAGE_KEY = 'quantum_motivational_videos';
 
 /**
@@ -176,7 +176,8 @@ export function shuffleVideos<T>(array: T[]): T[] {
 }
 
 /**
- * Extracts Instagram shortcode from URLs like:
+ * Extracts Instagram shortcode or Story ID from URLs like:
+ * - https://www.instagram.com/stories/username/1234567890/
  * - https://www.instagram.com/reel/C7xY9ZaB.../
  * - https://www.instagram.com/p/C7xY9ZaB.../
  * - https://www.instagram.com/reels/C7xY9ZaB.../
@@ -185,6 +186,14 @@ export function shuffleVideos<T>(array: T[]): T[] {
 export function extractInstagramId(input: string): string | null {
   if (!input) return null;
   const clean = input.trim();
+
+  // 1. Stories: e.g. instagram.com/stories/username/123456789... or instagram.com/stories/highlights/12345...
+  const storyMatch = clean.match(/(?:instagram\.com\/stories\/(?:highlights\/)?)([\w.-]+)(?:\/([\w.-]+))?/i);
+  if (storyMatch) {
+    return storyMatch[2] || storyMatch[1];
+  }
+
+  // 2. Posts, Reels, TV: e.g. instagram.com/reel/C7xY9ZaB.../ or /p/ or /reels/
   const match = clean.match(/(?:instagram\.com\/(?:p|reel|reels|tv)\/)([\w-]+)/i);
   return match ? match[1] : null;
 }
@@ -248,66 +257,28 @@ export function getFacebookEmbedUrl(rawUrl?: string, mediaId?: string): string {
   let canonical = '';
   const url = (rawUrl || '').trim();
 
-  if (url) {
-    if (url.includes('/reel/') || url.includes('/reels/') || url.includes('/share/r/')) {
-      if (mediaId && /^\d+$/.test(mediaId)) {
-        canonical = `https://www.facebook.com/reel/${mediaId}/`;
-      } else {
-        try {
-          const u = new URL(url);
-          canonical = `${u.origin}${u.pathname}`;
-          if (!canonical.endsWith('/')) canonical += '/';
-        } catch {
-          canonical = mediaId ? `https://www.facebook.com/reel/${mediaId}/` : url;
-        }
-      }
-    } else if (url.includes('watch') || url.includes('/videos/') || url.includes('/share/v/') || url.includes('video.php')) {
-      if (mediaId && /^\d+$/.test(mediaId)) {
-        canonical = `https://www.facebook.com/watch/?v=${mediaId}`;
-      } else {
-        try {
-          const u = new URL(url);
-          const v = u.searchParams.get('v');
-          if (v) {
-            canonical = `https://www.facebook.com/watch/?v=${v}`;
-          } else {
-            canonical = `${u.origin}${u.pathname}`;
-          }
-        } catch {
-          canonical = mediaId ? `https://www.facebook.com/watch/?v=${mediaId}` : url;
-        }
-      }
-    } else if (url.includes('fb.watch')) {
-      if (mediaId && /^\d+$/.test(mediaId)) {
-        canonical = `https://www.facebook.com/reel/${mediaId}/`;
-      } else {
-        try {
-          const u = new URL(url);
-          canonical = `${u.origin}${u.pathname}`;
-        } catch {
-          canonical = url;
-        }
-      }
+  // If numeric ID, watch/?v= is universally accepted by Facebook video.php plugin for both videos and reels
+  if (mediaId && /^\d+$/.test(mediaId)) {
+    canonical = `https://www.facebook.com/watch/?v=${mediaId}`;
+  } else if (url) {
+    const numMatch = url.match(/(?:videos\/|watch\/?\?(?:.*&)?v=|reel\/|reels\/)(\d+)/i);
+    if (numMatch && numMatch[1]) {
+      canonical = `https://www.facebook.com/watch/?v=${numMatch[1]}`;
     } else {
       try {
         const u = new URL(url);
         canonical = `${u.origin}${u.pathname}`;
       } catch {
-        canonical = url;
+        canonical = url.split('?')[0];
       }
     }
   }
 
-  // Fallback if no canonical derived from url
-  if (!canonical) {
-    if (mediaId && /^\d+$/.test(mediaId)) {
-      canonical = `https://www.facebook.com/reel/${mediaId}/`;
-    } else if (mediaId) {
-      canonical = `https://www.facebook.com/reel/${mediaId}/`;
-    }
+  if (!canonical && mediaId) {
+    canonical = `https://www.facebook.com/watch/?v=${mediaId}`;
   }
 
-  return `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(canonical)}&show_text=0&width=auto`;
+  return `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(canonical)}&show_text=false&width=auto`;
 }
 
 /**
@@ -334,15 +305,29 @@ export function parsePastedLinks(
     const igId = extractInstagramId(chunk);
     if (igId && !seenKeys.has(`ig-${igId}`)) {
       seenKeys.add(`ig-${igId}`);
+      const isStory = /stories\//i.test(chunk);
+      let storyUser = '';
+      if (isStory) {
+        const uMatch = chunk.match(/stories\/([\w.-]+)/i);
+        if (uMatch && uMatch[1] && uMatch[1] !== 'highlights') {
+          storyUser = uMatch[1];
+        }
+      }
+
+      let defaultTitle = `Instagram Reel (${igId})`;
+      if (isStory) {
+        defaultTitle = storyUser ? `Instagram Story (@${storyUser})` : `Instagram Story (${igId.slice(0, 8)})`;
+      }
+
       results.push({
         platform: 'instagram',
         mediaId: igId,
         youtubeId: igId,
         title: trimmedTitle 
           ? (chunks.length > 1 ? `${trimmedTitle} #${results.length + 1}` : trimmedTitle)
-          : `Instagram Reel (${igId})`,
+          : defaultTitle,
         category: defaultCategory,
-        url: rawUrl.startsWith('http') ? rawUrl : `https://www.instagram.com/reel/${igId}/`,
+        url: rawUrl.startsWith('http') ? rawUrl : (isStory ? `https://www.instagram.com/stories/${storyUser ? storyUser + '/' : ''}${igId}/` : `https://www.instagram.com/reel/${igId}/`),
         addedAt: new Date().toISOString(),
         watched: false,
         xpDeducted: false,

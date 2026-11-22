@@ -18,7 +18,8 @@ import {
   TrendingDown,
   Shuffle,
   ShieldAlert,
-  Edit3
+  Edit3,
+  Sparkles
 } from 'lucide-react';
 
 function InstagramIcon({ size = 16, className = '' }: { size?: number; className?: string }) {
@@ -74,6 +75,7 @@ import {
 } from '../lib/motivationalVideos';
 import { useProgression } from '../hooks/useProgression';
 import { audio } from '../lib/audio';
+import { defineVideoLinksWithAI } from '../lib/aiService';
 import toast from 'react-hot-toast';
 
 interface MotivationalVideosPageProps {
@@ -119,6 +121,32 @@ export function MotivationalVideosPage({ onBack }: MotivationalVideosPageProps) 
   const [importCategory, setImportCategory] = useState<VideoCategory>('Discipline');
   const [customTitle, setCustomTitle] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [isAiResolving, setIsAiResolving] = useState(false);
+  const [fbViewPreference, setFbViewPreference] = useState<Record<string, 'iframe' | 'card'>>({});
+
+  const handleAiDefineLinks = async () => {
+    if (!pastedContent.trim()) {
+      toast.error('Please paste at least one video link first.');
+      return;
+    }
+    setIsAiResolving(true);
+    audio.playClick();
+    try {
+      const defined = await defineVideoLinksWithAI(pastedContent);
+      if (defined.length > 0) {
+        setPastedContent(defined.map(d => d.url).join('\n'));
+        if (defined[0].title) setCustomTitle(defined[0].title);
+        if (defined[0].category) setImportCategory(defined[0].category);
+        toast.success(`✨ AI defined and optimized ${defined.length} link(s)!`, { duration: 3000 });
+      } else {
+        toast.error('No valid video links found to define.');
+      }
+    } catch (e: any) {
+      toast.error('Failed to analyze links with AI.');
+    } finally {
+      setIsAiResolving(false);
+    }
+  };
 
   // Edit Title Modal State
   const [editingVideo, setEditingVideo] = useState<MotivationalVideo | null>(null);
@@ -545,6 +573,9 @@ export function MotivationalVideosPage({ onBack }: MotivationalVideosPageProps) 
                 const isCurrent = idx === activeIndex;
                 const isInstagram = video.platform === 'instagram';
                 const isFacebook = video.platform === 'facebook';
+                const isStory = isInstagram && (video.url.includes('/stories/') || /^\d{15,}$/.test(video.mediaId));
+                const isFbShare = isFacebook && (!/^\d{8,}$/.test(video.mediaId) || video.url.includes('/share/') || video.url.includes('fb.watch'));
+                const preferFbCard = fbViewPreference[video.id] === 'card' || (isFbShare && fbViewPreference[video.id] !== 'iframe');
 
                 return (
                   <div
@@ -556,7 +587,38 @@ export function MotivationalVideosPage({ onBack }: MotivationalVideosPageProps) 
                     <div className="relative w-full max-w-[390px] sm:max-w-[420px] md:max-w-[440px] h-full max-h-[96%] sm:max-h-[92%] rounded-2xl sm:rounded-3xl overflow-hidden border border-white/15 bg-black/95 shadow-[0_20px_50px_rgba(0,0,0,0.8)] relative group flex items-center justify-center">
                       {/* Media Embed Player (Edge-to-edge vertical 9:16 player) */}
                       <div className="absolute inset-0 w-full h-full bg-black overflow-hidden flex items-center justify-center">
-                        {isInstagram ? (
+                        {isStory ? (
+                          <div className="w-full h-full bg-gradient-to-b from-[#1f0a2e] via-[#0d0714] to-black flex flex-col items-center justify-center p-6 text-center space-y-5 relative">
+                            {/* Story Gradient Ring */}
+                            <div className="relative p-1 rounded-full bg-gradient-to-tr from-yellow-400 via-pink-500 to-purple-600 shadow-[0_0_35px_rgba(236,72,153,0.35)]">
+                              <div className="p-4 rounded-full bg-black/90">
+                                <InstagramIcon size={46} className="text-pink-400" />
+                              </div>
+                            </div>
+
+                            <div className="space-y-1.5 max-w-xs">
+                              <span className="text-[10px] font-black uppercase tracking-widest text-pink-300 bg-pink-500/15 px-3 py-1 rounded-full border border-pink-500/30">
+                                Instagram Story
+                              </span>
+                              <h3 className="text-base sm:text-lg font-bold text-white pt-1 line-clamp-2 leading-snug">
+                                {video.title}
+                              </h3>
+                              <p className="text-xs text-textMuted">
+                                Instagram stories are temporary and require direct app viewing.
+                              </p>
+                            </div>
+
+                            <a
+                              href={video.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 text-white font-bold text-xs shadow-lg shadow-pink-500/25 flex items-center gap-2 transition-all active:scale-95 border border-pink-400/30"
+                            >
+                              <span>Watch Story on Instagram</span>
+                              <ExternalLink size={14} />
+                            </a>
+                          </div>
+                        ) : isInstagram ? (
                           <iframe
                             src={video.url.includes('/p/') ? `https://www.instagram.com/p/${video.mediaId}/embed/` : `https://www.instagram.com/reel/${video.mediaId}/embed/`}
                             title={video.title}
@@ -566,16 +628,81 @@ export function MotivationalVideosPage({ onBack }: MotivationalVideosPageProps) 
                             allowTransparency={true}
                             allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share"
                           />
+                        ) : isFacebook && preferFbCard ? (
+                          <div className="w-full h-full bg-gradient-to-b from-[#0a192f] via-[#060d1a] to-black flex flex-col items-center justify-center p-6 text-center space-y-4 relative">
+                            {/* Facebook Icon Ring */}
+                            <div className="relative p-1 rounded-full bg-gradient-to-tr from-blue-600 via-blue-500 to-sky-400 shadow-[0_0_35px_rgba(37,99,235,0.4)]">
+                              <div className="p-4 rounded-full bg-black/90">
+                                <FacebookIcon size={46} className="text-blue-400" />
+                              </div>
+                            </div>
+
+                            <div className="space-y-1.5 max-w-xs">
+                              <span className="text-[10px] font-black uppercase tracking-widest text-blue-300 bg-blue-500/15 px-3 py-1 rounded-full border border-blue-500/30">
+                                Facebook Reel
+                              </span>
+                              <h3 className="text-base sm:text-lg font-bold text-white pt-1 line-clamp-2 leading-snug">
+                                {video.title}
+                              </h3>
+                              <p className="text-xs text-textMuted">
+                                Tap below to play directly in Facebook app / browser with full sound & HD.
+                              </p>
+                            </div>
+
+                            <div className="flex flex-col items-center gap-2 w-full max-w-xs pt-1">
+                              <a
+                                href={video.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="w-full py-2.5 rounded-2xl bg-gradient-to-r from-blue-600 to-sky-600 hover:from-blue-500 hover:to-sky-500 text-white font-bold text-xs shadow-lg shadow-blue-500/25 flex items-center justify-center gap-2 transition-all active:scale-95 border border-blue-400/30"
+                              >
+                                <span>▶ Play on Facebook</span>
+                                <ExternalLink size={14} />
+                              </a>
+                              <button
+                                type="button"
+                                onClick={() => setFbViewPreference(p => ({ ...p, [video.id]: 'iframe' }))}
+                                className="text-[11px] text-textMuted hover:text-white underline transition-colors cursor-pointer"
+                              >
+                                Try Embedded Player
+                              </button>
+                            </div>
+                          </div>
                         ) : isFacebook ? (
-                          <iframe
-                            src={getFacebookEmbedUrl(video.url, video.mediaId)}
-                            title={video.title}
-                            className="w-full h-full border-0 absolute inset-0 bg-black"
-                            frameBorder="0"
-                            scrolling="no"
-                            allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share"
-                            allowFullScreen
-                          />
+                          <div className="relative w-full h-full">
+                            <iframe
+                              src={getFacebookEmbedUrl(video.url, video.mediaId)}
+                              title={video.title}
+                              className="w-full h-full border-0 absolute inset-0 bg-black"
+                              frameBorder="0"
+                              scrolling="no"
+                              allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share"
+                              allowFullScreen
+                            />
+                            {/* Floating Helper Banner in case Facebook iframe displays 'Video unavailable' */}
+                            <div className="absolute top-12 left-3 right-3 z-30 flex items-center justify-between pointer-events-none">
+                              <div className="bg-black/85 backdrop-blur-md border border-blue-500/40 rounded-xl px-2.5 py-1 text-[10px] text-blue-200 flex items-center gap-1.5 shadow-lg pointer-events-auto">
+                                <span>Video Unavailable?</span>
+                                <a
+                                  href={video.url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-white font-bold underline hover:text-blue-300 flex items-center gap-0.5"
+                                >
+                                  <span>Open in FB</span>
+                                  <ExternalLink size={10} />
+                                </a>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setFbViewPreference(p => ({ ...p, [video.id]: 'card' }))}
+                                className="bg-black/85 backdrop-blur-md border border-white/20 rounded-xl px-2 py-1 text-[10px] text-white/80 hover:text-white transition-all shadow-lg pointer-events-auto cursor-pointer"
+                                title="Switch to Direct Card Mode"
+                              >
+                                Card Mode
+                              </button>
+                            </div>
+                          </div>
                         ) : (
                           <iframe
                             src={`https://www.youtube-nocookie.com/embed/${video.mediaId}?autoplay=${isCurrent ? 1 : 0}&enablejsapi=1&rel=0&playsinline=1&modestbranding=1`}
@@ -741,6 +868,7 @@ export function MotivationalVideosPage({ onBack }: MotivationalVideosPageProps) 
               {filteredVideos.map((video, idx) => {
                 const isInstagram = video.platform === 'instagram';
                 const isFacebook = video.platform === 'facebook';
+                const isStory = isInstagram && (video.url.includes('/stories/') || /^\d{15,}$/.test(video.mediaId));
 
                 return (
                   <div
@@ -756,7 +884,9 @@ export function MotivationalVideosPage({ onBack }: MotivationalVideosPageProps) 
                       {isInstagram ? (
                         <div className="w-full h-full bg-gradient-to-tr from-yellow-500/20 via-pink-500/30 to-purple-600/40 flex flex-col items-center justify-center space-y-2 p-4 text-center">
                           <InstagramIcon size={32} className="text-pink-400 drop-shadow-md group-hover:scale-110 transition-transform" />
-                          <span className="text-[11px] font-bold text-white/90">Instagram Reel</span>
+                          <span className="text-[11px] font-bold text-white/90">
+                            {isStory ? 'Instagram Story' : 'Instagram Reel'}
+                          </span>
                         </div>
                       ) : isFacebook ? (
                         <div className="w-full h-full bg-gradient-to-tr from-blue-900/40 via-blue-700/30 to-sky-500/20 flex flex-col items-center justify-center space-y-2 p-4 text-center">
@@ -927,18 +1057,30 @@ export function MotivationalVideosPage({ onBack }: MotivationalVideosPageProps) 
 
               {/* Paste Textarea */}
               <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2">
                   <label className="text-xs font-bold text-textMuted uppercase tracking-wider">
                     Paste Links (Instagram / Facebook / YouTube)
                   </label>
-                  <span className="text-[11px] font-mono font-bold text-primary">
-                    {detectedCount} valid link(s) detected
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={isAiResolving || !pastedContent.trim()}
+                      onClick={handleAiDefineLinks}
+                      className="text-[10px] sm:text-xs font-bold px-2.5 py-1 rounded-xl bg-gradient-to-r from-purple-600 via-primary to-blue-600 hover:opacity-90 text-white flex items-center gap-1.5 transition-all shadow-md active:scale-95 disabled:opacity-40 cursor-pointer"
+                      title="Use AI to clean tracking queries, fix Facebook links, and auto-generate motivational titles"
+                    >
+                      <Sparkles size={11} className={isAiResolving ? 'animate-spin' : ''} />
+                      <span>{isAiResolving ? 'AI Defining...' : 'AI Define & Fix'}</span>
+                    </button>
+                    <span className="text-[11px] font-mono font-bold text-primary">
+                      {detectedCount} link(s)
+                    </span>
+                  </div>
                 </div>
                 <textarea
                   value={pastedContent}
                   onChange={(e) => setPastedContent(e.target.value)}
-                  placeholder={`https://www.instagram.com/reel/C...\nhttps://www.facebook.com/reel/...\nhttps://www.youtube.com/watch?v=...\nhttps://youtu.be/...\nhttps://www.youtube.com/shorts/...`}
+                  placeholder={`https://www.instagram.com/reel/C...\nhttps://www.instagram.com/stories/username/...\nhttps://www.facebook.com/reel/...\nhttps://www.youtube.com/watch?v=...\nhttps://www.youtube.com/shorts/...`}
                   rows={4}
                   className="w-full bg-black/50 border border-white/15 rounded-2xl p-3 text-xs text-white placeholder-textMuted/60 font-mono focus:outline-none focus:border-primary transition-all resize-none"
                   autoFocus

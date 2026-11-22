@@ -45,18 +45,13 @@ const BADGE_LABELS: Record<string, string> = {
 };
 
 export function TimetableHub() {
-  const { addXp, claimTimetableTaskXp } = useProgression();
-
-  // Get userId from supabase session via progression context workaround
-  const [supaUserId] = useState<string | null>(() => {
-    const key = Object.keys(localStorage).find(k => k.startsWith('quantum_buffs_'));
-    return key ? key.replace('quantum_buffs_', '') : null;
-  });
+  const { state: progressionState, addXp, claimTimetableTaskXp } = useProgression();
+  const userId = progressionState?.displayName || 'default';
 
   const {
     tasks, completions, badges, loading, todayStats,
     isWeekend, addTask, updateTask, deleteTask, copyDayToDay, toggleCompletion, claimDayBonus
-  } = useTimetable(supaUserId);
+  } = useTimetable(userId, progressionState?.settings?.timetable);
 
   const [activeDay, setActiveDay] = useState<DayOfWeek>(new Date().getDay() as DayOfWeek);
   const [showAddForm, setShowAddForm] = useState(false);
